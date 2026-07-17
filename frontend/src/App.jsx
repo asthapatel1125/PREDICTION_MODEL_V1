@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchInstruments, fetchReplay, fetchSystem, startLiveEngine,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchInstruments, fetchReplay, fetchStateHistory, fetchSystem, startLiveEngine,
   startReplay, stopLiveEngine, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
@@ -8,8 +8,8 @@ const NAV = ["Overview", "Live Monitor", "Historical Replay", "Performance", "Lo
 const ICONS = ["◫", "⌁", "▷", "↗", "⌬", "◉", "⌁", "⌘"];
 const GREEKS = ["gamma", "vanna", "charm", "vomma", "veta", "speed", "zomma", "color", "ultima"];
 const CHART_INTERVALS = [
-  ["15s", 15], ["12m", 720], ["3m", 180], ["5m", 300],
-  ["15m", 900], ["1h", 3600], ["4h", 14400], ["1D", 86400],
+  ["5s", 5], ["15s", 15], ["1m", 60], ["3m", 180], ["5m", 300],
+  ["15m", 900], ["30m", 1800], ["1h", 3600], ["4h", 14400], ["1D", 86400],
 ];
 const GREEK_ORDERS = {
   first: { label: "1st order", series: [["delta", "#4de0bd"], ["theta", "#f37682"], ["vega", "#86a7ff"], ["rho", "#d8b45c"]] },
@@ -73,16 +73,49 @@ function PriceChart({ history = [] }) {
   </div>;
 }
 
+const ALL_GREEKS = Object.values(GREEK_ORDERS).flatMap(order => order.series.map(([name, color]) => [name, color]));
+
+function aggregateGreekRows(history, state, symbol, intervalSeconds) {
+  const source=[...history.filter(row=>row.symbol===symbol)];
+  if(state?.symbol===symbol){const index=source.findIndex(row=>row.timestamp===state.timestamp);if(index>=0)source[index]=state;else source.push(state)}
+  const unique=[...new Map(source.filter(row=>row.timestamp).map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  const buckets=new Map();
+  unique.forEach(row=>{
+    const bucketMs=Math.floor(new Date(row.timestamp).getTime()/(intervalSeconds*1000))*intervalSeconds*1000;
+    if(!Number.isFinite(bucketMs))return;
+    const bucket=buckets.get(bucketMs)??{timestamp:new Date(bucketMs).toISOString(),symbol,count:0,sums:{}};
+    bucket.count+=1;
+    ALL_GREEKS.forEach(([name])=>{const value=number(row.supporting_indicators?.[`greek_${name}`],NaN);if(Number.isFinite(value))bucket.sums[name]=(bucket.sums[name]??0)+value});
+    buckets.set(bucketMs,bucket);
+  });
+  return [...buckets.values()].map(bucket=>({timestamp:bucket.timestamp,symbol,supporting_indicators:Object.fromEntries(ALL_GREEKS.map(([name])=>[`greek_${name}`,number(bucket.sums[name])/bucket.count]))}));
+}
+
+function useGreekViewport(history,state,symbol,intervalSeconds,visibleCount=96){
+  const [offset,setOffset]=useState(0);
+  const rows=useMemo(()=>aggregateGreekRows(history,state,symbol,intervalSeconds),[history,state,symbol,intervalSeconds]);
+  useEffect(()=>setOffset(0),[symbol,intervalSeconds]);
+  const maxOffset=Math.max(0,rows.length-visibleCount),safeOffset=Math.min(offset,maxOffset),end=rows.length-safeOffset;
+  const visible=rows.slice(Math.max(0,end-visibleCount),end);
+  const move=amount=>setOffset(current=>Math.max(0,Math.min(maxOffset,Math.min(current,maxOffset)+amount)));
+  return {rows,visible,offset:safeOffset,setOffset,move,isLive:safeOffset===0,maxOffset};
+}
+
+function ChartShell({expanded,setExpanded,children,className=""}){
+  useEffect(()=>{if(!expanded)return;const close=event=>event.key==="Escape"&&setExpanded(false);window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close)},[expanded,setExpanded]);
+  return <div className={`expandable-chart ${expanded?"chart-expanded":""} ${className}`}>{children}</div>;
+}
+
+function ChartTimeControls({intervalSeconds,setIntervalSeconds,isLive,setOffset,expanded,setExpanded}){
+  return <div className="greek-chart-controls"><div className="timeframe-buttons" aria-label="Chart aggregation interval">{CHART_INTERVALS.map(([label,seconds])=><button key={label} className={intervalSeconds===seconds?"active":""} onClick={()=>setIntervalSeconds(seconds)}>{label}</button>)}</div><button className={`return-live ${isLive?"is-live":"is-back"}`} onClick={()=>setOffset(0)}>{isLive?"● LIVE":"↪ RETURN LIVE"}</button><button className="expand-chart" onClick={()=>setExpanded(!expanded)}>{expanded?"↙ MINIMIZE":"↗ EXPAND"}</button></div>;
+}
+
 function GreekOrderChart({ history = [], state, symbol }) {
-  const [order,setOrder]=useState("first");
+  const [order,setOrder]=useState("first"),[intervalSeconds,setIntervalSeconds]=useState(5),[expanded,setExpanded]=useState(false);
   const [hoverIndex,setHoverIndex]=useState(null);
-  const config=GREEK_ORDERS[order];
-  const rows=useMemo(()=>{
-    const source=[...history.filter(row=>row.symbol===symbol)];
-    if(state?.symbol===symbol){const index=source.findIndex(row=>row.timestamp===state.timestamp);if(index>=0)source[index]=state;else source.push(state)}
-    return source.slice(-120);
-  },[history,state,symbol]);
-  const dims={width:900,height:350,left:82,right:24,top:24,bottom:48};
+  const drag=useRef(null),config=GREEK_ORDERS[order];
+  const viewport=useGreekViewport(history,state,symbol,intervalSeconds,expanded?160:96),rows=viewport.visible;
+  const dims={width:1200,height:expanded?590:410,left:92,right:30,top:25,bottom:54};
   const plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
   const seriesValue=(row,name)=>number(row.supporting_indicators?.[`greek_${name}`],NaN);
   const values=rows.flatMap(row=>config.series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
@@ -92,11 +125,13 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const formatValue=value=>{const magnitude=Math.abs(number(value));return magnitude>0&&magnitude<.001?number(value).toExponential(2):number(value).toFixed(4)};
   const formatTime=value=>value?new Date(value).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
   const hovered=rows[hoverIndex??rows.length-1];
-  const onPointerMove=event=>{const bounds=event.currentTarget.getBoundingClientRect();const index=Math.round((event.clientX-bounds.left)/bounds.width*(rows.length-1));setHoverIndex(Math.max(0,Math.min(rows.length-1,index)))};
-  return <div className="greek-order-chart">
-    <div className="greek-chart-header"><div><span>LIVE OPTIONS GREEKS</span><h2>{symbol} · open-interest-weighted exposures</h2></div><div className="greek-order-tabs" role="tablist">{Object.entries(GREEK_ORDERS).map(([key,item])=><button role="tab" aria-selected={order===key} className={order===key?"active":""} key={key} onClick={()=>{setOrder(key);setHoverIndex(null)}}>{item.label}</button>)}</div></div>
+  const onPointerMove=event=>{const bounds=event.currentTarget.getBoundingClientRect();const index=Math.round((event.clientX-bounds.left)/bounds.width*(rows.length-1));setHoverIndex(Math.max(0,Math.min(rows.length-1,index)));if(drag.current){const delta=event.clientX-drag.current.x;if(Math.abs(delta)>3)drag.current.moved=true;viewport.setOffset(Math.max(0,Math.min(viewport.maxOffset,drag.current.offset-Math.round(delta/7))))}};
+  const onPointerDown=event=>{drag.current={x:event.clientX,offset:viewport.offset,moved:false};event.currentTarget.setPointerCapture(event.pointerId)};
+  const onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
+  return <ChartShell expanded={expanded} setExpanded={setExpanded} className="greek-order-chart">
+    <div className="greek-chart-header"><div><span>LIVE OPTIONS GREEKS</span><h2>{symbol} · open-interest-weighted exposures</h2></div><div className="greek-header-actions"><div className="greek-order-tabs" role="tablist">{Object.entries(GREEK_ORDERS).map(([key,item])=><button role="tab" aria-selected={order===key} className={order===key?"active":""} key={key} onClick={()=>{setOrder(key);setHoverIndex(null)}}>{item.label}</button>)}</div><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded}}/></div></div>
     <div className="greek-chart-legend">{config.series.map(([name,color])=><div key={name}><i style={{backgroundColor:color}}/><span>{pretty(name)}</span><b>{formatValue(seriesValue(rows.at(-1)??{},name))}</b></div>)}</div>
-    <div className="greek-chart-stage" onPointerMove={onPointerMove} onPointerLeave={()=>setHoverIndex(null)}>
+    <div className="greek-chart-stage" onWheel={event=>{event.preventDefault();viewport.move(event.deltaY>0?10:-10)}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={()=>{drag.current=null;setHoverIndex(null)}}>
       <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`${config.label} live options Greeks over time with signed exposure on the y axis`}>
         <title>{config.label} live options Greeks for {symbol}</title><desc>The horizontal axis is observation time and the vertical axis is signed open-interest-weighted Greek exposure.</desc>
         {[0,1,2,3,4].map(tick=>{const value=maxAbs-tick*maxAbs/2,yy=y(value);return <g key={`gy-${tick}`}><line className="greek-grid" x1={dims.left} x2={dims.width-dims.right} y1={yy} y2={yy}/><text className="greek-axis" x={dims.left-10} y={yy+4} textAnchor="end">{formatValue(value)}</text></g>})}
@@ -107,8 +142,20 @@ function GreekOrderChart({ history = [], state, symbol }) {
       </svg>
       {!rows.length&&<div className="chart-empty">Waiting for the first live Options Pro state…</div>}
     </div>
-    <div className="greek-chart-readout"><span>X · {formatTime(hovered?.timestamp)}</span>{config.series.map(([name,color])=><span key={name}><i style={{backgroundColor:color}}/>{pretty(name)} Y · {formatValue(seriesValue(hovered??{},name))}</span>)}</div>
-  </div>;
+    <div className="greek-chart-readout"><span>{viewport.isLive?"Following current stream":`${viewport.offset} buckets behind live`}</span><span>X · {formatTime(hovered?.timestamp)}</span>{config.series.map(([name,color])=><span key={name}><i style={{backgroundColor:color}}/>{pretty(name)} Y · {formatValue(seriesValue(hovered??{},name))}</span>)}</div>
+  </ChartShell>;
+}
+
+function GreekPressureChart({history=[],state,symbol}){
+  const [intervalSeconds,setIntervalSeconds]=useState(5),[expanded,setExpanded]=useState(false),[hovered,setHovered]=useState(null);
+  const viewport=useGreekViewport(history,state,symbol,intervalSeconds,1),row=viewport.visible.at(-1),drag=useRef(null);
+  const values=ALL_GREEKS.map(([name,color])=>({name,color,value:number(row?.supporting_indicators?.[`greek_${name}`])})).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));
+  const maxAbs=Math.max(...values.map(item=>Math.abs(item.value)),1e-6),formatValue=value=>Math.abs(value)>0&&Math.abs(value)<.001?value.toExponential(2):value.toFixed(4);
+  const onWheel=event=>{event.preventDefault();viewport.move(event.deltaY>0?1:-1)};
+  const onPointerDown=event=>{drag.current={x:event.clientX,offset:viewport.offset,moved:false};event.currentTarget.setPointerCapture(event.pointerId)};
+  const onPointerMove=event=>{if(!drag.current)return;const delta=event.clientX-drag.current.x;if(Math.abs(delta)>3)drag.current.moved=true;viewport.setOffset(Math.max(0,Math.min(viewport.maxOffset,drag.current.offset-Math.round(delta/24))))};
+  const onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
+  return <ChartShell expanded={expanded} setExpanded={setExpanded} className="greek-pressure-chart"><div className="greek-chart-header"><div><span>GREEKS PRESSURE</span><h2>{symbol} · signed call/put exposure at {row?new Date(row.timestamp).toLocaleString():"—"}</h2></div><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded}}/></div><div className="pressure-axis"><span>SELL / PUT-SIGNED</span><b>0</b><span>BUY / CALL-SIGNED</span></div><div className="pressure-bars" onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={()=>{drag.current=null;setHovered(null)}}>{values.map(item=><div className={`pressure-bar ${hovered===item.name?"hovered":""}`} key={item.name} onPointerEnter={()=>setHovered(item.name)}><span>{pretty(item.name)}</span><div className="pressure-track"><i className={item.value<0?"negative":"positive"} style={{width:`${Math.max(item.value===0?0:1,Math.abs(item.value)/maxAbs*50)}%`,backgroundColor:item.color}}/></div><b className={item.value<0?"neg":"pos"}>{item.value>=0?"+":""}{formatValue(item.value)}</b></div>)}</div><div className="greek-chart-readout"><span>{viewport.isLive?"Current pressure snapshot":`${viewport.offset} buckets behind live`}</span><span>Wheel or drag to inspect older streamed snapshots</span><span>Scale ±{formatValue(maxAbs)}</span></div><div className="greeks-note">Bars share one centered signed scale. Call exposure is positive and put exposure negative, weighted by open interest. This is a model inference—not observed dealer inventory.</div></ChartShell>;
 }
 
 function StreamingPriceChart({ symbol, liveState, alert }) {
@@ -292,18 +339,20 @@ function ModulePage({ view, state, history, alerts, performance, system, config,
 export default function Home() {
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
+  const [chartHistory,setChartHistory]=useState([]);
   const [connected,setConnected]=useState(false), [toast,setToast]=useState(""), [replay,setReplay]=useState(null);
   const [instruments,setInstruments]=useState(FALLBACK_INSTRUMENTS);
   const state=dashboard.state, history=dashboard.history??[], alerts=dashboard.alerts??[], engine=dashboard.engine??{}, performance=dashboard.performance??{};
   const notify=text=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
   const refresh=async(signal)=>{try{const [dash,sys,cfg]=await Promise.all([fetchDashboard(symbol,signal),fetchSystem(signal),fetchConfiguration(signal)]);setDashboard(dash);setSystem(sys);setConfig(cfg);setConnected(true)}catch(error){if(error.name!=="AbortError"){setConnected(false);notify(error.message)}}};
   useEffect(()=>{const controller=new AbortController();refresh(controller.signal);const id=window.setInterval(()=>refresh(controller.signal),10000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
+  useEffect(()=>{const controller=new AbortController();fetchStateHistory(symbol,5000,controller.signal).then(rows=>setChartHistory([...rows].reverse())).catch(error=>{if(error.name!=="AbortError")setChartHistory([])});return()=>controller.abort()},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchInstruments(controller.signal).then(setInstruments).catch(()=>{});return()=>controller.abort()},[]);
-  useEffect(()=>subscribeToEvents(message=>{if(message.topic==="market_state")setDashboard(current=>({...current,state:message.payload,history:[...(current.history??[]),message.payload].slice(-120)}));if(message.topic==="alert")setDashboard(current=>({...current,alerts:[toDashboardAlert(message.payload),...(current.alerts??[])].slice(0,100)}));if(message.topic==="outcome")setDashboard(current=>({...current,alerts:(current.alerts??[]).map(alert=>alert.id===message.payload.alert_id?{...alert,result:number(message.payload.precision)>=.7?"SUCCESS":"FAILURE",precision:number(message.payload.precision).toFixed(2)}:alert)}));if(message.topic==="engine_status"){setDashboard(current=>({...current,engine:message.payload}));setSystem(current=>current?{...current,engine:message.payload}:current)}if(message.topic==="system_event")setSystem(current=>current?{...current,events:[message.payload,...(current.events??[])].slice(0,25)}:current);if(message.topic==="replay_status")setReplay(message.payload)},setConnected),[]);
+  useEffect(()=>subscribeToEvents(message=>{if(message.topic==="market_state"){setDashboard(current=>({...current,state:message.payload,history:[...(current.history??[]),message.payload].slice(-120)}));setChartHistory(current=>[...current.filter(row=>row.timestamp!==message.payload.timestamp),message.payload].slice(-5000))}if(message.topic==="alert")setDashboard(current=>({...current,alerts:[toDashboardAlert(message.payload),...(current.alerts??[])].slice(0,100)}));if(message.topic==="outcome")setDashboard(current=>({...current,alerts:(current.alerts??[]).map(alert=>alert.id===message.payload.alert_id?{...alert,result:number(message.payload.precision)>=.7?"SUCCESS":"FAILURE",precision:number(message.payload.precision).toFixed(2)}:alert)}));if(message.topic==="engine_status"){setDashboard(current=>({...current,engine:message.payload}));setSystem(current=>current?{...current,engine:message.payload}:current)}if(message.topic==="system_event")setSystem(current=>current?{...current,events:[message.payload,...(current.events??[])].slice(0,25)}:current);if(message.topic==="replay_status")setReplay(message.payload)},setConnected),[]);
   useEffect(()=>{if(!replay?.id||replay.status!=="running")return;const id=setInterval(()=>fetchReplay(replay.id).then(setReplay).catch(()=>{}),2000);return()=>clearInterval(id)},[replay?.id,replay?.status]);
   const toggle=async()=>{try{if(engine.running){await stopLiveEngine();notify("Live engine stopping")}else{await startLiveEngine(symbol,resolution);notify(`Live engine started for ${symbol}`)}await refresh()}catch(error){notify(error.message)}};
   const runReplay=async()=>{try{const day=new Date();day.setDate(day.getDate()-1);while(day.getDay()===0||day.getDay()===6)day.setDate(day.getDate()-1);const date=day.toISOString().slice(0,10);setReplay(await startReplay({symbol,start:new Date(`${date}T09:30:00`).toISOString(),end:new Date(`${date}T16:00:00`).toISOString(),bar_resolution_seconds:60,replay_speed:0}));notify("Historical replay started")}catch(error){notify(error.message)}};
-  const indicators=state?.supporting_indicators??{}, greekValues=GREEKS.map(name=>[name,number(indicators[`greek_${name}`])]);
+  const indicators=state?.supporting_indicators??{}, visualHistory=chartHistory.length?chartHistory:history;
   const liveBiasAlerts=alerts.filter(alert=>alert.channel==="LIVE");
   const selectedInstrument=instruments.find(item=>item.symbol===symbol)??FALLBACK_INSTRUMENTS.find(item=>item.symbol===symbol);
   const optionsDecision=deriveOptionsDecision(state);
@@ -315,7 +364,7 @@ export default function Home() {
     <div className="breakdown-label"><span>DETAILED BREAKDOWN</span><b>Scores, Greek orders, and live Options Pro alerts</b></div>
     <div className="status-strip"><div><span>ENGINE</span><b>{engine.running?"RUNNING":"IDLE"}</b><small>{engine.symbol??symbol}</small></div><div><span>PROFILE</span><strong>{pretty(state?.profile??"—")}</strong><small>Auto-selected</small></div><div><span>REGIME</span><strong className="teal">{pretty(state?.regime??"WAITING")}</strong><small>Confidence {pct(indicators.regime_confidence)}</small></div><div><span>OPTIONS BIAS</span><strong className={optionsDecision.qualified?(optionsDecision.direction==="UP"?"teal":"red"):""}>{optionsDecision.qualified?biasLabel(optionsDecision.direction):"WAIT"}</strong><small>{optionsDecision.failed.length?`Waiting: ${optionsDecision.failed.join(", ")}`:"All options gates passed"}</small></div><div><span>LAST UPDATE</span><strong>{time(state?.timestamp)}</strong><small>{engine.last_error??"America/New_York"}</small></div></div>
     <div className="metric-grid live-metric-grid"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className="metric"><header><span>EVALUATED PRECISION</span><span className="subtle">SUPABASE</span></header><div className="metric-main"><b>{pct(performance.precision)}</b><span>{performance.evaluated_alerts??0} evaluated</span></div><Sparkline values={history.map(x=>number(x.confidence?.value))} color="#86a7ff"/><footer><span>Pending alerts</span><b>{performance.pending_alerts??0}</b></footer></article><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div>
-    <div className="main-grid"><article className="panel chart-panel"><GreekOrderChart history={history} state={state} symbol={symbol}/></article><article className="panel greeks-panel"><header className="panel-head"><div><span>GREEKS PRESSURE</span><h2>Open-interest-weighted call/put exposure</h2></div></header><div className="greeks-list">{greekValues.map(([name,value])=><div className="greek" key={name}><span>{pretty(name)}</span><div className="track"><i className={value<0?"negative":"positive"} style={{width:`${Math.min(100,Math.abs(value)*900)}%`}}/></div><b className={value<0?"neg":""}>{value>=0?"+":""}{value.toFixed(4)}</b></div>)}</div><div className="greeks-note">Call rows are signed positive and put rows negative, then weighted by open interest. This is a pressure-model inference—not observed dealer inventory.</div></article></div>
+    <div className="greek-visuals"><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article><article className="panel chart-panel"><GreekPressureChart history={visualHistory} state={state} symbol={symbol}/></article></div>
     <article className="panel alerts-panel"><header className="panel-head table-head"><div><span>LIVE OPTIONS PRO BIAS ALERTS</span><h2>Explosion, Direction, Pressure, Confidence, and Risk only</h2></div></header><div className="table-wrap"><table><thead><tr><th>TIME</th><th>INSTRUMENT</th><th>BIAS</th><th>EXPLOSION</th><th>DIR. SCORE</th><th>PRESSURE</th><th>OPTIONS CONF.</th><th>REGIME</th><th>RISK</th></tr></thead><tbody>{liveBiasAlerts.map(a=><tr key={a.id}><td>{a.time}</td><td><b>{a.symbol}</b></td><td><span className={`direction-pill ${a.direction.toLowerCase()}`}>{biasLabel(a.direction)}</span></td><td>{a.explosion}</td><td>{a.score}</td><td>{a.pressure>0?"+":""}{number(a.pressure).toFixed(2)}</td><td>{pct(a.confidence)}</td><td>{a.regime}</td><td>{pretty(a.risk)}</td></tr>)}</tbody></table>{!liveBiasAlerts.length&&<div className="empty-state">WAIT · no live Options Pro bias has crossed every pressure threshold yet.</div>}</div></article></>}
     <footer className="disclaimer">Signal intelligence only · No broker execution enabled <span>Last persisted state {time(state?.timestamp)}</span></footer></section>{toast&&<div className="toast">✓ {toast}</div>}</main>;
 }
