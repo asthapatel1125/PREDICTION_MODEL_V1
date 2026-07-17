@@ -5,7 +5,9 @@ from axiom.config.schema import PlatformSettings
 
 
 def test_health_endpoint(monkeypatch):
-    async def fake_create_database(_url):return None,object()
+    class Repository:
+        async def ping(self):return True
+    async def fake_create_database(_url):return None,Repository()
     monkeypatch.setattr("axiom.api.app.create_database",fake_create_database)
     settings=PlatformSettings(strategy_config_path="config/strategy.yaml")
     with TestClient(create_app(settings)) as client:

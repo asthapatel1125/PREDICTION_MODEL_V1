@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime,timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter,FastAPI,HTTPException,Query,WebSocket,WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +23,7 @@ from axiom.infrastructure.database import SqlAlchemyRepository,create_database
 class Container:
     settings:PlatformSettings;config:StrategyConfig;repository:SqlAlchemyRepository;bus:InMemoryEventBus
     training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None
+    replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
 
 
 def create_app(settings:PlatformSettings|None=None)->FastAPI:
@@ -31,21 +34,28 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         config_path=Path(cfg.strategy_config_path)
         if not config_path.exists():config_path=Path(__file__).parents[4]/"config"/"strategy.yaml"
         container.config=StrategyConfig.from_yaml(config_path);_,container.repository=await create_database(cfg.database_url)
-        container.bus=InMemoryEventBus(cfg.websocket_queue_size);data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds)
+        container.bus=InMemoryEventBus(cfg.websocket_queue_size)
+        api_key=cfg.thetadata_api_key.get_secret_value() if cfg.thetadata_api_key else None
+        data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
+            transport=cfg.thetadata_transport,max_dte=cfg.thetadata_max_dte,strike_range=cfg.thetadata_strike_range,market_timezone=cfg.market_timezone)
         container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data)
         container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data)
+        container.replay_runs={};container.replay_tasks=set()
         yield
         if container.live_task:container.live_task.cancel()
+        for task in container.replay_tasks:task.cancel()
 
     app=FastAPI(title="Axiom Pressure Intelligence API",version=__version__,lifespan=lifespan,docs_url="/api/docs",openapi_url="/api/openapi.json")
     app.add_middleware(CORSMiddleware,allow_origins=cfg.cors_origins,allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
     api=APIRouter(prefix="/api/v1")
 
     @api.get("/health",response_model=HealthResponse)
-    async def health()->HealthResponse:return HealthResponse(status="healthy",database="connected",event_bus="connected",version=__version__)
+    async def health()->HealthResponse:
+        database="connected" if await container.repository.ping() else "disconnected"
+        return HealthResponse(status="healthy" if database=="connected" else "degraded",database=database,event_bus="connected",version=__version__)
 
     @api.get("/alerts")
-    async def alerts(limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0)):return await container.repository.list_alerts(limit,offset)
+    async def alerts(limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0)):return await container.repository.list_alert_views(limit,offset)
 
     @api.get("/history/{symbol}")
     async def history(symbol:str,limit:int=Query(100,ge=1,le=5000)):return await container.repository.latest_states(symbol,limit)
@@ -53,11 +63,44 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/configuration")
     async def configuration():return container.config.model_dump(mode="json")
 
+    @api.get("/engine/status")
+    async def engine_status():return container.live.status()
+
+    @api.get("/dashboard/{symbol}")
+    async def dashboard(symbol:str,limit:int=Query(100,ge=1,le=500)):
+        states=await container.repository.latest_states(symbol,limit)
+        alerts=[alert for alert in await container.repository.list_alert_views(limit,0) if alert["symbol"]==symbol.upper()]
+        return {"server_time":datetime.now(timezone.utc),"engine":container.live.status(),
+            "state":states[0] if states else None,"history":list(reversed(states)),"alerts":alerts,
+            "performance":await container.repository.performance_summary()}
+
+    @api.get("/performance")
+    async def performance():return await container.repository.performance_summary()
+
+    @api.get("/system")
+    async def system():return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
+        "engine":container.live.status(),"events":await container.repository.list_system_events(25),
+        "theta_transport":cfg.thetadata_transport}
+
+    async def execute_replay(run_id:str,request:ReplayRequest)->None:
+        try:
+            result=await container.training.replay(request);container.replay_runs[run_id]={"id":run_id,"status":"completed",**result}
+        except Exception as exc:
+            container.replay_runs[run_id]={"id":run_id,"status":"failed","error":str(exc)}
+        await container.bus.publish("replay_status",container.replay_runs[run_id])
+
     @api.post("/replay",status_code=202)
     async def replay(body:ReplayRequestBody):
         if body.end<=body.start:raise HTTPException(422,"end must be after start")
         request=ReplayRequest(body.symbol,body.start,body.end,body.bar_resolution_seconds,body.replay_speed)
-        return await container.training.replay(request)
+        run_id=str(uuid4());container.replay_runs[run_id]={"id":run_id,"status":"running","bars":0,"alerts":0}
+        task=asyncio.create_task(execute_replay(run_id,request),name=f"replay-{run_id}");container.replay_tasks.add(task)
+        task.add_done_callback(container.replay_tasks.discard);return container.replay_runs[run_id]
+
+    @api.get("/replay/{run_id}")
+    async def replay_status(run_id:str):
+        if run_id not in container.replay_runs:raise HTTPException(404,"Replay run not found")
+        return container.replay_runs[run_id]
 
     @api.post("/live/start",status_code=202)
     async def start_live(body:LiveEngineRequest):
@@ -80,4 +123,3 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
 
 app=create_app()
-

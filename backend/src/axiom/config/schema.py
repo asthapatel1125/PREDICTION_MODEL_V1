@@ -50,11 +50,14 @@ class PlatformSettings(BaseSettings):
     )
     strategy_config_path: str = "config/strategy.yaml"
     thetadata_base_url: str = "http://127.0.0.1:25503/v3"
+    thetadata_transport: str = "python"
     thetadata_timeout_seconds: float = 60
     thetadata_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("THETADATA_API_KEY", "AXIOM_THETADATA_API_KEY"),
     )
+    thetadata_max_dte: int = Field(default=7, ge=0, le=365)
+    thetadata_strike_range: int = Field(default=30, ge=1, le=500)
     market_timezone: str = "America/New_York"
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON,DateTime,Float,ForeignKey,Integer,String,Text,UniqueConstraint,select
+from sqlalchemy import JSON,DateTime,Float,ForeignKey,Integer,String,Text,UniqueConstraint,func,select,text
 from sqlalchemy.ext.asyncio import AsyncSession,async_sessionmaker,create_async_engine
 from sqlalchemy.orm import DeclarativeBase,Mapped,mapped_column,relationship
 from sqlalchemy.pool import NullPool
@@ -93,10 +93,53 @@ class SqlAlchemyRepository:
             rows=(await s.execute(select(AlertRow).order_by(AlertRow.timestamp.desc()).limit(limit).offset(offset))).scalars().all()
             return [Alert.model_validate(r.payload) for r in rows]
 
+    async def list_alert_views(self,limit:int=100,offset:int=0)->list[dict[str,Any]]:
+        async with self.sessions() as s:
+            rows=(await s.execute(select(AlertRow,PerformanceRow).outerjoin(PerformanceRow,PerformanceRow.alert_id==AlertRow.id)
+                .order_by(AlertRow.timestamp.desc()).limit(limit).offset(offset))).all()
+            result=[]
+            for alert,outcome in rows:
+                payload=dict(alert.payload);payload["result"]="PENDING" if outcome is None else ("SUCCESS" if outcome.precision>=.7 else "FAILURE")
+                payload["precision"]=None if outcome is None else outcome.precision
+                result.append(payload)
+            return result
+
     async def latest_states(self,symbol:str,limit:int=100)->list[MarketState]:
         async with self.sessions() as s:
             rows=(await s.execute(select(MarketStateRow).where(MarketStateRow.symbol==symbol.upper()).order_by(MarketStateRow.timestamp.desc()).limit(limit))).scalars().all()
             return [MarketState.model_validate(r.payload) for r in rows]
+
+    async def ping(self)->bool:
+        try:
+            async with self.sessions() as s:await s.execute(text("select 1"))
+            return True
+        except Exception:return False
+
+    async def save_system_event(self,event:dict[str,Any])->None:
+        timestamp=event.get("timestamp")
+        if isinstance(timestamp,str):timestamp=datetime.fromisoformat(timestamp.replace("Z","+00:00"))
+        async with self.sessions() as s:
+            s.add(SystemEventRow(timestamp=timestamp or datetime.now().astimezone(),level=str(event.get("level","INFO")),
+                component=str(event.get("component","platform")),message=str(event.get("message","")),details=event));await s.commit()
+
+    async def list_system_events(self,limit:int=25)->list[dict[str,Any]]:
+        async with self.sessions() as s:
+            rows=(await s.execute(select(SystemEventRow).order_by(SystemEventRow.timestamp.desc()).limit(limit))).scalars().all()
+            return [{"timestamp":r.timestamp,"level":r.level,"component":r.component,"message":r.message,"details":r.details} for r in rows]
+
+    async def performance_summary(self)->dict[str,Any]:
+        async with self.sessions() as s:
+            total=int((await s.scalar(select(func.count()).select_from(AlertRow))) or 0)
+            live=int((await s.scalar(select(func.count()).select_from(AlertRow).where(AlertRow.channel=="LIVE"))) or 0)
+            historical=total-live
+            evaluated=int((await s.scalar(select(func.count()).select_from(PerformanceRow))) or 0)
+            precision=float((await s.scalar(select(func.avg(PerformanceRow.precision)))) or 0)
+            regime_rows=(await s.execute(select(AlertRow.regime,func.count()).group_by(AlertRow.regime))).all()
+            direction_rows=(await s.execute(select(AlertRow.direction,func.count()).group_by(AlertRow.direction))).all()
+            return {"total_alerts":total,"live_alerts":live,"historical_alerts":historical,"evaluated_alerts":evaluated,
+                "pending_alerts":max(total-evaluated,0),"precision":precision,
+                "by_regime":{str(name):int(count) for name,count in regime_rows},
+                "by_direction":{str(name):int(count) for name,count in direction_rows}}
 
 
 async def create_database(url:str)->tuple[async_sessionmaker[AsyncSession],SqlAlchemyRepository]:

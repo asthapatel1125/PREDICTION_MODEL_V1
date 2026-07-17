@@ -13,5 +13,11 @@ services:
         sync: false
       - key: AXIOM_CORS_ORIGINS
         sync: false
-      - key: AXIOM_THETADATA_BASE_URL
+      - key: THETADATA_API_KEY
         sync: false
+      - key: AXIOM_THETADATA_TRANSPORT
+        value: python
+      - key: AXIOM_THETADATA_MAX_DTE
+        value: "7"
+      - key: AXIOM_THETADATA_STRIKE_RANGE
+        value: "30"
