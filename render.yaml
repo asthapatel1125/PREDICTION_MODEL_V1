@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: axiom-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: AXIOM_ENVIRONMENT
+        value: production
+      - key: SUPABASE_DATABASE_URL
+        sync: false
+      - key: AXIOM_CORS_ORIGINS
+        sync: false
+      - key: AXIOM_THETADATA_BASE_URL
+        sync: false
