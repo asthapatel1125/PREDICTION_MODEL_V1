@@ -13,4 +13,6 @@ def test_pipeline_is_deterministic(config):
         assert (a.alert is None)==(b.alert is None)
         if a.alert and b.alert:
             assert a.alert.model_dump(exclude={"id","engine_mode"})==b.alert.model_dump(exclude={"id","engine_mode"})
-
+    final=results_one[-1].state
+    assert set(final.signal_checks)=={"explosion","direction","pressure_alignment","confidence","risk"}
+    assert 0<=final.supporting_indicators["options_confidence"]<=1

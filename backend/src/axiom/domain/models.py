@@ -39,6 +39,8 @@ class MarketBar(FrozenModel):
     volume: float = Field(ge=0)
     bid_ask_spread: float = Field(ge=0)
     greeks: Greeks
+    contract_count: int = Field(default=0, ge=0)
+    open_interest: float = Field(default=0, ge=0)
 
     @field_validator("symbol")
     @classmethod
@@ -79,6 +81,10 @@ class MarketState(FrozenModel):
     micro_range: MicroRange
     timeframe_alignment: dict[str, float]
     supporting_indicators: dict[str, float]
+    signal_checks: dict[str, bool] = Field(default_factory=dict)
+    active_thresholds: dict[str, float] = Field(default_factory=dict)
+    options_bias: Direction = Direction.NEUTRAL
+    options_bias_qualified: bool = False
 
 
 class Alert(FrozenModel):
@@ -99,6 +105,9 @@ class Alert(FrozenModel):
     risk_level: RiskLevel
     price: float
     expected_move: float = Field(ge=0)
+    entry_price: float | None = Field(default=None, gt=0)
+    invalidation_price: float | None = Field(default=None, gt=0)
+    target_price: float | None = Field(default=None, gt=0)
     config_version: str
 
 
@@ -120,4 +129,3 @@ class PipelineResult(FrozenModel):
     state: MarketState
     alert: Alert | None
     processing_latency_ms: float = Field(ge=0)
-

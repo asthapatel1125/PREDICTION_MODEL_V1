@@ -17,6 +17,9 @@ export function toDashboardAlert(alert) {
     time: new Date(alert.timestamp).toLocaleTimeString("en-US", { hour12: false }),
     symbol: alert.symbol,
     direction: alert.direction,
+    channel: alert.engine_mode,
+    confidence: Number(alert.confidence ?? 0),
+    rawPrice: Number(alert.price),
     price: Number(alert.price).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     explosion: Number(alert.explosion_score).toFixed(2),
     score: alert.direction_score > 0 ? `+${alert.direction_score}` : `${alert.direction_score}`,
@@ -27,6 +30,10 @@ export function toDashboardAlert(alert) {
     reasoning: alert.reasoning ?? [],
     recommendation: alert.recommended_action ?? "Monitor",
     risk: alert.risk_level,
+    entry: alert.entry_price == null ? null : Number(alert.entry_price),
+    invalidation: alert.invalidation_price == null ? null : Number(alert.invalidation_price),
+    target: alert.target_price == null ? null : Number(alert.target_price),
+    pressure: Number(alert.supporting_indicators?.pressure_score ?? 0),
   };
 }
 
@@ -37,6 +44,12 @@ export async function fetchDashboard(symbol, signal) {
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
+export const fetchInstruments = (signal) => request("/api/v1/instruments", { signal });
+export const fetchChart = (symbol, intervalSeconds, before, signal) => {
+  const query = new URLSearchParams({ interval_seconds: String(intervalSeconds), limit: "240" });
+  if (before) query.set("before", before);
+  return request(`/api/v1/chart/${encodeURIComponent(symbol)}?${query}`, { signal });
+};
 
 async function post(path, body) {
   return request(path, {
