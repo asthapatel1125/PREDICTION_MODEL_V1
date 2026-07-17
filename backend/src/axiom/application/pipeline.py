@@ -57,13 +57,25 @@ class DecisionPipeline:
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,
             timeframe_alignment=alignment,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
+                "contract_count":float(bar.contract_count),"open_interest_total":bar.open_interest,
                 **{f"greek_{name}":float(getattr(primary.greeks,name)) for name in primary.greeks.model_fields}})
-        fire,expected,_=self.signal.should_alert(state,dynamic); alert=None
+        fire,expected,failed=self.signal.should_alert(state,dynamic)
+        options_confidence=self.signal.options_confidence(state)
+        check_names=("explosion","direction","pressure_alignment","confidence","risk")
+        state=state.model_copy(update={"signal_checks":{name:name not in failed for name in check_names},
+            "supporting_indicators":{**state.supporting_indicators,"options_confidence":options_confidence},
+            "active_thresholds":{"explosion_min":dynamic.explosion_min,"direction_min":float(dynamic.direction_min),
+                "pressure_min":self.signal.pressure_min,"confidence_min":dynamic.confidence_min,"risk_max":.88},
+            "options_bias":expected,"options_bias_qualified":fire})
+        alert=None
         if fire:
             reasons,action,risk_level=self.explanations.explain(state,expected)
             expected_move=max(primary.close*(float(np.std(returns)) if len(returns) else .0001)*dynamic.expected_move_vol_multiple,primary.close*.0001)
-            alert=Alert(id=uuid4(),timestamp=bar.timestamp,symbol=bar.symbol,engine_mode=mode,direction=expected,confidence=confidence.value,
+            alert_indicators={**state.supporting_indicators,"pressure_score":pressure.value,
+                "explosion_confidence":explosion.confidence,"direction_confidence":direction.confidence,
+                "price_confirmation_required":1.0}
+            alert=Alert(id=uuid4(),timestamp=bar.timestamp,symbol=bar.symbol,engine_mode=mode,direction=expected,confidence=options_confidence,
                 explosion_score=explosion.value,direction_score=int(direction.value),regime=regime,profile=profile,micro_range=micro,reasoning=reasons,
-                supporting_indicators=state.supporting_indicators,recommended_action=action,risk_level=risk_level,price=primary.close,
-                expected_move=expected_move,config_version=self.config.version)
+                supporting_indicators=alert_indicators,recommended_action=action,risk_level=risk_level,price=primary.close,
+                expected_move=expected_move,entry_price=None,invalidation_price=None,target_price=None,config_version=self.config.version)
         return PipelineResult(state=state,alert=alert,processing_latency_ms=(time.perf_counter()-started)*1000)

@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .enums import AlertProfile, Direction, EngineMode, Regime, RiskLevel
 
 
-GREEK_NAMES = ("gamma", "vanna", "charm", "vomma", "veta", "speed", "zomma", "color", "ultima")
+GREEK_NAMES = (
+    "delta", "theta", "vega", "rho",
+    "gamma", "vanna", "charm", "vomma", "veta",
+    "speed", "zomma", "color", "ultima",
+)
 
 
 class FrozenModel(BaseModel):
@@ -17,15 +21,19 @@ class FrozenModel(BaseModel):
 
 
 class Greeks(FrozenModel):
-    gamma: float
-    vanna: float
-    charm: float
-    vomma: float
-    veta: float
-    speed: float
-    zomma: float
-    color: float
-    ultima: float
+    delta: float = 0.0
+    theta: float = 0.0
+    vega: float = 0.0
+    rho: float = 0.0
+    gamma: float = 0.0
+    vanna: float = 0.0
+    charm: float = 0.0
+    vomma: float = 0.0
+    veta: float = 0.0
+    speed: float = 0.0
+    zomma: float = 0.0
+    color: float = 0.0
+    ultima: float = 0.0
 
 
 class MarketBar(FrozenModel):
