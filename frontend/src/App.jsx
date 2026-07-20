@@ -137,9 +137,21 @@ function chartCursor(event,dims,rowCount,maxAbs){
   return {index:Math.max(0,Math.min(rowCount-1,Math.round((clampedX-dims.left)/Math.max(plotWidth,1)*Math.max(rowCount-1,0)))),value:maxAbs-(clampedY-dims.top)/Math.max(plotHeight,1)*maxAbs*2,left:(clampedX/dims.width)*100,top:(clampedY/dims.height)*100};
 }
 
+function greekSignedScale(values){
+  const finite=values.filter(Number.isFinite),absolute=finite.map(Math.abs),nonZero=absolute.filter(value=>value>0).sort((a,b)=>a-b);
+  const rawMax=Math.max(...absolute,1e-12),constant=Math.max(nonZero[Math.floor(nonZero.length*.2)]??rawMax,rawMax*1e-6,1e-12);
+  const project=value=>Math.sign(number(value))*Math.log1p(Math.abs(number(value))/constant);
+  const unproject=value=>Math.sign(number(value))*constant*Math.expm1(Math.abs(number(value)));
+  const projectedMax=Math.max(project(rawMax),1);
+  return {projectedMax,project,unproject};
+}
+
+const greekDash=index=>[undefined,"12 5","3 5","16 5 3 5","8 4 2 4"][index%5];
+
 function ChartHistoryNavigator({viewport}){
   const position=viewport.maxOffset-viewport.offset;
-  return <div className="chart-history"><span>OLDER</span><input type="range" min="0" max={Math.max(1,viewport.maxOffset)} value={viewport.maxOffset?position:1} disabled={!viewport.maxOffset} onChange={event=>viewport.setOffset(viewport.maxOffset-Number(event.target.value))} aria-label="Scroll through previously streamed chart data"/><span>LIVE</span><b>{viewport.offset?`${viewport.offset} buckets back`:"NOW"}</b></div>;
+  const step=Math.max(1,Math.round(viewport.maxOffset*.05));
+  return <div className="chart-history"><button type="button" disabled={!viewport.maxOffset||viewport.offset>=viewport.maxOffset} onClick={()=>viewport.move(step)}>← OLDER</button><input type="range" min="0" max={Math.max(1,viewport.maxOffset)} value={viewport.maxOffset?position:1} disabled={!viewport.maxOffset} onChange={event=>viewport.setOffset(viewport.maxOffset-Number(event.target.value))} aria-label="Scroll through previously streamed chart data"/><button type="button" disabled={!viewport.offset} onClick={()=>viewport.move(-step)}>NEWER →</button><button type="button" className={viewport.isLive?"is-live":"is-back"} onClick={()=>viewport.setOffset(0)}>{viewport.isLive?"LIVE · NOW":"RETURN LIVE"}</button><b>{viewport.offset?`${viewport.offset} buckets back`:"Following current stream"}</b></div>;
 }
 
 function ChartCoordinateTooltip({cursor,row,series,formatTime,formatValue,seriesValue}){
@@ -156,14 +168,14 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
   const seriesValue=(row,name)=>number(row.supporting_indicators?.[`greek_${name}`],NaN);
   const values=rows.flatMap(row=>config.series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
-  const maxAbs=Math.max(...values.map(Math.abs),1e-6);
+  const scale=greekSignedScale(values),maxAbs=scale.projectedMax;
   const x=index=>dims.left+index*plotWidth/Math.max(1,rows.length-1);
-  const y=value=>dims.top+(maxAbs-value)*plotHeight/(maxAbs*2);
+  const y=value=>dims.top+(maxAbs-scale.project(value))*plotHeight/(maxAbs*2);
   const formatValue=value=>{const magnitude=Math.abs(number(value));return magnitude>0&&magnitude<.001?number(value).toExponential(2):number(value).toFixed(4)};
   const formatTime=value=>value?new Date(value).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
   const hovered=rows[cursor?.index??rows.length-1];
   const zoomChart=amount=>{const next=Math.max(1,Math.min(8,Math.round((zoom+amount)*2)/2));if(next===zoom)return;const fraction=rows.length>1?(cursor?.index??rows.length-1)/(rows.length-1):1,globalIndex=viewport.rows.length-viewport.offset-rows.length+(cursor?.index??rows.length-1),nextCount=Math.max(12,Math.round((expanded?120:96)/next)),nextIndex=Math.round(fraction*Math.max(nextCount-1,0)),nextOffset=Math.max(0,Math.min(Math.max(0,viewport.rows.length-nextCount),viewport.rows.length-(globalIndex-nextIndex+nextCount)));setZoom(next);viewport.setOffset(nextOffset);setCursor(current=>current?{...current,index:nextIndex}:current)};
-  const onPointerMove=event=>{setCursor(chartCursor(event,dims,rows.length,maxAbs));if(drag.current){const delta=event.clientX-drag.current.x;if(Math.abs(delta)>3)drag.current.moved=true;viewport.setOffset(Math.max(0,Math.min(viewport.maxOffset,drag.current.offset-Math.round(delta/7))))}};
+  const onPointerMove=event=>{const next=chartCursor(event,dims,rows.length,maxAbs);setCursor({...next,value:scale.unproject(next.value)});if(drag.current){const delta=event.clientX-drag.current.x;if(Math.abs(delta)>3)drag.current.moved=true;viewport.setOffset(Math.max(0,Math.min(viewport.maxOffset,drag.current.offset-Math.round(delta/7))))}};
   const onPointerDown=event=>{drag.current={x:event.clientX,offset:viewport.offset,moved:false};event.currentTarget.setPointerCapture(event.pointerId)};
   const onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
   return <ChartShell expanded={expanded} setExpanded={setExpanded} className={`greek-order-chart order-${order}`}>
@@ -172,10 +184,10 @@ function GreekOrderChart({ history = [], state, symbol }) {
     <div className="greek-chart-stage" onWheel={event=>{event.preventDefault();if(event.ctrlKey||event.metaKey)zoomChart(event.deltaY<0?.5:-.5);else viewport.move(event.deltaY>0?10:-10)}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={()=>{drag.current=null;setCursor(null)}}>
       <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`${config.label} live options Greeks over time with signed exposure on the y axis`}>
         <title>{config.label} live options Greeks for {symbol}</title><desc>The horizontal axis is observation time and the vertical axis is signed open-interest-weighted Greek exposure.</desc>
-        {[0,1,2,3,4].map(tick=>{const value=maxAbs-tick*maxAbs/2,yy=y(value);return <g key={`gy-${tick}`}><line className="greek-grid" x1={dims.left} x2={dims.width-dims.right} y1={yy} y2={yy}/><text className="greek-axis" x={dims.left-10} y={yy+4} textAnchor="end">{formatValue(value)}</text></g>})}
+        {[0,1,2,3,4].map(tick=>{const projected=maxAbs-tick*maxAbs/2,value=scale.unproject(projected),yy=y(value);return <g key={`gy-${tick}`}><line className="greek-grid" x1={dims.left} x2={dims.width-dims.right} y1={yy} y2={yy}/><text className="greek-axis" x={dims.left-10} y={yy+4} textAnchor="end">{formatValue(value)}</text></g>})}
         {[0,1,2,3,4,5].map(tick=>{const index=Math.round(tick*Math.max(rows.length-1,0)/5),xx=x(index);return <g key={`gx-${tick}`}><line className="greek-grid" x1={xx} x2={xx} y1={dims.top} y2={dims.height-dims.bottom}/><text className="greek-axis" x={xx} y={dims.height-15} textAnchor="middle">{formatTime(rows[index]?.timestamp)}</text></g>})}
         <line className="greek-zero" x1={dims.left} x2={dims.width-dims.right} y1={y(0)} y2={y(0)}/>
-        {config.series.map(([name,color])=>{const path=rows.map((row,index)=>`${index?"L":"M"}${x(index).toFixed(1)},${y(seriesValue(row,name)||0).toFixed(1)}`).join(" ");return <g key={name}><path className="greek-series" d={path} style={{stroke:color}}/>{rows.length>0&&<circle className="greek-current-dot" cx={x(rows.length-1)} cy={y(seriesValue(rows.at(-1),name)||0)} r="3.5" style={{fill:color}}/>}</g>})}
+        {config.series.map(([name,color],seriesIndex)=>{const path=rows.map((row,index)=>`${index?"L":"M"}${x(index).toFixed(1)},${y(seriesValue(row,name)||0).toFixed(1)}`).join(" ");return <g key={name}><path className="greek-series" d={path} style={{stroke:color,strokeDasharray:greekDash(seriesIndex)}}/>{rows.length>0&&<circle className="greek-current-dot" cx={x(rows.length-1)} cy={y(seriesValue(rows.at(-1),name)||0)} r={3.5+seriesIndex*.35} style={{fill:color}}/>}</g>})}
         {cursor&&<g><line className="greek-crosshair" x1={x(cursor.index)} x2={x(cursor.index)} y1={dims.top} y2={dims.height-dims.bottom}/><line className="greek-crosshair horizontal" x1={dims.left} x2={dims.width-dims.right} y1={y(cursor.value)} y2={y(cursor.value)}/>{config.series.map(([name,color])=><circle key={name} className="greek-hover-dot" cx={x(cursor.index)} cy={y(seriesValue(hovered,name)||0)} r="4" style={{fill:color}}/>)}</g>} 
       </svg>
       <ChartCoordinateTooltip {...{cursor,row:hovered,series:config.series,formatTime,formatValue,seriesValue}}/>
@@ -334,7 +346,7 @@ function PriorityAlert({ alert, state, symbol }) {
   </article>;
 }
 
-function FocusView({state,symbol,engine,decision}) {
+function FocusView({state,symbol,engine,decision,lastQualifiedAlert}) {
   const tone=decision.qualified?(decision.direction==="UP"?"long":"short"):"neutral";
   const label=decision.qualified?biasLabel(decision.direction):"NEUTRAL";
   const directionThreshold=number(state?.active_thresholds?.direction_min,2);
@@ -349,6 +361,7 @@ function FocusView({state,symbol,engine,decision}) {
   ];
   return <section id="decision" className={`focus-view focus-view-${tone} overview-section`} aria-live="polite">
     <div className="focus-heading"><div><span>ONE-SCREEN OPTIONS FOCUS</span><h2>{symbol} · {label}</h2><small>{engine.running?"● LIVE OPTIONS PRO":"○ ENGINE IDLE"} · {time(state?.timestamp)} · {pretty(state?.regime??"waiting")}</small></div><div className="focus-alert"><span>{decision.qualified?"ACTIVE PRESSURE ALERT":"NO QUALIFIED ALERT"}</span><b>{decision.qualified?`${label} BIAS`:`WAITING · ${decision.failed.join(", ")||"live history"}`}</b><small>Manual price confirmation remains external</small></div></div>
+    <div className={`last-qualified-bias ${lastQualifiedAlert?"has-alert":"no-alert"}`}><div><span>LAST QUALIFIED BIAS</span><b>{lastQualifiedAlert?`${lastQualifiedAlert.symbol} · ${biasLabel(lastQualifiedAlert.direction)}`:"NONE RECORDED"}</b></div>{lastQualifiedAlert?<><div><span>QUALIFIED AT</span><b>{new Date(lastQualifiedAlert.timestamp).toLocaleString()}</b></div><div><span>GATES AT EVENT</span><b>EXP {lastQualifiedAlert.explosion} · DIR {lastQualifiedAlert.score} · PRESSURE {lastQualifiedAlert.pressure>=0?"+":""}{number(lastQualifiedAlert.pressure).toFixed(2)}</b></div><div><span>OPTIONS CONFIDENCE</span><b>{pct(lastQualifiedAlert.confidence)}</b></div></>:<small>A historical LONG or SHORT appears here after all five gates pass together.</small>}</div>
     <div className="focus-score-grid">{metrics.map(([name,value,ideal])=><div className="focus-score" key={name}><span>{name}</span><b>{value}</b><small>{ideal}</small></div>)}</div>
   </section>;
 }
@@ -428,6 +441,7 @@ export default function Home() {
   const runReplay=async()=>{try{const day=new Date();day.setDate(day.getDate()-1);while(day.getDay()===0||day.getDay()===6)day.setDate(day.getDate()-1);const date=day.toISOString().slice(0,10);setReplay(await startReplay({symbol,start:new Date(`${date}T09:30:00`).toISOString(),end:new Date(`${date}T16:00:00`).toISOString(),bar_resolution_seconds:60,replay_speed:0}));notify("Historical replay started")}catch(error){notify(error.message)}};
   const indicators=state?.supporting_indicators??{}, visualHistory=chartHistory.length?chartHistory:history;
   const liveBiasAlerts=alerts.filter(alert=>alert.channel==="LIVE");
+  const lastQualifiedAlert=liveBiasAlerts.filter(alert=>alert.symbol===symbol).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]??null;
   const selectedInstrument=instruments.find(item=>item.symbol===symbol)??FALLBACK_INSTRUMENTS.find(item=>item.symbol===symbol);
   const optionsDecision=deriveOptionsDecision(state);
   const focusTone=optionsDecision.qualified?(optionsDecision.direction==="UP"?"long":"short"):"neutral";
@@ -436,7 +450,7 @@ export default function Home() {
     <aside className="sidebar"><div className="side-top"><button className="navitem active" onClick={()=>jumpTo("decision")}><span className="icon">◫</span><span>Overview</span></button><nav className="overview-subnav" aria-label="Overview sections">{OVERVIEW_SECTIONS.map(([label,section])=><button key={section} onClick={()=>jumpTo(section)}><i/><span>{label}</span></button>)}</nav></div><div className="side-bottom"><div className="system-health"><span><i/>{system?.database_connected?"System healthy":"System degraded"}</span><small>v{config?.version??"—"} · Render</small></div></div></aside>
     <section className="content">{view!=="Overview"?<ModulePage {...{view,state,history,alerts,performance,system,config,replay,onReplay:runReplay,notify}}/>:<><div id="overview-top" className="page-head overview-section"><div><div className="eyebrow">TRADING COMMAND</div><h1>Pressure intelligence</h1><p>Options Pro pressure bias. You confirm price independently.</p></div><div className="controls"><label>Instrument<select value={symbol} disabled={engine.running} onChange={e=>setSymbol(e.target.value)}>{instruments.map(item=><option value={item.symbol} key={item.symbol}>{item.symbol}</option>)}</select><small className={selectedInstrument?.available?"provider-ready":"provider-missing"}>{selectedInstrument?.provider}{selectedInstrument?.requirement?` · ${selectedInstrument.requirement}`:""}</small></label><label>Feed resolution<select value={resolution} onChange={e=>setResolution(Number(e.target.value))}><option value="5">5s</option><option value="15">15s</option><option value="60">1m</option></select></label><button className={engine.running?"stop":"start"} disabled={!engine.running&&!selectedInstrument?.available} onClick={toggle}><i/>{engine.running?"Stop engine":selectedInstrument?.available?"Start engine":"Feed required"}</button></div></div>
     <OverviewSectionHeading number="01" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
-    <FocusView state={state} symbol={symbol} engine={engine} decision={optionsDecision}/>
+    <FocusView state={state} symbol={symbol} engine={engine} decision={optionsDecision} lastQualifiedAlert={lastQualifiedAlert}/>
     <FiveMinuteForecast history={visualHistory} state={state} symbol={symbol}/>
     <section id="score-modules" className="overview-section"><OverviewSectionHeading number="02" title="Signal scores" description="Explosion, Direction, and Pressure aligned in one viewport row."/><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div></section>
     <section id="greek-orders" className="overview-section"><OverviewSectionHeading number="03" title="Greek orders" description="Pink first-order, sky-blue second-order, and lime-green third-order live exposures."/><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article></section>
