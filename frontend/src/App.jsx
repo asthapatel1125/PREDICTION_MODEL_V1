@@ -104,7 +104,7 @@ function useGreekViewport(history,state,symbol,intervalSeconds,visibleCount=96){
 }
 
 function ChartShell({expanded,setExpanded,children,className=""}){
-  useEffect(()=>{if(!expanded)return;const close=event=>event.key==="Escape"&&setExpanded(false);window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close)},[expanded,setExpanded]);
+  useEffect(()=>{if(!expanded)return;const previousOverflow=document.body.style.overflow;document.body.style.overflow="hidden";const close=event=>event.key==="Escape"&&setExpanded(false);window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previousOverflow;window.removeEventListener("keydown",close)}},[expanded,setExpanded]);
   return <div className={`expandable-chart ${expanded?"chart-expanded":""} ${className}`}>{children}</div>;
 }
 
@@ -117,7 +117,7 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const [hoverIndex,setHoverIndex]=useState(null);
   const drag=useRef(null),config=GREEK_ORDERS[order];
   const viewport=useGreekViewport(history,state,symbol,intervalSeconds,expanded?160:96),rows=viewport.visible;
-  const dims={width:1200,height:expanded?590:410,left:92,right:30,top:25,bottom:54};
+  const dims={width:1200,height:expanded?650:300,left:92,right:30,top:20,bottom:50};
   const plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
   const seriesValue=(row,name)=>number(row.supporting_indicators?.[`greek_${name}`],NaN);
   const values=rows.flatMap(row=>config.series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
