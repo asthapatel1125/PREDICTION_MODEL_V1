@@ -225,3 +225,23 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 @media(max-width:1150px){.overview-subnav{display:none}.section-jump{display:flex}.topbar{gap:10px}.status-chip{padding-left:7px;padding-right:7px}}
 @media(max-width:900px){.focus-score-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.status-chip span{display:none}}
 @media(max-width:700px){.section-jump{width:100%;order:4}.section-jump select{flex:1}.status-cluster{justify-content:flex-start}.focus-score-grid{grid-template-columns:1fr 1fr}}
+
+/* First-order readability and compact, non-obstructive custom-chart controls. */
+.first-order-scale-note{margin:5px 0 7px;padding:6px 9px;border-left:2px solid #ff72b6;background:rgba(255,114,182,.06);color:#9e8b9a;font:10px/1.4 var(--font-mono);letter-spacing:.035em}
+.greek-selector{margin:7px 0;padding:0;overflow:hidden}
+.greek-selector>summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:36px;padding:7px 10px;list-style:none;cursor:pointer;background:#0b131c}
+.greek-selector>summary::-webkit-details-marker{display:none}
+.greek-selector>summary>span{color:#8ea0b4;font:10px var(--font-mono);letter-spacing:.08em;white-space:nowrap}
+.greek-selector>summary>b{overflow:hidden;color:#cbd6e1;font:10px var(--font-mono);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
+.greek-selector>summary>i{color:#67c9ff;font-style:normal;transition:transform .15s}
+.greek-selector[open]>summary{border-bottom:1px solid #26384b}.greek-selector[open]>summary>i{transform:rotate(180deg)}
+.greek-selector-content{padding:7px 8px 8px}.greek-selector-content>small{display:block;margin-top:6px;color:#66768a;font-size:10px}
+.greek-selector-head{margin-bottom:6px}.greek-selector-groups{gap:6px}.greek-selector-group{padding:5px 6px 6px}.greek-selector-group label{min-height:26px;padding:3px 4px;font-size:10px}.greek-selector-group legend{font-size:10px}
+
+.chart-modal-backdrop:has(>.custom-greek-chart){overflow:auto!important;overscroll-behavior:contain}
+.chart-modal-backdrop>.chart-expanded.custom-greek-chart{width:max(100%,1400px)!important;min-width:1400px!important;height:max(100dvh,1000px)!important;min-height:1000px!important;overflow:visible!important;grid-template-rows:auto auto auto minmax(700px,1fr) auto auto!important}
+.chart-modal-backdrop>.custom-greek-chart>.greek-selector{align-self:start;max-height:none;overflow:hidden}
+.chart-modal-backdrop>.custom-greek-chart>.greek-selector[open] .greek-selector-content{max-height:180px;overflow:auto}
+.chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage{min-width:1320px!important;min-height:700px!important;height:700px!important}
+.chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage>svg{min-width:1320px!important;min-height:700px!important}
+@media(max-width:800px){.chart-modal-backdrop>.chart-expanded.custom-greek-chart{width:1250px!important;min-width:1250px!important;padding:10px!important}.chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage,.chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage>svg{min-width:1180px!important}}
