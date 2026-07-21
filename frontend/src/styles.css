@@ -152,3 +152,21 @@ body>.chart-expanded{position:fixed!important;z-index:2147483647!important;inset
 .chart-modal-backdrop .score-time-chart .greek-chart-stage{min-height:0!important}
 @media(max-width:1180px){.score-history-grid{grid-template-columns:1fr}.score-time-chart .greek-chart-header{display:flex}.score-time-chart .greek-header-actions{align-items:flex-end;margin-top:0}}
 @media(max-width:760px){.score-time-chart .greek-chart-header,.chart-modal-backdrop .score-time-chart .greek-chart-header{display:block}.score-time-chart .greek-header-actions,.chart-modal-backdrop .score-time-chart .greek-header-actions{align-items:flex-start;margin-top:10px}}
+
+/* Full-width, sequential score plots with readable normal-view axes. */
+.score-history-grid{grid-template-columns:minmax(0,1fr);gap:20px;margin-top:16px}
+.score-history-grid>.chart-panel{min-width:0;overflow:visible}
+.score-time-chart{padding:16px 17px 9px}
+.score-time-chart .greek-chart-header{display:flex;align-items:flex-start;justify-content:space-between;gap:22px}
+.score-time-chart .greek-header-actions{align-items:flex-end;margin-top:0;max-width:min(850px,70%)}
+.score-time-chart .greek-chart-controls{justify-content:flex-end;row-gap:8px}
+.score-time-chart:not(.chart-expanded) .greek-chart-stage{height:380px;min-height:380px}
+.score-time-chart:not(.chart-expanded) .greek-chart-stage svg{width:100%;height:380px;min-height:380px;max-height:none}
+.score-time-chart .greek-chart-legend{margin-top:12px;margin-bottom:7px}
+.score-axis-title{fill:#b2c0d0;font:500 15px var(--font-mono);letter-spacing:.12em}
+.greek-axis{font-size:16px;fill:#a7b7c9}
+.score-time-chart .greek-axis{font-size:16px}
+.score-time-chart .score-history-line{stroke-width:3.2}
+.score-time-chart .chart-coordinate-tooltip{min-width:220px}
+@media(max-width:1250px){.score-time-chart .greek-chart-header{display:block}.score-time-chart .greek-header-actions{align-items:flex-start;max-width:none;margin-top:12px}.score-time-chart .greek-chart-controls{justify-content:flex-start}}
+@media(max-width:760px){.score-time-chart{padding:12px 10px 8px}.score-time-chart:not(.chart-expanded) .greek-chart-stage,.score-time-chart:not(.chart-expanded) .greek-chart-stage svg{height:330px;min-height:330px}.greek-axis,.score-time-chart .greek-axis{font-size:14px}.score-axis-title{font-size:13px}.score-time-chart .chart-coordinate-tooltip{min-width:175px}}
