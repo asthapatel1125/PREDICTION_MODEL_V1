@@ -20,19 +20,19 @@ const GREEK_COLORS = {
   speed:"#ef476f", zomma:"#06d6a0", color:"#f4d35e", ultima:"#c77dff",
 };
 const GREEK_CATALOG = {
-  delta: { order:"first", lowest:"1st order", highest:"3rd order" },
-  theta: { order:"first", lowest:"1st order", highest:"3rd order" },
-  vega: { order:"first", lowest:"1st order", highest:"3rd order" },
-  rho: { order:"first", lowest:"1st order", highest:"1st order" },
-  gamma: { order:"second", lowest:"2nd order", highest:"3rd order" },
-  vanna: { order:"second", lowest:"2nd order", highest:"2nd order" },
-  charm: { order:"second", lowest:"2nd order", highest:"3rd order" },
-  vomma: { order:"second", lowest:"2nd order", highest:"3rd order" },
-  veta: { order:"second", lowest:"2nd order", highest:"2nd order" },
-  speed: { order:"third", lowest:"3rd order", highest:"3rd order" },
-  zomma: { order:"third", lowest:"3rd order", highest:"3rd order" },
-  color: { order:"third", lowest:"3rd order", highest:"3rd order" },
-  ultima: { order:"third", lowest:"3rd order", highest:"3rd order" },
+  delta: { order:"first", derivedFrom:[] },
+  theta: { order:"first", derivedFrom:[] },
+  vega: { order:"first", derivedFrom:[] },
+  rho: { order:"first", derivedFrom:[] },
+  gamma: { order:"second", derivedFrom:["Delta", "underlying price"] },
+  vanna: { order:"second", derivedFrom:["Delta", "implied volatility"] },
+  charm: { order:"second", derivedFrom:["Delta", "time"] },
+  vomma: { order:"second", derivedFrom:["Vega", "implied volatility"] },
+  veta: { order:"second", derivedFrom:["Vega", "time"] },
+  speed: { order:"third", derivedFrom:["Gamma", "underlying price"] },
+  zomma: { order:"third", derivedFrom:["Gamma", "implied volatility"] },
+  color: { order:"third", derivedFrom:["Gamma", "time"] },
+  ultima: { order:"third", derivedFrom:["Vomma", "implied volatility"] },
 };
 const GREEK_ORDERS = {
   first: { label: "1st order · pink", series: ["delta","theta","vega","rho"].map(name=>[name,GREEK_COLORS[name]]) },
@@ -224,7 +224,7 @@ function GreekOrderChart({ history = [], state, symbol }) {
   return <ChartShell expanded={expanded} setExpanded={setExpanded} className={`greek-order-chart order-${order}`}>
     <div className="greek-chart-header"><div><span>LIVE OPTIONS GREEKS</span><h2>{symbol} · OI-weighted chain Greeks</h2></div><div className="greek-header-actions"><div className="greek-order-tabs" role="tablist">{Object.entries(GREEK_ORDERS).map(([key,item])=><button role="tab" aria-selected={order===key} className={order===key?"active":""} key={key} onClick={()=>{setOrder(key);setCursor(null)}}>{item.label}</button>)}</div><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded,zoom,onZoom:zoomChart}}/></div></div>
     <div className="greek-chart-legend">{config.series.map(([name,color])=><div key={name}><i style={{backgroundColor:color}}/><span>{pretty(name)}</span><b>{formatValue(seriesValue(rows.at(-1)??{},name))}</b></div>)}</div>
-    {(missingSeries>0||rejectedFirstOrder)&&<div className={`greek-data-warning ${rejectedFirstOrder?"error":""}`} role="status">{rejectedFirstOrder?"First-order source values are all zero. The chart will not treat this as a valid live signal; verify the Render deployment and ThetaData payload.":`${missingSeries} ${config.label} series unavailable in the latest persisted state. Missing history is not converted to zero.`}</div>}
+    {(missingSeries>0||rejectedFirstOrder)&&<div className={`greek-data-warning ${rejectedFirstOrder?"error":""}`} role="status">{rejectedFirstOrder?"ThetaData supplied zero for every first-order Greek in this snapshot. The engine continues streaming the other orders, but does not invent first-order values. Check market hours and the live engine error/status details.":`${missingSeries} ${config.label} series unavailable in the latest persisted state. Missing history is not converted to zero.`}</div>}
     <div className="greek-chart-stage" onWheel={event=>{event.preventDefault();const anchor=chartCursor(event,dims,rows.length,maxAbs);setCursor({...anchor,value:scale.unproject(anchor.value)});if(event.shiftKey)viewport.move(event.deltaY>0?10:-10);else zoomChart(event.deltaY<0?.5:-.5,anchor.index)}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={()=>{drag.current=null}} onPointerLeave={()=>{drag.current=null;setCursor(null)}}>
       <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`${config.label} live options Greeks over time with signed exposure on the y axis`}>
         <title>{config.label} live options Greeks for {symbol}</title><desc>The horizontal axis is observation time and the vertical axis is signed open-interest-weighted Greek exposure.</desc>
@@ -292,7 +292,7 @@ function GreekMultiSelect({selected,onChange}){
   const title=name=>name.charAt(0).toUpperCase()+name.slice(1);
   return <div className="greek-selector" aria-label="Choose Greek series to display">
     <div className="greek-selector-head"><span>DISPLAYED SERIES · {selected.length}/{ALL_GREEKS.length}</span><button type="button" onClick={()=>onChange(ALL_GREEKS.map(([name])=>name))}>Select all</button></div>
-    <div className="greek-selector-groups">{Object.entries(GREEK_ORDERS).map(([order,configuration])=><fieldset className={`greek-selector-group order-${order}`} key={order}><legend>{order.toUpperCase()} ORDER</legend><div>{configuration.series.map(([name,color])=>{const metadata=GREEK_CATALOG[name];return <label key={name}><input type="checkbox" checked={selected.includes(name)} onChange={()=>toggle(name)}/><i style={{backgroundColor:color}}/><span>{title(name)} ({metadata.lowest}, {metadata.highest})</span></label>})}</div></fieldset>)}</div>
+    <div className="greek-selector-groups">{Object.entries(GREEK_ORDERS).map(([order,configuration])=><fieldset className={`greek-selector-group order-${order}`} key={order}><legend>{order.toUpperCase()} ORDER</legend><div>{configuration.series.map(([name,color])=>{const metadata=GREEK_CATALOG[name],derivation=metadata.derivedFrom.length?` (${metadata.derivedFrom.join(", ")})`:"";return <label key={name} title={metadata.derivedFrom.length?`${title(name)} is derived from ${metadata.derivedFrom.join(" and ")}`:`${title(name)} is a first-order Greek`}><input type="checkbox" checked={selected.includes(name)} onChange={()=>toggle(name)}/><i style={{backgroundColor:color}}/><span>{title(name)}{derivation}</span></label>})}</div></fieldset>)}</div>
     <small>Choose one or more variables. At least one remains selected.</small>
   </div>;
 }
@@ -336,7 +336,7 @@ function CustomGreekChart({chart,index,history,state,symbol,onChange,onRemove,ca
 }
 
 function CustomGreekWorkspace({history,state,symbol}){
-  const nextId=useRef(2),[charts,setCharts]=useState([{id:1,selected:["gamma","vanna","charm"]}]);
+  const nextId=useRef(2),[charts,setCharts]=useState([{id:1,selected:["delta","theta","vega","rho"]}]);
   const addChart=()=>setCharts(current=>current.length>=5?current:[...current,{id:nextId.current++,selected:["delta","gamma","vanna"]}]);
   return <section id="custom-greeks" className="custom-greek-workspace overview-section"><OverviewSectionHeading number="04" title="Build your Greek graphs" description="Select one, several, or every Greek. Each graph follows the live stream independently." action={<button className="add-greek-chart" disabled={charts.length>=5} onClick={addChart}>+ Add graph <span>{charts.length}/5</span></button>}/><div className="custom-graph-stack">{charts.map((chart,index)=><article className="panel chart-panel" key={chart.id}><CustomGreekChart {...{chart,index,history,state,symbol}} onChange={next=>setCharts(current=>current.map(item=>item.id===chart.id?next:item))} onRemove={()=>setCharts(current=>current.filter(item=>item.id!==chart.id))} canRemove={charts.length>1}/></article>)}</div></section>;
 }

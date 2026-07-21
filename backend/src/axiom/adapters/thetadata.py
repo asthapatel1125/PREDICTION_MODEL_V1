@@ -79,7 +79,6 @@ class ThetaDataV3Client(MarketDataPort):
             )
         self._merge_open_interest(rows, oi)
         self._require_all_greek_orders(rows)
-        self._require_live_first_order_values(rows)
         if rows:
             # This is the time Axiom observed a complete snapshot. Provider contract
             # timestamps may remain unchanged for quiet contracts and must not stop
