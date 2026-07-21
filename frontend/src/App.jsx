@@ -14,10 +14,15 @@ const CHART_INTERVALS = [
   ["5s", 5], ["15s", 15], ["1m", 60], ["3m", 180], ["5m", 300],
   ["15m", 900], ["30m", 1800], ["1h", 3600], ["4h", 14400], ["1D", 86400],
 ];
+const GREEK_COLORS = {
+  delta:"#ff5c8a", theta:"#ffd166", vega:"#b388ff", rho:"#2dd4bf",
+  gamma:"#4cc9f0", vanna:"#f72585", charm:"#90be6d", vomma:"#ff9f1c", veta:"#4361ee",
+  speed:"#ef476f", zomma:"#06d6a0", color:"#f4d35e", ultima:"#c77dff",
+};
 const GREEK_ORDERS = {
-  first: { label: "1st order · pink", series: [["delta", "#ff4f9a"], ["theta", "#ff79b5"], ["vega", "#d94dff"], ["rho", "#ffafd2"]] },
-  second: { label: "2nd order · sky blue", series: [["gamma", "#43bfff"], ["vanna", "#75d8ff"], ["charm", "#438dff"], ["vomma", "#a5e8ff"], ["veta", "#6aa8ff"]] },
-  third: { label: "3rd order · lime green", series: [["speed", "#a8f05a"], ["zomma", "#62df72"], ["color", "#d2ff66"], ["ultima", "#77f6a5"]] },
+  first: { label: "1st order · pink", series: ["delta","theta","vega","rho"].map(name=>[name,GREEK_COLORS[name]]) },
+  second: { label: "2nd order · sky blue", series: ["gamma","vanna","charm","vomma","veta"].map(name=>[name,GREEK_COLORS[name]]) },
+  third: { label: "3rd order · lime green", series: ["speed","zomma","color","ultima"].map(name=>[name,GREEK_COLORS[name]]) },
 };
 const FALLBACK_INSTRUMENTS = ["SPY", "QQQ", "NDX", "NQ", "ES", "YM"].map(symbol => ({
   symbol, available: ["SPY", "QQQ", "NDX"].includes(symbol),
@@ -168,8 +173,6 @@ function greekSignedScale(values){
   return {projectedMax,project,unproject};
 }
 
-const greekDash=index=>[undefined,"12 5","3 5","16 5 3 5","8 4 2 4"][index%5];
-
 function ChartHistoryNavigator({viewport}){
   const position=viewport.maxOffset-viewport.offset;
   const step=Math.max(1,Math.round(viewport.maxOffset*.05));
@@ -209,7 +212,7 @@ function GreekOrderChart({ history = [], state, symbol }) {
         {[0,1,2,3,4].map(tick=>{const projected=maxAbs-tick*maxAbs/2,value=scale.unproject(projected),yy=y(value);return <g key={`gy-${tick}`}><line className="greek-grid" x1={dims.left} x2={dims.width-dims.right} y1={yy} y2={yy}/><text className="greek-axis" x={dims.left-10} y={yy+4} textAnchor="end">{formatValue(value)}</text></g>})}
         {[0,1,2,3,4,5].map(tick=>{const index=Math.round(tick*Math.max(rows.length-1,0)/5),xx=x(index);return <g key={`gx-${tick}`}><line className="greek-grid" x1={xx} x2={xx} y1={dims.top} y2={dims.height-dims.bottom}/><text className="greek-axis" x={xx} y={dims.height-15} textAnchor="middle">{formatTime(rows[index]?.timestamp)}</text></g>})}
         <line className="greek-zero" x1={dims.left} x2={dims.width-dims.right} y1={y(0)} y2={y(0)}/>
-        {config.series.map(([name,color],seriesIndex)=>{const path=rows.map((row,index)=>`${index?"L":"M"}${x(index).toFixed(1)},${y(seriesValue(row,name)||0).toFixed(1)}`).join(" ");return <g key={name}><path className="greek-series" d={path} style={{stroke:color,strokeDasharray:greekDash(seriesIndex)}}/>{rows.length>0&&<circle className="greek-current-dot" cx={x(rows.length-1)} cy={y(seriesValue(rows.at(-1),name)||0)} r={3.5+seriesIndex*.35} style={{fill:color}}/>}</g>})}
+        {config.series.map(([name,color],seriesIndex)=>{const path=rows.map((row,index)=>`${index?"L":"M"}${x(index).toFixed(1)},${y(seriesValue(row,name)||0).toFixed(1)}`).join(" ");return <g key={name}><path className="greek-series" d={path} style={{stroke:color}}/>{rows.length>0&&<circle className="greek-current-dot" cx={x(rows.length-1)} cy={y(seriesValue(rows.at(-1),name)||0)} r={3.5+seriesIndex*.35} style={{fill:color}}/>}</g>})}
         {cursor&&<g><line className="greek-crosshair" x1={x(cursor.index)} x2={x(cursor.index)} y1={dims.top} y2={dims.height-dims.bottom}/><line className="greek-crosshair horizontal" x1={dims.left} x2={dims.width-dims.right} y1={y(cursor.value)} y2={y(cursor.value)}/>{config.series.map(([name,color])=><circle key={name} className="greek-hover-dot" cx={x(cursor.index)} cy={y(seriesValue(hovered,name)||0)} r="4" style={{fill:color}}/>)}</g>} 
       </svg>
       <ChartCoordinateTooltip {...{cursor,row:hovered,series:config.series,formatTime,formatValue,seriesValue}}/>

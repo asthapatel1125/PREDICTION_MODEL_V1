@@ -170,3 +170,6 @@ body>.chart-expanded{position:fixed!important;z-index:2147483647!important;inset
 .score-time-chart .chart-coordinate-tooltip{min-width:220px}
 @media(max-width:1250px){.score-time-chart .greek-chart-header{display:block}.score-time-chart .greek-header-actions{align-items:flex-start;max-width:none;margin-top:12px}.score-time-chart .greek-chart-controls{justify-content:flex-start}}
 @media(max-width:760px){.score-time-chart{padding:12px 10px 8px}.score-time-chart:not(.chart-expanded) .greek-chart-stage,.score-time-chart:not(.chart-expanded) .greek-chart-stage svg{height:330px;min-height:330px}.greek-axis,.score-time-chart .greek-axis{font-size:14px}.score-axis-title{font-size:13px}.score-time-chart .chart-coordinate-tooltip{min-width:175px}}
+
+/* Variable identity is independent from each order panel's accent theme. */
+.greek-series{stroke-dasharray:none!important;stroke-width:2.8;opacity:1}
