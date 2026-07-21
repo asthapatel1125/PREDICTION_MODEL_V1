@@ -114,3 +114,41 @@ body>.chart-expanded{position:fixed!important;z-index:2147483647!important;inset
 .chart-modal-backdrop .chart-history{grid-row:4}
 .chart-modal-backdrop .greek-chart-readout{grid-row:5;max-height:58px;overflow:auto}
 @media(max-width:800px){.chart-modal-backdrop>.chart-expanded{grid-template-rows:auto auto minmax(420px,1fr) auto auto;overflow:hidden!important}.chart-modal-backdrop .greek-chart-stage{min-height:420px!important}}
+
+/* Larger graph typography and a deeper black plotting field. */
+.greek-order-chart .greek-chart-stage,.custom-greek-chart .greek-chart-stage{background:#020407!important;box-shadow:inset 0 0 0 1px rgba(93,116,142,.18),inset 0 22px 90px rgba(0,0,0,.42)}
+.greek-chart-header h2{font-size:16px}
+.greek-chart-header>div>span{font-size:12px}
+.greek-order-tabs button,.timeframe-buttons button,.return-live,.expand-chart{font-size:12px}
+.greek-chart-legend span{font-size:12px}
+.greek-chart-legend b{font-size:13px}
+.greek-axis{font-size:14px;fill:#91a2b7}
+.greek-chart-readout{font-size:12px;line-height:1.45}
+.chart-history,.chart-history button{font-size:11px}
+.chart-history b{font-size:12px}
+.chart-zoom span{font-size:12px}
+.chart-zoom .zoom-reset{font-size:11px}
+.chart-coordinate-tooltip>b{font-size:14px}
+.chart-coordinate-tooltip>span{font-size:13px}
+.chart-empty{font-size:13px}
+.chart-modal-backdrop{background:#010204}
+.chart-modal-backdrop>.chart-expanded{background:#010204!important}
+
+/* Explosion and Direction score histories */
+.score-history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0 20px}
+.score-time-chart{padding:12px 13px 7px;min-width:0}
+.score-time-chart .greek-chart-header{display:block}
+.score-time-chart .greek-header-actions{align-items:flex-start;margin-top:10px}
+.score-time-chart .greek-chart-controls{justify-content:flex-start}
+.score-time-chart .greek-chart-stage{min-height:300px;background:#020407!important;box-shadow:inset 0 0 0 1px rgba(93,116,142,.18),inset 0 22px 90px rgba(0,0,0,.42)}
+.score-time-chart .greek-chart-stage svg{display:block;width:100%;min-height:300px}
+.score-history-line{fill:none;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.score-threshold{stroke:#e4bd59;stroke-width:1.5;stroke-dasharray:8 6;vector-effect:non-scaling-stroke}
+.threshold-key{background:#e4bd59!important}
+.score-time-explosion{--order-accent:#4de0bd}
+.score-time-direction{--order-accent:#86a7ff}
+.chart-modal-backdrop .score-time-chart .greek-chart-header{display:grid;grid-template-columns:minmax(280px,1fr) auto;gap:16px}
+.chart-modal-backdrop .score-time-chart .greek-header-actions{align-items:flex-end;margin-top:0}
+.chart-modal-backdrop .score-time-chart .greek-chart-stage{min-height:0!important}
+@media(max-width:1180px){.score-history-grid{grid-template-columns:1fr}.score-time-chart .greek-chart-header{display:flex}.score-time-chart .greek-header-actions{align-items:flex-end;margin-top:0}}
+@media(max-width:760px){.score-time-chart .greek-chart-header,.chart-modal-backdrop .score-time-chart .greek-chart-header{display:block}.score-time-chart .greek-header-actions,.chart-modal-backdrop .score-time-chart .greek-header-actions{align-items:flex-start;margin-top:10px}}

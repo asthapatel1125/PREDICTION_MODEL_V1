@@ -120,6 +120,22 @@ function useGreekViewport(history,state,symbol,intervalSeconds,visibleCount=96){
   return {rows,visible,offset:safeOffset,setOffset,move,isLive:safeOffset===0,maxOffset};
 }
 
+function useScoreViewport(history,state,symbol,intervalSeconds,visibleCount=96){
+  const [offset,setOffset]=useState(0);
+  const rows=useMemo(()=>{
+    const source=[...history.filter(row=>row.symbol===symbol)];
+    if(state?.symbol===symbol){const index=source.findIndex(row=>row.timestamp===state.timestamp);if(index>=0)source[index]=state;else source.push(state)}
+    const unique=[...new Map(source.filter(row=>row.timestamp).map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+    const buckets=new Map();
+    unique.forEach(row=>{const bucket=Math.floor(new Date(row.timestamp).getTime()/(intervalSeconds*1000))*intervalSeconds*1000;if(Number.isFinite(bucket))buckets.set(bucket,row)});
+    return [...buckets.entries()].map(([bucket,row])=>({...row,timestamp:new Date(bucket).toISOString()}));
+  },[history,state,symbol,intervalSeconds]);
+  useEffect(()=>setOffset(0),[symbol,intervalSeconds]);
+  const maxOffset=Math.max(0,rows.length-visibleCount),safeOffset=Math.min(offset,maxOffset),end=rows.length-safeOffset,visible=rows.slice(Math.max(0,end-visibleCount),end);
+  const move=amount=>setOffset(current=>Math.max(0,Math.min(maxOffset,Math.min(current,maxOffset)+amount)));
+  return {rows,visible,offset:safeOffset,setOffset,move,isLive:safeOffset===0,maxOffset};
+}
+
 function ChartShell({expanded,setExpanded,children,className=""}){
   const shellRef=useRef(null);
   useEffect(()=>{if(!expanded)return;const previousOverflow=document.body.style.overflow;document.body.style.overflow="hidden";const svg=shellRef.current?.querySelector(".greek-chart-stage svg"),previousAspect=svg?.getAttribute("preserveAspectRatio");svg?.setAttribute("preserveAspectRatio","none");const close=event=>event.key==="Escape"&&setExpanded(false);window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previousOverflow;if(svg){if(previousAspect===null)svg.removeAttribute("preserveAspectRatio");else svg.setAttribute("preserveAspectRatio",previousAspect)}window.removeEventListener("keydown",close)}},[expanded,setExpanded]);
@@ -136,6 +152,11 @@ function chartCursor(event,dims,rowCount,maxAbs){
   const bounds=event.currentTarget.getBoundingClientRect(),svgX=(event.clientX-bounds.left)/Math.max(bounds.width,1)*dims.width,svgY=(event.clientY-bounds.top)/Math.max(bounds.height,1)*dims.height;
   const plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom,clampedX=Math.max(dims.left,Math.min(dims.width-dims.right,svgX)),clampedY=Math.max(dims.top,Math.min(dims.height-dims.bottom,svgY));
   return {index:Math.max(0,Math.min(rowCount-1,Math.round((clampedX-dims.left)/Math.max(plotWidth,1)*Math.max(rowCount-1,0)))),value:maxAbs-(clampedY-dims.top)/Math.max(plotHeight,1)*maxAbs*2,left:(clampedX/dims.width)*100,top:(clampedY/dims.height)*100};
+}
+
+function chartCursorRange(event,dims,rowCount,minValue,maxValue){
+  const cursor=chartCursor(event,dims,rowCount,1),bounds=event.currentTarget.getBoundingClientRect(),svgY=(event.clientY-bounds.top)/Math.max(bounds.height,1)*dims.height,plotHeight=dims.height-dims.top-dims.bottom,clampedY=Math.max(dims.top,Math.min(dims.height-dims.bottom,svgY));
+  return {...cursor,value:maxValue-(clampedY-dims.top)/Math.max(plotHeight,1)*(maxValue-minValue)};
 }
 
 function greekSignedScale(values){
@@ -195,6 +216,35 @@ function GreekOrderChart({ history = [], state, symbol }) {
       {!rows.length&&<div className="chart-empty">Waiting for the first live Options Pro state…</div>}
     </div>
     <ChartHistoryNavigator viewport={viewport}/><div className="greek-chart-readout"><span>Wheel: zoom at cursor · Shift+wheel/drag: history</span><span>{viewport.isLive?"Following current stream":`${viewport.offset} buckets behind live`}</span><span>X · {formatTime(hovered?.timestamp)}</span>{config.series.map(([name,color])=><span key={name}><i style={{backgroundColor:color}}/>{pretty(name)} Y · {formatValue(seriesValue(hovered??{},name))}</span>)}</div>
+  </ChartShell>;
+}
+
+function ScoreTimeChart({history=[],state,symbol,metric}){
+  const config=metric==="explosion"?{title:"EXPLOSION SCORE",color:"#4de0bd",min:0,max:1,threshold:number(state?.active_thresholds?.explosion_min,.58),format:value=>number(value).toFixed(2)}:{title:"DIRECTION SCORE",color:"#86a7ff",min:-3,max:3,threshold:number(state?.active_thresholds?.direction_min,2),format:value=>`${number(value)>0?"+":""}${number(value).toFixed(0)}`};
+  const [intervalSeconds,setIntervalSeconds]=useState(5),[expanded,setExpanded]=useState(false),[zoom,setZoom]=useState(1),[cursor,setCursor]=useState(null);
+  const drag=useRef(null),viewport=useScoreViewport(history,state,symbol,intervalSeconds,Math.max(12,Math.round((expanded?140:84)/zoom))),rows=viewport.visible;
+  const dims={width:1200,height:expanded?700:320,left:82,right:28,top:22,bottom:52},plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
+  const seriesValue=row=>number(row?.[metric]?.value,NaN),x=index=>dims.left+index*plotWidth/Math.max(1,rows.length-1),y=value=>dims.top+(config.max-value)*plotHeight/Math.max(config.max-config.min,1e-9);
+  const formatTime=value=>value?new Date(value).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—",hovered=rows[cursor?.index??rows.length-1];
+  const zoomChart=(amount,anchorIndex=cursor?.index??rows.length-1)=>{const next=Math.max(1,Math.min(8,Math.round((zoom+amount)*2)/2));if(next===zoom)return;const fraction=rows.length>1?anchorIndex/(rows.length-1):1,globalIndex=viewport.rows.length-viewport.offset-rows.length+anchorIndex,nextCount=Math.max(12,Math.round((expanded?140:84)/next)),nextIndex=Math.round(fraction*Math.max(nextCount-1,0)),nextOffset=Math.max(0,Math.min(Math.max(0,viewport.rows.length-nextCount),viewport.rows.length-(globalIndex-nextIndex+nextCount)));setZoom(next);viewport.setOffset(nextOffset);setCursor(current=>current?{...current,index:nextIndex}:current)};
+  const cursorAt=event=>chartCursorRange(event,dims,rows.length,config.min,config.max);
+  const onPointerMove=event=>{const next=cursorAt(event);setCursor(next);if(drag.current){const delta=event.clientX-drag.current.x;if(Math.abs(delta)>3)drag.current.moved=true;viewport.setOffset(Math.max(0,Math.min(viewport.maxOffset,drag.current.offset-Math.round(delta/7))))}};
+  const onPointerDown=event=>{drag.current={x:event.clientX,offset:viewport.offset,moved:false};event.currentTarget.setPointerCapture(event.pointerId)},onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
+  const path=rows.map((row,index)=>`${index?"L":"M"}${x(index).toFixed(1)},${y(seriesValue(row)).toFixed(1)}`).join(" "),thresholds=metric==="direction"?[config.threshold,-config.threshold]:[config.threshold];
+  return <ChartShell expanded={expanded} setExpanded={setExpanded} className={`score-time-chart score-time-${metric}`}>
+    <div className="greek-chart-header"><div><span>LIVE SCORE HISTORY</span><h2>{symbol} · {config.title} VALUE VS TIME</h2></div><div className="greek-header-actions"><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded,zoom,onZoom:zoomChart}}/></div></div>
+    <div className="greek-chart-legend"><div><i style={{backgroundColor:config.color}}/><span>{config.title}</span><b>{config.format(seriesValue(rows.at(-1)))}</b></div><div><i className="threshold-key"/><span>ACTIVE THRESHOLD</span><b>{metric==="direction"?`±${config.threshold.toFixed(0)}`:config.threshold.toFixed(2)}</b></div></div>
+    <div className="greek-chart-stage" onWheel={event=>{event.preventDefault();const anchor=cursorAt(event);setCursor(anchor);if(event.shiftKey)viewport.move(event.deltaY>0?10:-10);else zoomChart(event.deltaY<0?.5:-.5,anchor.index)}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={()=>{drag.current=null}} onPointerLeave={()=>{drag.current=null;setCursor(null)}}>
+      <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`${config.title} plotted against observation time`}><title>{symbol} {config.title} versus time</title><desc>Live and stored score values with the current alert threshold.</desc>
+        {[0,1,2,3,4,5,6].map(tick=>{const value=config.max-tick*(config.max-config.min)/6,yy=y(value);return <g key={`score-y-${tick}`}><line className="greek-grid" x1={dims.left} x2={dims.width-dims.right} y1={yy} y2={yy}/><text className="greek-axis" x={dims.left-10} y={yy+4} textAnchor="end">{metric==="direction"?value.toFixed(0):value.toFixed(2)}</text></g>})}
+        {[0,1,2,3,4,5].map(tick=>{const index=Math.round(tick*Math.max(rows.length-1,0)/5),xx=x(index);return <g key={`score-x-${tick}`}><line className="greek-grid" x1={xx} x2={xx} y1={dims.top} y2={dims.height-dims.bottom}/><text className="greek-axis" x={xx} y={dims.height-15} textAnchor="middle">{formatTime(rows[index]?.timestamp)}</text></g>})}
+        {thresholds.map(value=><line key={value} className="score-threshold" x1={dims.left} x2={dims.width-dims.right} y1={y(value)} y2={y(value)}/>)}
+        {metric==="direction"&&<line className="greek-zero" x1={dims.left} x2={dims.width-dims.right} y1={y(0)} y2={y(0)}/>}<path className="score-history-line" d={path} style={{stroke:config.color}}/>
+        {rows.length>0&&<circle className="greek-current-dot" cx={x(rows.length-1)} cy={y(seriesValue(rows.at(-1)))} r="4.5" style={{fill:config.color}}/>}
+        {cursor&&hovered&&<g><line className="greek-crosshair" x1={x(cursor.index)} x2={x(cursor.index)} y1={dims.top} y2={dims.height-dims.bottom}/><line className="greek-crosshair horizontal" x1={dims.left} x2={dims.width-dims.right} y1={y(cursor.value)} y2={y(cursor.value)}/><circle className="greek-hover-dot" cx={x(cursor.index)} cy={y(seriesValue(hovered))} r="5" style={{fill:config.color}}/></g>}
+      </svg>{cursor&&hovered&&<div className="chart-coordinate-tooltip" style={{left:`${cursor.left}%`,top:`${Math.max(16,Math.min(82,cursor.top))}%`,transform:cursor.left>68?"translate(calc(-100% - 12px),-50%)":"translate(12px,-50%)"}}><b>{formatTime(hovered.timestamp)}</b><span>Cursor Y {config.format(cursor.value)}</span><span><i style={{backgroundColor:config.color}}/>{config.title} {config.format(seriesValue(hovered))}</span></div>}{!rows.length&&<div className="chart-empty">Waiting for persisted live score history…</div>}
+    </div>
+    <ChartHistoryNavigator viewport={viewport}/><div className="greek-chart-readout"><span>Wheel: zoom at cursor · Shift+wheel/drag: history</span><span>{viewport.isLive?"Following current stream":`${viewport.offset} buckets behind live`}</span><span>{formatTime(hovered?.timestamp)} · {config.format(seriesValue(hovered))}</span></div>
   </ChartShell>;
 }
 
@@ -462,6 +512,7 @@ export default function Home() {
     <FocusView state={state} symbol={symbol} engine={engine} decision={optionsDecision} lastQualifiedAlert={lastQualifiedAlert}/>
     <FiveMinuteForecast history={visualHistory} state={state} symbol={symbol}/>
     <section id="score-modules" className="overview-section"><OverviewSectionHeading number="02" title="Signal scores" description="Explosion, Direction, and Pressure aligned in one viewport row."/><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div></section>
+    <div className="score-history-grid"><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="explosion"/></article><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="direction"/></article></div>
     <section id="greek-orders" className="overview-section"><OverviewSectionHeading number="03" title="Greek orders" description="Pink first-order, sky-blue second-order, and lime-green third-order live exposures."/><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article></section>
     <CustomGreekWorkspace history={visualHistory} state={state} symbol={symbol}/>
     <section id="live-alerts" className="overview-section"><OverviewSectionHeading number="05" title="Live Options Pro bias alerts" description="Qualified Explosion, Direction, Pressure, Confidence, and Risk events."/><article className="panel alerts-panel"><header className="panel-head table-head"><div><span>LIVE OPTIONS PRO BIAS ALERTS</span><h2>Options-pressure decisions only</h2></div></header><div className="table-wrap"><table><thead><tr><th>TIME</th><th>INSTRUMENT</th><th>BIAS</th><th>EXPLOSION</th><th>DIR. SCORE</th><th>PRESSURE</th><th>OPTIONS CONF.</th><th>REGIME</th><th>RISK</th></tr></thead><tbody>{liveBiasAlerts.map(a=><tr key={a.id}><td>{a.time}</td><td><b>{a.symbol}</b></td><td><span className={`direction-pill ${a.direction.toLowerCase()}`}>{biasLabel(a.direction)}</span></td><td>{a.explosion}</td><td>{a.score}</td><td>{a.pressure>0?"+":""}{number(a.pressure).toFixed(2)}</td><td>{pct(a.confidence)}</td><td>{a.regime}</td><td>{pretty(a.risk)}</td></tr>)}</tbody></table>{!liveBiasAlerts.length&&<div className="empty-state">WAIT · no live Options Pro bias has crossed every pressure threshold yet.</div>}</div></article></section></>}
