@@ -303,6 +303,21 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 .custom-greek-chart:not(.chart-expanded) .greek-chart-stage{min-height:330px!important}
 .custom-greek-chart:not(.chart-expanded) .greek-chart-stage svg{position:absolute;inset:0;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important}
 .custom-greek-chart:not(.chart-expanded) .greek-chart-readout{font-size:10px;line-height:1.45}
+.custom-greek-chart .chart-history{grid-template-columns:auto minmax(70px,1fr) auto auto;gap:6px;padding:7px 8px}
+.custom-greek-chart .chart-history>b{display:none}
+.custom-greek-chart .chart-history button{min-width:0;padding:6px 8px;white-space:nowrap;font-size:9px;line-height:1.2}
+.custom-greek-chart .chart-history input{min-width:50px}
+.custom-greek-chart .greek-chart-readout{overflow:hidden}
+.custom-greek-chart .greek-chart-readout>span{min-width:0;white-space:normal}
+.chart-modal-backdrop>.custom-greek-chart .greek-chart-header{display:grid!important;grid-template-columns:minmax(270px,.7fr) minmax(420px,1.3fr);align-items:start;gap:18px}
+.chart-modal-backdrop>.custom-greek-chart .custom-chart-actions{width:100%;max-width:none;flex-wrap:nowrap;justify-content:flex-end}
+.chart-modal-backdrop>.custom-greek-chart .custom-chart-actions .greek-selector{width:min(640px,42vw);min-width:320px;flex:0 1 640px}
+.chart-modal-backdrop>.custom-greek-chart .remove-chart{flex:0 0 auto}
+.chart-modal-backdrop>.custom-greek-chart .custom-time-row{overflow:hidden}
+.chart-modal-backdrop>.custom-greek-chart .custom-time-row .greek-chart-controls{flex-wrap:nowrap}
+.chart-modal-backdrop>.custom-greek-chart .greek-axis{font-size:13px}
+.chart-modal-backdrop>.custom-greek-chart .first-order-lane-name{font-size:13px}
+@media(max-width:1450px){.chart-modal-backdrop>.custom-greek-chart .greek-chart-header{grid-template-columns:minmax(240px,.75fr) minmax(360px,1.25fr)}.chart-modal-backdrop>.custom-greek-chart .custom-chart-actions .greek-selector{width:min(520px,40vw);min-width:280px}.chart-modal-backdrop>.custom-greek-chart .custom-time-row .greek-chart-controls{flex-wrap:wrap}}
 .chart-modal-backdrop .custom-greek-chart .custom-chart-actions .greek-selector-content{width:min(850px,80vw);max-height:42vh}
 @media(max-width:900px){.custom-greek-chart .custom-chart-actions{max-width:100%;justify-content:flex-start}.custom-greek-chart .custom-chart-actions .greek-selector{width:min(100%,540px)}.custom-greek-chart .custom-chart-actions .greek-selector-content{left:0;right:auto;width:min(760px,88vw)}.custom-time-row{justify-content:flex-start}.custom-time-row .greek-chart-controls{justify-content:flex-start}}
 @media(max-width:620px){.custom-greek-chart .custom-chart-actions{width:100%}.custom-greek-chart .custom-chart-actions .greek-selector{min-width:0;width:100%}.custom-greek-chart .custom-chart-actions .greek-selector-content{position:fixed;inset:auto 10px 10px;width:auto;max-height:65vh}.custom-time-row{overflow-x:auto}.custom-time-row .greek-chart-controls{width:max-content;min-width:100%;flex-wrap:nowrap}}
