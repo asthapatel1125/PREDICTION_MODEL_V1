@@ -213,9 +213,14 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const missingSeries=latestValues.filter(value=>!Number.isFinite(value)).length;
   const rejectedFirstOrder=order==="first"&&latestValues.length>0&&latestValues.every(value=>Number.isFinite(value)&&Math.abs(value)<1e-15);
   const scale=greekSignedScale(values),maxAbs=order==="first"?1:scale.projectedMax;
-  const firstOrderScales=Object.fromEntries(config.series.map(([name])=>[name,greekSignedScale(rows.map(row=>seriesValue(row,name)).filter(Number.isFinite))]));
+  const firstOrderRanges=Object.fromEntries(config.series.map(([name])=>{
+    const seriesValues=rows.map(row=>seriesValue(row,name)).filter(Number.isFinite),minimum=Math.min(...seriesValues,0),maximum=Math.max(...seriesValues,0);
+    const rawRange=maximum-minimum,center=(maximum+minimum)/2,halfRange=Math.max(rawRange/2,Math.abs(center)*.0025,1e-12);
+    return [name,{center,halfRange,changing:rawRange>Math.max(Math.abs(center)*1e-9,1e-15)}];
+  }));
+  const changingSeriesCount=order==="first"?config.series.filter(([name])=>firstOrderRanges[name].changing).length:liveSeriesCount;
   const x=index=>dims.left+index*plotWidth/Math.max(1,rows.length-1);
-  const projectValue=(value,name)=>order==="first"?firstOrderScales[name].project(value)/firstOrderScales[name].projectedMax:scale.project(value)/scale.projectedMax;
+  const projectValue=(value,name)=>order==="first"?Math.max(-1,Math.min(1,(value-firstOrderRanges[name].center)/firstOrderRanges[name].halfRange)):scale.project(value)/scale.projectedMax;
   const y=(value,name)=>dims.top+(1-projectValue(value,name))*plotHeight/2;
   const yProjected=value=>dims.top+(1-value)*plotHeight/2;
   const formatValue=value=>{const parsed=optionalNumber(value);if(!Number.isFinite(parsed))return "—";const magnitude=Math.abs(parsed);return magnitude>0&&magnitude<.01?parsed.toExponential(3):parsed.toFixed(4)};
@@ -227,9 +232,9 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
   return <ChartShell expanded={expanded} setExpanded={setExpanded} className={`greek-order-chart order-${order}`}>
     <div className="greek-chart-header"><div><span>LIVE OPTIONS GREEKS</span><h2>{symbol} · OI-weighted chain Greeks</h2></div><div className="greek-header-actions"><div className="greek-order-tabs" role="tablist">{Object.entries(GREEK_ORDERS).map(([key,item])=><button role="tab" aria-selected={order===key} className={order===key?"active":""} key={key} onClick={()=>{setOrder(key);setCursor(null)}}>{item.label}</button>)}</div><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded,zoom,onZoom:zoomChart}}/></div></div>
-    <div className="greek-stream-status" aria-live="polite"><span className={viewport.isLive&&liveSeriesCount?"is-live":"is-waiting"}>● {viewport.isLive&&liveSeriesCount?"STREAMING":"WAITING"}</span><b>{liveSeriesCount}/{config.series.length} series</b><small>{rows.length?`Latest ${formatTime(rows.at(-1)?.timestamp)}`:"No observations yet"}</small></div>
+    <div className="greek-stream-status" aria-live="polite"><span className={viewport.isLive&&liveSeriesCount?"is-live":"is-waiting"}>● {viewport.isLive&&liveSeriesCount?"STREAMING":"WAITING"}</span><b>{liveSeriesCount}/{config.series.length} series · {rows.length} points{order==="first"?` · ${changingSeriesCount} changing`:""}</b><small>{rows.length?`Latest ${formatTime(rows.at(-1)?.timestamp)}`:"No observations yet"}</small></div>
     <div className="greek-chart-legend">{config.series.map(([name,color])=><div key={name}><i style={{backgroundColor:color}}/><span>{pretty(name)}</span><b>{formatValue(seriesValue(rows.at(-1)??{},name))}</b></div>)}</div>
-    {order==="first"&&<div className="first-order-scale-note">PER-SERIES AUTO SCALE · line height is relative to each Greek's visible range · legend and hover values remain actual</div>}
+    {order==="first"&&<div className="first-order-scale-note">VISIBLE-RANGE AUTO SCALE · each line expands its real minimum-to-maximum movement · legend and hover values remain actual ThetaData values</div>}
     {(missingSeries>0||rejectedFirstOrder)&&<div className={`greek-data-warning ${rejectedFirstOrder?"error":""}`} role="status">{rejectedFirstOrder?"ThetaData supplied zero for every first-order Greek in this snapshot. The engine continues streaming the other orders, but does not invent first-order values. Check market hours and the live engine error/status details.":`${missingSeries} ${config.label} series unavailable in the latest persisted state. Missing history is not converted to zero.`}</div>}
     <div className="greek-chart-stage" onWheel={event=>{event.preventDefault();const anchor=chartCursor(event,dims,rows.length,1);setCursor({...anchor,value:order==="first"?anchor.value:scale.unproject(anchor.value*scale.projectedMax)});if(event.shiftKey)viewport.move(event.deltaY>0?10:-10);else zoomChart(event.deltaY<0?.5:-.5,anchor.index)}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={()=>{drag.current=null}} onPointerLeave={()=>{drag.current=null;setCursor(null)}}>
       <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`${config.label} live options Greeks over time with signed exposure on the y axis`}>
