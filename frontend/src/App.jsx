@@ -209,6 +209,7 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const seriesValue=(row,name)=>optionalNumber(row?.supporting_indicators?.[`greek_${name}`]);
   const values=rows.flatMap(row=>config.series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
   const latestValues=config.series.map(([name])=>seriesValue(rows.at(-1),name));
+  const liveSeriesCount=latestValues.filter(Number.isFinite).length;
   const missingSeries=latestValues.filter(value=>!Number.isFinite(value)).length;
   const rejectedFirstOrder=order==="first"&&latestValues.length>0&&latestValues.every(value=>Number.isFinite(value)&&Math.abs(value)<1e-15);
   const scale=greekSignedScale(values),maxAbs=order==="first"?1:scale.projectedMax;
@@ -226,6 +227,7 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
   return <ChartShell expanded={expanded} setExpanded={setExpanded} className={`greek-order-chart order-${order}`}>
     <div className="greek-chart-header"><div><span>LIVE OPTIONS GREEKS</span><h2>{symbol} · OI-weighted chain Greeks</h2></div><div className="greek-header-actions"><div className="greek-order-tabs" role="tablist">{Object.entries(GREEK_ORDERS).map(([key,item])=><button role="tab" aria-selected={order===key} className={order===key?"active":""} key={key} onClick={()=>{setOrder(key);setCursor(null)}}>{item.label}</button>)}</div><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded,zoom,onZoom:zoomChart}}/></div></div>
+    <div className="greek-stream-status" aria-live="polite"><span className={viewport.isLive&&liveSeriesCount?"is-live":"is-waiting"}>● {viewport.isLive&&liveSeriesCount?"STREAMING":"WAITING"}</span><b>{liveSeriesCount}/{config.series.length} series</b><small>{rows.length?`Latest ${formatTime(rows.at(-1)?.timestamp)}`:"No observations yet"}</small></div>
     <div className="greek-chart-legend">{config.series.map(([name,color])=><div key={name}><i style={{backgroundColor:color}}/><span>{pretty(name)}</span><b>{formatValue(seriesValue(rows.at(-1)??{},name))}</b></div>)}</div>
     {order==="first"&&<div className="first-order-scale-note">PER-SERIES AUTO SCALE · line height is relative to each Greek's visible range · legend and hover values remain actual</div>}
     {(missingSeries>0||rejectedFirstOrder)&&<div className={`greek-data-warning ${rejectedFirstOrder?"error":""}`} role="status">{rejectedFirstOrder?"ThetaData supplied zero for every first-order Greek in this snapshot. The engine continues streaming the other orders, but does not invent first-order values. Check market hours and the live engine error/status details.":`${missingSeries} ${config.label} series unavailable in the latest persisted state. Missing history is not converted to zero.`}</div>}
@@ -343,9 +345,12 @@ function CustomGreekChart({chart,index,history,state,symbol,onChange,onRemove,ca
 }
 
 function CustomGreekWorkspace({history,state,symbol}){
-  const nextId=useRef(2),[charts,setCharts]=useState([{id:1,selected:["delta","theta","vega","rho"]}]);
-  const addChart=()=>setCharts(current=>current.length>=5?current:[...current,{id:nextId.current++,selected:["delta","gamma","vanna"]}]);
-  return <section id="custom-greeks" className="custom-greek-workspace overview-section"><OverviewSectionHeading number="04" title="Build your Greek graphs" description="Select one, several, or every Greek. Each graph follows the live stream independently." action={<button className="add-greek-chart" disabled={charts.length>=5} onClick={addChart}>+ Add graph <span>{charts.length}/5</span></button>}/><div className="custom-graph-stack">{charts.map((chart,index)=><article className="panel chart-panel" key={chart.id}><CustomGreekChart {...{chart,index,history,state,symbol}} onChange={next=>setCharts(current=>current.map(item=>item.id===chart.id?next:item))} onRemove={()=>setCharts(current=>current.filter(item=>item.id!==chart.id))} canRemove={charts.length>1}/></article>)}</div></section>;
+  const nextId=useRef(3),[charts,setCharts]=useState([
+    {id:1,selected:["delta","theta","vega","rho"]},
+    {id:2,selected:["gamma","vanna","charm"]},
+  ]);
+  const addChart=()=>setCharts(current=>current.length>=10?current:[...current,{id:nextId.current++,selected:["delta","gamma","speed"]}]);
+  return <section id="custom-greeks" className="custom-greek-workspace overview-section"><OverviewSectionHeading number="04" title="Build your Greek graphs" description="Two graphs per row. Select one, several, or every Greek; each graph follows the live stream independently." action={<button className="add-greek-chart" disabled={charts.length>=10} onClick={addChart}>+ Add graph <span>{charts.length}/10</span></button>}/><div className="custom-graph-stack">{charts.map((chart,index)=><article className="panel chart-panel" key={chart.id}><CustomGreekChart {...{chart,index,history,state,symbol}} onChange={next=>setCharts(current=>current.map(item=>item.id===chart.id?next:item))} onRemove={()=>setCharts(current=>current.filter(item=>item.id!==chart.id))} canRemove={charts.length>1}/></article>)}</div></section>;
 }
 
 function StreamingPriceChart({ symbol, liveState, alert }) {

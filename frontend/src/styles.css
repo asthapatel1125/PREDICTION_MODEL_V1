@@ -245,3 +245,15 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 .chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage{min-width:1320px!important;min-height:700px!important;height:700px!important}
 .chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage>svg{min-width:1320px!important;min-height:700px!important}
 @media(max-width:800px){.chart-modal-backdrop>.chart-expanded.custom-greek-chart{width:1250px!important;min-width:1250px!important;padding:10px!important}.chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage,.chart-modal-backdrop>.custom-greek-chart>.greek-chart-stage>svg{min-width:1180px!important}}
+
+/* Live first-order visibility and two-column custom graph workspace. */
+.greek-stream-status{display:flex;align-items:center;gap:10px;margin:7px 0 2px;color:#718196;font:10px var(--font-mono)}
+.greek-stream-status span{padding:4px 7px;border:1px solid #314154;border-radius:5px}.greek-stream-status span.is-live{border-color:rgba(77,224,189,.42);color:var(--teal);background:rgba(77,224,189,.07)}.greek-stream-status span.is-waiting{border-color:rgba(226,188,88,.4);color:var(--gold);background:rgba(226,188,88,.07)}
+.greek-stream-status b{color:#b6c4d2;font-weight:500}.greek-stream-status small{margin-left:auto;color:#718196;font:10px var(--font-mono)}
+.custom-graph-stack{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.custom-graph-stack>.chart-panel{min-width:0}
+.custom-graph-stack .custom-greek-chart:not(.chart-expanded) .greek-chart-header{display:block}
+.custom-graph-stack .custom-greek-chart:not(.chart-expanded) .custom-chart-actions{align-items:flex-start;margin-top:8px}
+.custom-graph-stack .custom-greek-chart:not(.chart-expanded) .greek-chart-controls{justify-content:flex-start}
+@media(max-width:1100px){.custom-graph-stack{grid-template-columns:1fr}}
+@media(max-width:700px){.greek-stream-status{align-items:flex-start;flex-wrap:wrap}.greek-stream-status small{width:100%;margin-left:0}}
