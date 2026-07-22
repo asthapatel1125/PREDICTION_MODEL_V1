@@ -300,8 +300,8 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 .custom-greek-chart:not(.chart-expanded) .greek-axis{font-size:14px;font-weight:500}
 .custom-greek-chart:not(.chart-expanded) .first-order-lane-name{font-size:14px;font-weight:700;letter-spacing:.07em}
 .custom-greek-chart:not(.chart-expanded) .greek-series{stroke-width:3.4!important}
-.custom-greek-chart:not(.chart-expanded) .greek-chart-stage{min-height:430px!important}
-.custom-greek-chart:not(.chart-expanded) .greek-chart-stage svg{min-height:430px!important;max-height:430px!important}
+.custom-greek-chart:not(.chart-expanded) .greek-chart-stage{min-height:330px!important}
+.custom-greek-chart:not(.chart-expanded) .greek-chart-stage svg{position:absolute;inset:0;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important}
 .custom-greek-chart:not(.chart-expanded) .greek-chart-readout{font-size:10px;line-height:1.45}
 .chart-modal-backdrop .custom-greek-chart .custom-chart-actions .greek-selector-content{width:min(850px,80vw);max-height:42vh}
 @media(max-width:900px){.custom-greek-chart .custom-chart-actions{max-width:100%;justify-content:flex-start}.custom-greek-chart .custom-chart-actions .greek-selector{width:min(100%,540px)}.custom-greek-chart .custom-chart-actions .greek-selector-content{left:0;right:auto;width:min(760px,88vw)}.custom-time-row{justify-content:flex-start}.custom-time-row .greek-chart-controls{justify-content:flex-start}}
