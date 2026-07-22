@@ -45,6 +45,7 @@ const FALLBACK_INSTRUMENTS = ["SPY", "QQQ", "NDX", "NQ", "ES", "YM"].map(symbol 
 }));
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const optionalNumber = (value) => value === null || value === undefined || value === "" ? NaN : number(value, NaN);
+const greekValue = (row, name) => optionalNumber(row?.greeks?.[name] ?? row?.supporting_indicators?.[`greek_${name}`]);
 const pct = (value) => `${(number(value) * 100).toFixed(1)}%`;
 const pretty = (value = "") => String(value).replaceAll("_", " ");
 const biasLabel = (value) => value === "UP" ? "LONG" : value === "DOWN" ? "SHORT" : "WAIT";
@@ -124,7 +125,7 @@ function aggregateGreekRows(history, state, symbol, intervalSeconds) {
     const bucketMs=Math.floor(new Date(row.timestamp).getTime()/(intervalSeconds*1000))*intervalSeconds*1000;
     if(!Number.isFinite(bucketMs))return;
     const bucket=buckets.get(bucketMs)??{timestamp:new Date(bucketMs).toISOString(),symbol,sums:{},counts:{}};
-    ALL_GREEKS.forEach(([name])=>{const value=optionalNumber(row.supporting_indicators?.[`greek_${name}`]);if(Number.isFinite(value)){bucket.sums[name]=(bucket.sums[name]??0)+value;bucket.counts[name]=(bucket.counts[name]??0)+1}});
+    ALL_GREEKS.forEach(([name])=>{const value=greekValue(row,name);if(Number.isFinite(value)){bucket.sums[name]=(bucket.sums[name]??0)+value;bucket.counts[name]=(bucket.counts[name]??0)+1}});
     buckets.set(bucketMs,bucket);
   });
   return [...buckets.values()].map(bucket=>({timestamp:bucket.timestamp,symbol,supporting_indicators:Object.fromEntries(ALL_GREEKS.map(([name])=>[`greek_${name}`,bucket.counts[name]?bucket.sums[name]/bucket.counts[name]:null]))}));
@@ -206,7 +207,7 @@ function GreekOrderChart({ history = [], state, symbol }) {
   const viewport=useGreekViewport(history,state,symbol,intervalSeconds,Math.max(12,Math.round((expanded?120:96)/zoom))),rows=viewport.visible;
   const dims={width:1200,height:order==="first"?(expanded?820:540):(expanded?650:300),left:order==="first"?136:92,right:30,top:20,bottom:50};
   const plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
-  const seriesValue=(row,name)=>optionalNumber(row?.supporting_indicators?.[`greek_${name}`]);
+  const seriesValue=(row,name)=>greekValue(row,name);
   const values=rows.flatMap(row=>config.series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
   const latestValues=config.series.map(([name])=>seriesValue(rows.at(-1),name));
   const liveSeriesCount=latestValues.filter(Number.isFinite).length;
@@ -286,7 +287,7 @@ function ScoreTimeChart({history=[],state,symbol,metric}){
 function GreekPressureChart({history=[],state,symbol}){
   const [intervalSeconds,setIntervalSeconds]=useState(5),[expanded,setExpanded]=useState(false),[hovered,setHovered]=useState(null);
   const viewport=useGreekViewport(history,state,symbol,intervalSeconds,1),row=viewport.visible.at(-1),drag=useRef(null);
-  const values=ALL_GREEKS.map(([name,color])=>({name,color,value:number(row?.supporting_indicators?.[`greek_${name}`])})).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));
+  const values=ALL_GREEKS.map(([name,color])=>({name,color,value:number(greekValue(row,name))})).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));
   const maxAbs=Math.max(...values.map(item=>Math.abs(item.value)),1e-6),formatValue=value=>Math.abs(value)>0&&Math.abs(value)<.001?value.toExponential(2):value.toFixed(4);
   const onWheel=event=>{event.preventDefault();viewport.move(event.deltaY>0?1:-1)};
   const onPointerDown=event=>{drag.current={x:event.clientX,offset:viewport.offset,moved:false};event.currentTarget.setPointerCapture(event.pointerId)};
@@ -317,7 +318,7 @@ function CustomGreekChart({chart,index,history,state,symbol,onChange,onRemove,ca
   const drag=useRef(null),viewport=useGreekViewport(history,state,symbol,intervalSeconds,Math.max(12,Math.round((expanded?120:96)/zoom))),rows=viewport.visible;
   const series=ALL_GREEKS.filter(([name])=>chart.selected.includes(name));
   const dims={width:1200,height:expanded?650:300,left:92,right:30,top:20,bottom:50},plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
-  const seriesValue=(row,name)=>optionalNumber(row?.supporting_indicators?.[`greek_${name}`]),values=rows.flatMap(row=>series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
+  const seriesValue=(row,name)=>greekValue(row,name),values=rows.flatMap(row=>series.map(([name])=>seriesValue(row,name))).filter(Number.isFinite);
   const maxAbs=Math.max(...values.map(Math.abs),1e-6),x=point=>dims.left+point*plotWidth/Math.max(1,rows.length-1),y=value=>dims.top+(maxAbs-value)*plotHeight/(maxAbs*2);
   const formatValue=value=>{const parsed=optionalNumber(value);if(!Number.isFinite(parsed))return "—";const magnitude=Math.abs(parsed);return magnitude>0&&magnitude<.01?parsed.toExponential(3):parsed.toFixed(4)};
   const formatTime=value=>value?new Date(value).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—",hovered=rows[cursor?.index??rows.length-1];

@@ -88,6 +88,9 @@ class MarketState(FrozenModel):
     risk: ScoreResult
     micro_range: MicroRange
     timeframe_alignment: dict[str, float]
+    # Structured source-of-truth for every Greek. Optional only so historical
+    # rows written by older deployments can still be read.
+    greeks: Greeks | None = None
     supporting_indicators: dict[str, float]
     signal_checks: dict[str, bool] = Field(default_factory=dict)
     active_thresholds: dict[str, float] = Field(default_factory=dict)

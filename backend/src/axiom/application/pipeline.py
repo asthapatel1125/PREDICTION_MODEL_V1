@@ -56,7 +56,7 @@ class DecisionPipeline:
         confidence=self.confidence.calculate(explosion,direction,pressure,momentum,alignment)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,
-            timeframe_alignment=alignment,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
+            timeframe_alignment=alignment,greeks=primary.greeks,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
                 "contract_count":float(bar.contract_count),"open_interest_total":bar.open_interest,
                 **{f"greek_{name}":float(getattr(primary.greeks,name)) for name in primary.greeks.model_fields}})
         fire,expected,failed=self.signal.should_alert(state,dynamic)
