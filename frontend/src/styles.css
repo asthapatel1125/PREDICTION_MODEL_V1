@@ -257,3 +257,11 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 .custom-graph-stack .custom-greek-chart:not(.chart-expanded) .greek-chart-controls{justify-content:flex-start}
 @media(max-width:1100px){.custom-graph-stack{grid-template-columns:1fr}}
 @media(max-width:700px){.greek-stream-status{align-items:flex-start;flex-wrap:wrap}.greek-stream-status small{width:100%;margin-left:0}}
+
+/* First-order Greeks use four real-value lanes so near-zero movement remains legible. */
+.first-order-lane{fill:rgba(255,255,255,.012);stroke:#182535;stroke-width:1}
+.first-order-lane-name{font:600 12px var(--font-mono);letter-spacing:.08em}
+.greek-order-chart.order-first:not(.chart-expanded) .greek-chart-stage{height:540px;min-height:540px}
+.greek-order-chart.order-first:not(.chart-expanded) .greek-chart-stage svg{height:540px;min-height:540px;max-height:none}
+.chart-modal-backdrop>.greek-order-chart.order-first .greek-chart-stage{min-height:720px!important}
+@media(max-width:760px){.greek-order-chart.order-first:not(.chart-expanded) .greek-chart-stage,.greek-order-chart.order-first:not(.chart-expanded) .greek-chart-stage svg{height:480px;min-height:480px}}
