@@ -6,7 +6,7 @@ import {
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["One-screen focus", "decision"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
+  ["One-screen focus", "decision"], ["NQ momentum triad", "momentum-triad"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
   ["Custom Greek graphs", "custom-greeks"], ["Live alerts", "live-alerts"],
 ];
 const GREEKS = ["gamma", "vanna", "charm", "vomma", "veta", "speed", "zomma", "color", "ultima"];
@@ -68,6 +68,22 @@ function deriveOptionsDecision(state) {
   const qualified=Object.values(checks).every(Boolean)&&direction!=="NEUTRAL";
   return {qualified,direction,failed,checks,optionsConfidence,thresholds};
 }
+
+function deriveMomentumTriad(state) {
+  const stored=state?.momentum_triad;
+  if(stored)return {...stored,available:true};
+  const values={zomma:greekValue(state,"zomma"),speed:greekValue(state,"speed"),delta:greekValue(state,"delta")};
+  const available=Object.values(values).every(Number.isFinite);
+  if(!available)return {available:false,aligned:false,decision:"NEUTRAL",...values,votes:{},explanation:"Waiting for Zomma, Speed, and Delta from the live options feed."};
+  const vote=value=>value>1e-12?1:value< -1e-12?-1:0;
+  const votes=Object.fromEntries(Object.entries(values).map(([name,value])=>[name,vote(value)]));
+  const alignedLong=Object.values(votes).every(value=>value===1),alignedShort=Object.values(votes).every(value=>value===-1);
+  return {available:true,aligned:alignedLong||alignedShort,decision:alignedLong?"UP":alignedShort?"DOWN":"NEUTRAL",
+    acceleration:values.zomma,direction:values.speed,confirmation:values.delta,votes,
+    explanation:alignedLong?"Zomma acceleration, Speed direction, and Delta confirmation are all positive.":alignedShort?"Zomma acceleration, Speed direction, and Delta confirmation are all negative.":"Zomma acceleration, Speed direction, and Delta confirmation are not aligned."};
+}
+
+const signedGreek=value=>!Number.isFinite(Number(value))?"--":Math.abs(Number(value))<.001?Number(value).toExponential(3):`${Number(value)>0?"+":""}${Number(value).toFixed(4)}`;
 
 const FORECAST_GREEKS=["delta","gamma","vanna","charm","speed","zomma","color","ultima"];
 function forecastVector(row){const indicators=row?.supporting_indicators??{};return [number(row?.explosion?.value),number(row?.direction?.value)/3,number(row?.pressure?.value),number(indicators.options_confidence),number(row?.risk?.value),number(row?.dealer_hedging?.value),...FORECAST_GREEKS.map(name=>number(indicators[`greek_${name}`]))]}
@@ -485,6 +501,23 @@ function FocusView({state,symbol,engine,decision,lastQualifiedAlert}) {
   </section>;
 }
 
+function NQMomentumTriadModule({state,symbol,engine}) {
+  const triad=deriveMomentumTriad(state),tone=!triad.available||!triad.aligned?"wait":triad.decision==="UP"?"long":"short";
+  const label=triad.aligned?biasLabel(triad.decision):"WAIT";
+  const items=[
+    {key:"zomma",role:"ACCELERATION",value:triad.acceleration??triad.zomma},
+    {key:"speed",role:"DIRECTION",value:triad.direction??triad.speed},
+    {key:"delta",role:"CONFIRMATION",value:triad.confirmation??triad.delta},
+  ];
+  const voteText=vote=>vote===1?"POSITIVE":vote===-1?"NEGATIVE":"NEUTRAL";
+  return <section id="momentum-triad" className={`momentum-triad momentum-triad-${tone} overview-section`} aria-live="polite">
+    <header className="triad-header"><div><span>NQ MOMENTUM TRIAD</span><h2>{label}{triad.aligned?" ALIGNMENT":""}</h2><small>{symbol} OPTIONS -&gt; NQ PROXY · independent of the primary pressure engine</small></div><div className={`triad-decision triad-${tone}`}><span>{engine.running?"LIVE DECISION":"ENGINE IDLE"}</span><b>{label}</b><small>{triad.aligned?"3 / 3 ALIGNED":"ALIGNMENT REQUIRED"}</small></div></header>
+    <div className="triad-logic"><b>Zomma = acceleration</b><i/> <b>Speed = direction</b><i/> <b>Delta = confirmation</b><strong>When all three signs align, the module identifies an NQ momentum candidate.</strong></div>
+    <div className="triad-components">{items.map(item=>{const vote=triad.votes?.[item.key]??0;return <article className={`triad-component vote-${vote>0?"up":vote<0?"down":"flat"}`} key={item.key}><div><span>{item.key.toUpperCase()}</span><small>{item.role}</small></div><b>{signedGreek(item.value)}</b><em>{voteText(vote)}</em></article>})}</div>
+    <footer><span>{triad.explanation}</span><small>{!triad.available?"No decision: one or more source values are missing.":"Sign alignment only · research signal, not a verified probability or trade execution instruction."}</small></footer>
+  </section>;
+}
+
 function FiveMinuteForecast({history,state,symbol}){
   const forecast=useMemo(()=>deriveFiveMinuteForecast(history,state),[history,state]),tone=!forecast.ready||forecast.label==="WAIT"?"wait":forecast.label.toLowerCase(),probabilities=forecast.probabilities??{UP:0,DOWN:0,WAIT:1};
   return <article className={`move-forecast forecast-${tone}`}><div><span>EXPERIMENTAL 5-MINUTE / 30-POINT FORECAST</span><h2>{symbol} · {forecast.ready?forecast.label:"WAIT"}</h2><small>{forecast.reason}</small></div><div className="forecast-probabilities"><span>UP ≥ +30<b>{pct(probabilities.UP)}</b></span><span>WAIT<b>{pct(probabilities.WAIT)}</b></span><span>DOWN ≤ −30<b>{pct(probabilities.DOWN)}</b></span></div><div className="forecast-levels"><span>Current<b>{Number.isFinite(forecast.price)?forecast.price.toFixed(2):"—"}</b></span><span>Up level<b>{Number.isFinite(forecast.price)?(forecast.price+30).toFixed(2):"—"}</b></span><span>Down level<b>{Number.isFinite(forecast.price)?(forecast.price-30).toFixed(2):"—"}</b></span><small>{forecast.samples} labeled states · {forecast.eventCount} observed 30-point events{forecast.neighbors?` · ${forecast.neighbors} nearest analogs`:""}</small></div></article>;
@@ -575,6 +608,7 @@ export default function Home() {
     <section className="content">{view!=="Overview"?<ModulePage {...{view,state,history,alerts,performance,system,config,replay,onReplay:runReplay,notify}}/>:<><div id="overview-top" className="page-head overview-section"><div><div className="eyebrow">TRADING COMMAND</div><h1>Pressure intelligence</h1><p>Options Pro pressure bias. You confirm price independently.</p></div><div className="controls"><label>Instrument<select value={symbol} disabled={engine.running} onChange={e=>setSymbol(e.target.value)}>{instruments.map(item=><option value={item.symbol} key={item.symbol}>{item.symbol}</option>)}</select><small className={selectedInstrument?.available?"provider-ready":"provider-missing"}>{selectedInstrument?.provider}{selectedInstrument?.requirement?` · ${selectedInstrument.requirement}`:""}</small></label><label>Feed resolution<select value={resolution} onChange={e=>setResolution(Number(e.target.value))}><option value="5">5s</option><option value="15">15s</option><option value="60">1m</option></select></label><button className={engine.running?"stop":"start"} disabled={!engine.running&&!selectedInstrument?.available} onClick={toggle}><i/>{engine.running?"Stop engine":selectedInstrument?.available?"Start engine":"Feed required"}</button></div></div>
     <OverviewSectionHeading number="01" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={optionsDecision} lastQualifiedAlert={lastQualifiedAlert}/>
+    <NQMomentumTriadModule state={state} symbol={symbol} engine={engine}/>
     <details className="experimental-module"><summary>Experimental 5-minute / 30-point forecast <span>Research only</span></summary><FiveMinuteForecast history={visualHistory} state={state} symbol={symbol}/></details>
     <section id="score-modules" className="overview-section"><OverviewSectionHeading number="02" title="Signal scores" description="Explosion, Direction, and Pressure aligned in one viewport row."/><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div></section>
     <div className="score-history-grid"><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="explosion"/></article><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="direction"/></article></div>

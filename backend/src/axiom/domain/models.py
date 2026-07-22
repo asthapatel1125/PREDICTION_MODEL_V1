@@ -74,6 +74,19 @@ class MicroRange(FrozenModel):
     snapback: bool = False
 
 
+class MomentumTriad(FrozenModel):
+    """Independent Zomma/Speed/Delta options-derived NQ momentum decision."""
+    decision: Direction = Direction.NEUTRAL
+    aligned: bool = False
+    source_symbol: str
+    proxy_for: str = "NQ"
+    acceleration: float
+    direction: float
+    confirmation: float
+    votes: dict[str, int]
+    explanation: str
+
+
 class MarketState(FrozenModel):
     timestamp: datetime
     symbol: str
@@ -91,6 +104,7 @@ class MarketState(FrozenModel):
     # Structured source-of-truth for every Greek. Optional only so historical
     # rows written by older deployments can still be read.
     greeks: Greeks | None = None
+    momentum_triad: MomentumTriad | None = None
     supporting_indicators: dict[str, float]
     signal_checks: dict[str, bool] = Field(default_factory=dict)
     active_thresholds: dict[str, float] = Field(default_factory=dict)
