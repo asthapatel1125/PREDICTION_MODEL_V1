@@ -87,6 +87,20 @@ class MomentumTriad(FrozenModel):
     explanation: str
 
 
+class GammaDynamics(FrozenModel):
+    """Relative Gamma/Speed pressure with Zomma/Color intensity context."""
+    decision: Direction = Direction.NEUTRAL
+    qualified: bool = False
+    source_symbol: str
+    intensity: float = Field(ge=0, le=1)
+    pressure: float = Field(ge=-1, le=1)
+    history_points: int = Field(ge=0)
+    intensity_threshold: float = Field(ge=0, le=1)
+    inputs: dict[str, float]
+    percentiles: dict[str, float]
+    explanation: str
+
+
 class MarketState(FrozenModel):
     timestamp: datetime
     symbol: str
@@ -105,6 +119,7 @@ class MarketState(FrozenModel):
     # rows written by older deployments can still be read.
     greeks: Greeks | None = None
     momentum_triad: MomentumTriad | None = None
+    gamma_dynamics: GammaDynamics | None = None
     supporting_indicators: dict[str, float]
     signal_checks: dict[str, bool] = Field(default_factory=dict)
     active_thresholds: dict[str, float] = Field(default_factory=dict)

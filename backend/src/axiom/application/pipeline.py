@@ -10,6 +10,7 @@ import numpy as np
 
 from axiom.analytics.confidence import AlertConfidenceScorer
 from axiom.analytics.explanations import AlertExplanationEngine
+from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet
 from axiom.analytics.micro_range import MicroRangeBreakout
 from axiom.analytics.momentum_triad import NQMomentumTriad
 from axiom.analytics.profiles import AlertProfileSelector
@@ -35,6 +36,7 @@ class DecisionPipeline:
         self.confidence=AlertConfidenceScorer(config.score_weights["confidence"]); self.thresholds=AdaptiveThresholdManager()
         self.profiles=AlertProfileSelector(market_timezone); self.signal=TradeSignalGenerator(); self.explanations=AlertExplanationEngine()
         self.momentum_triad=NQMomentumTriad()
+        self.gamma_dynamics=GammaDynamicsQuartet()
         self._explosions:dict[str,deque]=defaultdict(lambda:deque(maxlen=1000)); self._performance=PerformanceWindow(); self._events:list[datetime]=[]
 
     def set_events(self,events:list[datetime])->None:self._events=events
@@ -57,9 +59,10 @@ class DecisionPipeline:
         alignment=self.mtf.alignment(bar.symbol); risk=self.risk.calculate(primary,sample)
         confidence=self.confidence.calculate(explosion,direction,pressure,momentum,alignment)
         momentum_triad=self.momentum_triad.calculate(primary.greeks,bar.symbol)
+        gamma_dynamics=self.gamma_dynamics.calculate(primary.greeks,[item.greeks for item in sample],bar.symbol)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,
-            timeframe_alignment=alignment,greeks=primary.greeks,momentum_triad=momentum_triad,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
+            timeframe_alignment=alignment,greeks=primary.greeks,momentum_triad=momentum_triad,gamma_dynamics=gamma_dynamics,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
                 "contract_count":float(bar.contract_count),"open_interest_total":bar.open_interest,
                 **{f"greek_{name}":float(getattr(primary.greeks,name)) for name in primary.greeks.model_fields}})
         fire,expected,failed=self.signal.should_alert(state,dynamic)
