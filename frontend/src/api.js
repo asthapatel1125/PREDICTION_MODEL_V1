@@ -13,6 +13,7 @@ async function request(path, options = {}) {
 export function toDashboardAlert(alert) {
   return {
     id: alert.id,
+    displayId: alert.display_id ?? null,
     timestamp: alert.timestamp,
     time: new Date(alert.timestamp).toLocaleTimeString("en-US", { timeZone:"America/New_York", hour12: false, hour:"2-digit", minute:"2-digit", second:"2-digit", fractionalSecondDigits:3, timeZoneName:"short" }),
     symbol: alert.symbol,

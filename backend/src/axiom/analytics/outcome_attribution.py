@@ -71,19 +71,30 @@ class OutcomeAttributionTracker:
             return None, None
         return max(scores, key=scores.get), min(scores, key=scores.get)
 
-    def _call_id(self,timestamp:datetime,system:str,symbol:str)->str:
-        system_code={"PRIMARY_OPTIONS":"PO","MOMENTUM_TRIAD":"MT","GAMMA_DYNAMICS":"GD"}[system]
+    def _call_id(self,timestamp:datetime,system:str)->str:
+        stream={"PRIMARY_OPTIONS":1,"MOMENTUM_TRIAD":2,"GAMMA_DYNAMICS":3}[system]
         eastern=timestamp.astimezone(self.eastern)
         milliseconds=eastern.microsecond//1000
-        return f"{eastern:%Y/%m/%d/%H/%M/%S}/{milliseconds:03d}-{system_code}-{symbol}"
+        return f"{eastern:%Y%m%d%H%M%S}{milliseconds:03d}{stream:02d}"
 
     @staticmethod
     def _pivot(kind:str,sequence:int,price:float,timestamp:datetime,record:dict[str,Any],
         scores:dict[str,float],confirmed_at:datetime)->dict[str,Any]:
+        ordered=sorted(scores.items(),key=lambda item:item[1],reverse=True)
+        strongest=ordered[0][0] if ordered else None
+        weakest=ordered[-1][0] if ordered else None
+        baseline=record.get("greek_scores_at_signal",{})
+        decays={name:float(baseline[name])-float(scores.get(name,baseline[name])) for name in baseline}
+        decay=max(decays,key=decays.get) if decays else None
+        direction=record.get("direction")
+        matched=(direction==Direction.UP.value and kind=="HIGH") or (direction==Direction.DOWN.value and kind=="LOW")
         return {"kind":kind,"sequence":sequence,"price":price,"timestamp":timestamp,
             "confirmed_at":confirmed_at,"points_from_datum":price-record["entry_price"],
             "seconds_from_alert":max(0.0,(timestamp-record["alerted_at"]).total_seconds()),
-            "greek_scores":scores}
+            "greek_scores":scores,"matched_call":matched,
+            "success_leading_greek":strongest if matched else None,
+            "strongest_greek":strongest,"weakest_greek":weakest,
+            "decay_greek":decay,"decay_amount":decays.get(decay,0.0) if decay else 0.0}
 
     def _update_turning_points(self,record:dict[str,Any],price:float,now:datetime,scores:dict[str,float])->None:
         """Reversal-confirmed zigzag; datum is the alert price, never a synthetic zero."""
@@ -199,11 +210,15 @@ class OutcomeAttributionTracker:
                 continue
             scores = self._relative_scores(symbol, system, state, direction)
             strongest, weakest = self._leaders(scores)
-            signal_id = self._call_id(now,system,symbol)
+            call_id = self._call_id(now,system)
+            # Internal persistence key stays under the existing VARCHAR(36)
+            # contract. The two-digit stream inside call_id already separates
+            # systems that fire during the same millisecond.
+            signal_id = f"{call_id}-{symbol}"
             reversal_points=max(price*.0002,.01)
             record = {
                 "id": signal_id,
-                "call_id": signal_id,
+                "call_id": call_id,
                 "system": system,
                 "mode": mode.value,
                 "symbol": symbol,
@@ -222,6 +237,7 @@ class OutcomeAttributionTracker:
                 "seconds_to_high": 0.0,
                 "seconds_to_low": 0.0,
                 "strongest_greek": strongest,
+                "leading_greek": strongest,
                 "weakest_greek": weakest,
                 "decay_greek": weakest,
                 "decision_reasons": self._decision_reasons(system, state, direction),

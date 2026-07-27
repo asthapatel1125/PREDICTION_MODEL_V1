@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from collections.abc import Sequence
 from datetime import datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
@@ -85,6 +86,11 @@ class DecisionPipeline:
     def set_events(self,events:list[datetime])->None:self._events=events
     def set_performance(self,performance:PerformanceWindow)->None:self._performance=performance
 
+    @staticmethod
+    def _display_id(timestamp:datetime,stream:int=0)->str:
+        eastern=timestamp.astimezone(ZoneInfo("America/New_York"))
+        return f"{eastern:%Y%m%d%H%M%S}{eastern.microsecond//1000:03d}{stream:02d}"
+
     def process(self,bar:MarketBar,mode:EngineMode)->PipelineResult:
         started=time.perf_counter(); completed=self.mtf.update(bar); primary=completed.get(self.config.primary_timeframe_seconds)
         if primary is None: primary=bar
@@ -123,7 +129,7 @@ class DecisionPipeline:
             alert_indicators={**state.supporting_indicators,"pressure_score":pressure.value,
                 "explosion_confidence":explosion.confidence,"direction_confidence":direction.confidence,
                 "price_confirmation_required":1.0}
-            alert=Alert(id=uuid4(),timestamp=bar.timestamp,symbol=bar.symbol,engine_mode=mode,direction=expected,confidence=options_confidence,
+            alert=Alert(id=uuid4(),display_id=self._display_id(bar.timestamp),timestamp=bar.timestamp,symbol=bar.symbol,engine_mode=mode,direction=expected,confidence=options_confidence,
                 explosion_score=explosion.value,direction_score=int(direction.value),regime=regime,profile=profile,micro_range=micro,reasoning=reasons,
                 supporting_indicators=alert_indicators,recommended_action=action,risk_level=risk_level,price=primary.close,
                 expected_move=expected_move,entry_price=None,invalidation_price=None,target_price=None,config_version=self.config.version)

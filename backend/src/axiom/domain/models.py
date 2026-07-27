@@ -129,6 +129,7 @@ class MarketState(FrozenModel):
 
 class Alert(FrozenModel):
     id: UUID = Field(default_factory=uuid4)
+    display_id: str | None = None
     timestamp: datetime
     symbol: str
     engine_mode: EngineMode
