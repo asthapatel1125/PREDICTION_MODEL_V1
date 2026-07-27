@@ -13,9 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
-from axiom.adapters.twelvedata import TwelveDataPriceClient
 from axiom.api.schemas import HealthResponse,LiveEngineRequest,ReplayRequestBody
-from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine
+from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
 from axiom.infrastructure.database import SqlAlchemyRepository,create_database

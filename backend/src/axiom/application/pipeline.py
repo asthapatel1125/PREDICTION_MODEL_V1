@@ -10,9 +10,7 @@ import numpy as np
 
 from axiom.analytics.confidence import AlertConfidenceScorer
 from axiom.analytics.explanations import AlertExplanationEngine
-from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet
 from axiom.analytics.micro_range import MicroRangeBreakout
-from axiom.analytics.momentum_triad import NQMomentumTriad
 from axiom.analytics.profiles import AlertProfileSelector
 from axiom.analytics.regime import RegimeClassifier
 from axiom.analytics.risk import RiskScorer
@@ -21,8 +19,52 @@ from axiom.analytics.signal import TradeSignalGenerator
 from axiom.analytics.thresholds import AdaptiveThresholdManager, PerformanceWindow
 from axiom.analytics.timeframes import MultiTimeframeEngine
 from axiom.config.schema import StrategyConfig
-from axiom.domain.enums import EngineMode
-from axiom.domain.models import Alert, MarketBar, MarketState, PipelineResult
+from axiom.domain.enums import Direction, EngineMode
+from axiom.domain.models import Alert, GammaDynamics, Greeks, MarketBar, MarketState, MomentumTriad, PipelineResult
+
+try:
+    from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet
+    from axiom.analytics.momentum_triad import NQMomentumTriad
+except ModuleNotFoundError:
+    # Backward-compatible single-file implementations for deployments where
+    # the optional analytics modules have not been added to GitHub yet.
+    class NQMomentumTriad:
+        def __init__(self,zero_tolerance:float=1e-12):self.zero_tolerance=zero_tolerance
+        def calculate(self,greeks:Greeks,source_symbol:str)->MomentumTriad:
+            values={"zomma":float(greeks.zomma),"speed":float(greeks.speed),"delta":float(greeks.delta)}
+            votes={name:(1 if value>self.zero_tolerance else -1 if value< -self.zero_tolerance else 0) for name,value in values.items()}
+            long=all(value==1 for value in votes.values());short=all(value==-1 for value in votes.values())
+            decision=Direction.UP if long else Direction.DOWN if short else Direction.NEUTRAL
+            explanation=("Zomma acceleration, Speed direction, and Delta confirmation are all positive." if long else
+                "Zomma acceleration, Speed direction, and Delta confirmation are all negative." if short else
+                "Zomma acceleration, Speed direction, and Delta confirmation are not aligned.")
+            return MomentumTriad(decision=decision,aligned=long or short,source_symbol=source_symbol,
+                acceleration=values["zomma"],direction=values["speed"],confirmation=values["delta"],votes=votes,explanation=explanation)
+
+    class GammaDynamicsQuartet:
+        def __init__(self,intensity_threshold:float=.65,minimum_history:int=20,zero_tolerance:float=1e-12):
+            self.intensity_threshold=intensity_threshold;self.minimum_history=minimum_history;self.zero_tolerance=zero_tolerance
+        @staticmethod
+        def _percentile(current:float,values:Sequence[float])->float:
+            samples=[abs(float(value)) for value in values]
+            if not samples:return 0.0
+            target=abs(float(current));return min(1.0,max(0.0,(sum(value<target for value in samples)+.5*sum(value==target for value in samples))/len(samples)))
+        def calculate(self,greeks:Greeks,history:Sequence[Greeks],source_symbol:str)->GammaDynamics:
+            inputs={name:float(getattr(greeks,name)) for name in ("zomma","speed","color","gamma")}
+            percentiles={name:self._percentile(value,[getattr(item,name) for item in history]) for name,value in inputs.items()}
+            intensity=(percentiles["zomma"]+percentiles["color"])/2;pressure_magnitude=(percentiles["speed"]+percentiles["gamma"])/2
+            up=inputs["speed"]>self.zero_tolerance and inputs["gamma"]>self.zero_tolerance
+            down=inputs["speed"]< -self.zero_tolerance and inputs["gamma"]< -self.zero_tolerance
+            warmed=len(history)>=self.minimum_history;qualified=warmed and intensity>=self.intensity_threshold and (up or down)
+            decision=Direction.UP if qualified and up else Direction.DOWN if qualified and down else Direction.NEUTRAL
+            pressure=pressure_magnitude if up else -pressure_magnitude if down else 0.0
+            explanation=(f"Building a relative baseline: {len(history)}/{self.minimum_history} observations." if not warmed else
+                "Gamma and Speed disagree, so signed curvature pressure is not confirmed." if not (up or down) else
+                "Gamma and Speed align, but Zomma/Color intensity is below its rolling threshold." if intensity<self.intensity_threshold else
+                f"Gamma and Speed confirm {'upward' if up else 'downward'} curvature pressure while Zomma and Color show elevated Gamma sensitivity.")
+            return GammaDynamics(decision=decision,qualified=qualified,source_symbol=source_symbol,intensity=intensity,
+                pressure=pressure,history_points=len(history),intensity_threshold=self.intensity_threshold,
+                inputs=inputs,percentiles=percentiles,explanation=explanation)
 
 
 class DecisionPipeline:

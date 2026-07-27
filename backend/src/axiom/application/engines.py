@@ -4,8 +4,22 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime,timezone
 
-from axiom.adapters.twelvedata import TwelveDataPriceClient
-from axiom.analytics.outcome_attribution import OutcomeAttributionTracker
+try:
+    from axiom.adapters.twelvedata import TwelveDataPriceClient
+except ModuleNotFoundError:
+    class TwelveDataPriceClient:
+        def __init__(self,api_key:str|None,timeout_seconds:float=10):self.api_key=api_key
+        @property
+        def enabled(self)->bool:return False
+        async def latest(self,symbol:str):return None
+
+try:
+    from axiom.analytics.outcome_attribution import OutcomeAttributionTracker
+except ModuleNotFoundError:
+    class OutcomeAttributionTracker:
+        """No-op compatibility layer until optional attribution files are deployed."""
+        def __init__(self,horizon_minutes:int=30,cooldown_seconds:int=300):pass
+        def process(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
