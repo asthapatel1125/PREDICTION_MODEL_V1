@@ -390,3 +390,19 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .five-line-log summary{grid-template-columns:178px 205px 60px 70px 1fr 110px 80px 50px;gap:10px}
 .five-line-log summary>.call-id{align-self:center;overflow:hidden;text-overflow:ellipsis}
 .table-wrap table,.gamma-log-scroll table,.outcome-scroll table{font-variant-numeric:tabular-nums}
+
+/* The navigation scrolls independently while health remains visible. */
+.sidebar{overflow:hidden}
+.side-top{min-height:0;flex:1 1 auto;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding-right:4px;scrollbar-width:thin;scrollbar-color:#38546c #080e15}
+.side-top::-webkit-scrollbar{width:7px}
+.side-top::-webkit-scrollbar-track{background:#080e15}
+.side-top::-webkit-scrollbar-thumb{border:2px solid #080e15;border-radius:8px;background:#38546c}
+.side-bottom{position:relative;z-index:2;flex:0 0 auto;background:#080e15}
+
+/* Explicit focus-state palette: LONG blue, SHORT red, WAIT/neutral yellow. */
+.focus-view-long{--bias-color:#5a9cff;--bias-rgb:90,156,255}
+.focus-view-short{--bias-color:#f05f70;--bias-rgb:240,95,112}
+.focus-view-neutral{--bias-color:#e2bc58;--bias-rgb:226,188,88}
+.focus-view-long,.focus-view-short,.focus-view-neutral{border-color:rgba(var(--bias-rgb),.72);box-shadow:0 14px 45px #000b,0 0 42px rgba(var(--bias-rgb),.18)}
+.focus-view .focus-score.gate-pass{background:linear-gradient(180deg,rgba(var(--bias-rgb),.10),rgba(7,13,20,.94))}
+.focus-view .focus-score.gate-fail{background:#090f16}
