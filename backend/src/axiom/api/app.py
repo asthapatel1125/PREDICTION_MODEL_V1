@@ -13,11 +13,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
+from axiom.adapters.twelvedata import TwelveDataPriceClient
 from axiom.api.schemas import HealthResponse,LiveEngineRequest,ReplayRequestBody
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
 from axiom.infrastructure.database import SqlAlchemyRepository,create_database
+
+
+INSTRUMENTS={
+    "SPY":{"provider":"ThetaData OPRA options","available":True,"requirement":"Options Pro"},
+    "QQQ":{"provider":"ThetaData OPRA options","available":True,"requirement":"Options Pro"},
+    "NDX":{"provider":"ThetaData index options","available":True,"requirement":"Options Pro and NDX/index entitlement"},
+    "NQ":{"provider":"CME futures","available":False,"requirement":"Separate licensed CME futures feed"},
+    "ES":{"provider":"CME futures","available":False,"requirement":"Separate licensed CME futures feed"},
+    "YM":{"provider":"CBOT futures","available":False,"requirement":"Separate licensed CME/CBOT futures feed"},
+}
+CHART_INTERVALS={5,15,60,180,300,720,900,1800,3600,14400,86400}
 
 
 class Container:
@@ -37,9 +49,14 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.bus=InMemoryEventBus(cfg.websocket_queue_size)
         api_key=cfg.thetadata_api_key.get_secret_value() if cfg.thetadata_api_key else None
         data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
-            transport=cfg.thetadata_transport,max_dte=cfg.thetadata_max_dte,strike_range=cfg.thetadata_strike_range,market_timezone=cfg.market_timezone)
-        container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data)
-        container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data)
+            transport=cfg.thetadata_transport,max_dte=cfg.thetadata_max_dte,strike_range=cfg.thetadata_strike_range,
+            market_timezone=cfg.market_timezone,poll_seconds=cfg.thetadata_poll_seconds)
+        twelve_key=cfg.twelve_data_api_key.get_secret_value() if cfg.twelve_data_api_key else None
+        price_data=TwelveDataPriceClient(twelve_key)
+        container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data,
+            cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds)
+        container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data,
+            price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds)
         container.replay_runs={};container.replay_tasks=set()
         yield
         if container.live_task:container.live_task.cancel()
@@ -63,6 +80,14 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/configuration")
     async def configuration():return container.config.model_dump(mode="json")
 
+    @api.get("/instruments")
+    async def instruments():return [{"symbol":symbol,**details} for symbol,details in INSTRUMENTS.items()]
+
+    @api.get("/chart/{symbol}")
+    async def chart(symbol:str,interval_seconds:int=Query(300),limit:int=Query(240,ge=30,le=1000),before:datetime|None=None):
+        if interval_seconds not in CHART_INTERVALS:raise HTTPException(422,"Unsupported chart interval")
+        return await container.repository.chart_points(symbol,interval_seconds,limit,before)
+
     @api.get("/engine/status")
     async def engine_status():return container.live.status()
 
@@ -77,10 +102,16 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/performance")
     async def performance():return await container.repository.performance_summary()
 
+    @api.get("/outcome-attribution/{symbol}")
+    async def outcome_attribution(symbol:str):
+        return await container.repository.outcome_attribution(symbol,3)
+
     @api.get("/system")
     async def system():return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),
-        "theta_transport":cfg.thetadata_transport}
+        "theta_transport":cfg.thetadata_transport,"theta_poll_seconds":cfg.thetadata_poll_seconds,
+        "outcome_price_provider":"TWELVE_DATA" if cfg.twelve_data_api_key else "THETADATA_OPTIONS_UNDERLYING",
+        "outcome_horizon_minutes":cfg.outcome_horizon_minutes}
 
     async def execute_replay(run_id:str,request:ReplayRequest)->None:
         try:
@@ -104,6 +135,9 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
     @api.post("/live/start",status_code=202)
     async def start_live(body:LiveEngineRequest):
+        instrument=INSTRUMENTS.get(body.symbol.upper())
+        if not instrument:raise HTTPException(422,"Unsupported instrument")
+        if not instrument["available"]:raise HTTPException(422,f"{body.symbol.upper()} requires a separate licensed futures feed")
         if container.live_task and not container.live_task.done():raise HTTPException(409,"Live engine already running")
         container.live_task=asyncio.create_task(container.live.run(body.symbol,body.resolution_seconds),name=f"live-{body.symbol}")
         return {"status":"started","symbol":body.symbol.upper()}

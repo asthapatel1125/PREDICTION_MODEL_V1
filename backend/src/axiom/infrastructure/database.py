@@ -51,6 +51,24 @@ class PerformanceRow(Base):
     __tablename__="performance";id:Mapped[int]=mapped_column(primary_key=True);alert_id:Mapped[str]=mapped_column(ForeignKey("alerts.id",ondelete="CASCADE"),unique=True);evaluated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True));precision:Mapped[float]=mapped_column(Float,index=True);direction_accuracy:Mapped[float]=mapped_column(Float);magnitude_accuracy:Mapped[float]=mapped_column(Float);timing_accuracy:Mapped[float]=mapped_column(Float);payload:Mapped[dict[str,Any]]=mapped_column(JSON)
 
 
+class SystemOutcomeRow(Base):
+    __tablename__="system_outcomes"
+    id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    system:Mapped[str]=mapped_column(String(32),index=True)
+    mode:Mapped[str]=mapped_column(String(16),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    direction:Mapped[str]=mapped_column(String(8))
+    alerted_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    status:Mapped[str]=mapped_column(String(16),index=True)
+    entry_price:Mapped[float]=mapped_column(Float)
+    highest_price:Mapped[float]=mapped_column(Float)
+    lowest_price:Mapped[float]=mapped_column(Float)
+    favorable_points:Mapped[float]=mapped_column(Float,index=True)
+    adverse_points:Mapped[float]=mapped_column(Float,index=True)
+    payload:Mapped[dict[str,Any]]=mapped_column(JSON)
+
+
 class TradeRow(Base):
     __tablename__="trades";id:Mapped[str]=mapped_column(String(36),primary_key=True);alert_id:Mapped[str|None]=mapped_column(ForeignKey("alerts.id"));symbol:Mapped[str]=mapped_column(String(16),index=True);side:Mapped[str]=mapped_column(String(8));quantity:Mapped[float]=mapped_column(Float);entry_price:Mapped[float]=mapped_column(Float);exit_price:Mapped[float|None]=mapped_column(Float);opened_at:Mapped[datetime]=mapped_column(DateTime(timezone=True));closed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True));status:Mapped[str]=mapped_column(String(16));payload:Mapped[dict[str,Any]]=mapped_column(JSON,default=dict)
 
@@ -87,6 +105,43 @@ class SqlAlchemyRepository:
         async with self.sessions() as s:
             s.add(PerformanceRow(alert_id=str(outcome.alert_id),evaluated_at=outcome.evaluated_at,precision=outcome.precision,direction_accuracy=outcome.direction_accuracy,
                 magnitude_accuracy=outcome.magnitude_accuracy,timing_accuracy=outcome.timing_accuracy,payload=outcome.model_dump(mode="json")));await s.commit()
+
+    @staticmethod
+    def _json_ready(value:Any)->Any:
+        if isinstance(value,datetime):return value.isoformat()
+        if isinstance(value,dict):return {key:SqlAlchemyRepository._json_ready(item) for key,item in value.items()}
+        if isinstance(value,(list,tuple)):return [SqlAlchemyRepository._json_ready(item) for item in value]
+        return value
+
+    async def save_system_outcome(self,record:dict[str,Any])->None:
+        payload=self._json_ready(record)
+        async with self.sessions() as s:
+            row=await s.get(SystemOutcomeRow,record["id"])
+            values=dict(system=record["system"],mode=record["mode"],symbol=record["symbol"],direction=record["direction"],
+                alerted_at=record["alerted_at"],expires_at=record["expires_at"],status=record["status"],
+                entry_price=record["entry_price"],highest_price=record["highest_price"],lowest_price=record["lowest_price"],
+                favorable_points=record["favorable_points"],adverse_points=record["adverse_points"],payload=payload)
+            if row is None:s.add(SystemOutcomeRow(id=record["id"],**values))
+            else:
+                for key,value in values.items():setattr(row,key,value)
+            await s.commit()
+
+    async def outcome_attribution(self,symbol:str,per_group:int=3)->dict[str,Any]:
+        async with self.sessions() as s:
+            rows=(await s.execute(select(SystemOutcomeRow).where(SystemOutcomeRow.symbol==symbol.upper())
+                .order_by(SystemOutcomeRow.alerted_at.desc()).limit(1000))).scalars().all()
+        systems={}
+        for system in ("PRIMARY_OPTIONS","MOMENTUM_TRIAD","GAMMA_DYNAMICS"):
+            items=[dict(row.payload) for row in rows if row.system==system]
+            # MFE ranks the strongest direction-adjusted follow-through. MAE is
+            # negative; ascending order ranks the deepest adverse excursion.
+            systems[system]={
+                "highest":sorted(items,key=lambda item:float(item.get("favorable_points",0)),reverse=True)[:per_group],
+                "lowest":sorted(items,key=lambda item:float(item.get("adverse_points",0)))[:per_group],
+                "tracking":sum(item.get("status")=="TRACKING" for item in items),
+                "total":len(items),
+            }
+        return {"symbol":symbol.upper(),"systems":systems}
 
     async def list_alerts(self,limit:int=100,offset:int=0)->list[Alert]:
         async with self.sessions() as s:
@@ -140,6 +195,31 @@ class SqlAlchemyRepository:
                 "pending_alerts":max(total-evaluated,0),"precision":precision,
                 "by_regime":{str(name):int(count) for name,count in regime_rows},
                 "by_direction":{str(name):int(count) for name,count in direction_rows}}
+
+    async def chart_points(self,symbol:str,interval_seconds:int,limit:int=240,before:datetime|None=None)->list[dict[str,Any]]:
+        before_clause="and timestamp < :before" if before else ""
+        statement=text(f"""
+            with source as (
+                select timestamp,(payload->'supporting_indicators'->>'price')::double precision as price
+                from market_states
+                where symbol=:symbol {before_clause}
+                  and payload->'supporting_indicators'->>'price' is not null
+            ), buckets as (
+                select date_bin((:interval_seconds * interval '1 second'),timestamp,timestamptz '2000-01-01') as bucket,
+                       (array_agg(price order by timestamp asc))[1] as open,
+                       max(price) as high,min(price) as low,
+                       (array_agg(price order by timestamp desc))[1] as close,
+                       count(*) as samples
+                from source group by bucket
+            )
+            select bucket,open,high,low,close,samples from buckets order by bucket desc limit :limit
+        """)
+        params={"symbol":symbol.upper(),"interval_seconds":interval_seconds,"limit":limit}
+        if before:params["before"]=before
+        async with self.sessions() as s:
+            rows=(await s.execute(statement,params)).mappings().all()
+            return list(reversed([{"timestamp":row["bucket"],"open":float(row["open"]),"high":float(row["high"]),
+                "low":float(row["low"]),"close":float(row["close"]),"samples":int(row["samples"])} for row in rows]))
 
 
 async def create_database(url:str)->tuple[async_sessionmaker[AsyncSession],SqlAlchemyRepository]:

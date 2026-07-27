@@ -52,12 +52,20 @@ class PlatformSettings(BaseSettings):
     thetadata_base_url: str = "http://127.0.0.1:25503/v3"
     thetadata_transport: str = "python"
     thetadata_timeout_seconds: float = 60
+    thetadata_poll_seconds: float = Field(default=5.0, ge=5, le=3600)
     thetadata_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("THETADATA_API_KEY", "AXIOM_THETADATA_API_KEY"),
     )
     thetadata_max_dte: int = Field(default=7, ge=0, le=365)
     thetadata_strike_range: int = Field(default=30, ge=1, le=500)
+    twelve_data_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TWELVE_DATA_API_KEY", "AXIOM_TWELVE_DATA_API_KEY"),
+    )
+    outcome_price_poll_seconds: int = Field(default=60, ge=60, le=3600)
+    outcome_horizon_minutes: int = Field(default=30, ge=5, le=240)
+    outcome_signal_cooldown_seconds: int = Field(default=300, ge=30, le=3600)
     market_timezone: str = "America/New_York"
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]

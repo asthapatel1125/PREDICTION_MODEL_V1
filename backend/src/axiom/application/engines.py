@@ -4,10 +4,19 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime,timezone
 
+from axiom.adapters.twelvedata import TwelveDataPriceClient
+from axiom.analytics.outcome_attribution import OutcomeAttributionTracker
 from axiom.application.pipeline import DecisionPipeline
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
 from axiom.ports.interfaces import EventPublisherPort, MarketDataPort, RepositoryPort
+
+
+def _event_json(value):
+    if isinstance(value,datetime):return value.isoformat()
+    if isinstance(value,dict):return {key:_event_json(item) for key,item in value.items()}
+    if isinstance(value,(list,tuple)):return [_event_json(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True)
@@ -16,12 +25,21 @@ class ReplayRequest:
 
 
 class _EngineRunner:
-    def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort):
+    def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,
+        outcome_horizon_minutes:int=30,outcome_signal_cooldown_seconds:int=300):
         self.pipeline=pipeline;self.repository=repository;self.publisher=publisher;self._stop=asyncio.Event();self._pending=[]
+        self.attribution=OutcomeAttributionTracker(outcome_horizon_minutes,outcome_signal_cooldown_seconds)
 
-    async def handle(self,bar,mode:EngineMode)->PipelineResult:
+    async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
         await self.publisher.publish("market_state",result.state.model_dump(mode="json"))
+        observation=price_observation or {"price":bar.close,"source":"THETADATA_REPLAY" if mode==EngineMode.TRAINING else "THETADATA_OPTIONS_UNDERLYING",
+            "observed_at":datetime.now(timezone.utc),"source_timestamp":bar.timestamp}
+        records=self.attribution.process(result.state,mode,float(observation["price"]),str(observation["source"]),
+            observation["observed_at"],observation.get("source_timestamp"))
+        for record in records:
+            if hasattr(self.repository,"save_system_outcome"):await self.repository.save_system_outcome(record)
+            await self.publisher.publish("system_outcome",_event_json(record))
         remaining=[]
         for alert,bars_left in self._pending:
             if bars_left>1:remaining.append((alert,bars_left-1));continue
@@ -44,8 +62,9 @@ class _EngineRunner:
 
 
 class TrainingEngine(_EngineRunner):
-    def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort):
-        super().__init__(pipeline,repository,publisher);self.data=data
+    def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
+        outcome_horizon_minutes:int=30,outcome_signal_cooldown_seconds:int=300):
+        super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,outcome_signal_cooldown_seconds);self.data=data
 
     async def replay(self,request:ReplayRequest)->dict[str,float]:
         count=alerts=0;latency=0.0;previous=None
@@ -59,8 +78,11 @@ class TrainingEngine(_EngineRunner):
 
 
 class LiveEngine(_EngineRunner):
-    def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort):
-        super().__init__(pipeline,repository,publisher);self.data=data
+    def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
+        price_data:TwelveDataPriceClient|None=None,price_poll_seconds:int=60,outcome_horizon_minutes:int=30,
+        outcome_signal_cooldown_seconds:int=300):
+        super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,outcome_signal_cooldown_seconds);self.data=data
+        self.price_data=price_data;self.price_poll_seconds=price_poll_seconds;self._price_observation=None;self._price_polled_at=None
         self.running=False;self.symbol:str|None=None;self.resolution_seconds=5;self.started_at:datetime|None=None
         self.last_update:datetime|None=None;self.last_error:str|None=None;self.bars_processed=0;self.alerts_generated=0
         self.average_latency_ms=0.0;self.retries=0
@@ -70,7 +92,24 @@ class LiveEngine(_EngineRunner):
             "started_at":self.started_at.isoformat() if self.started_at else None,
             "last_update":self.last_update.isoformat() if self.last_update else None,"last_error":self.last_error,
             "bars_processed":self.bars_processed,"alerts_generated":self.alerts_generated,
-            "average_latency_ms":self.average_latency_ms,"retries":self.retries}
+            "average_latency_ms":self.average_latency_ms,"retries":self.retries,
+            "outcome_price_source":self._price_observation["source"] if self._price_observation else "THETADATA_OPTIONS_UNDERLYING",
+            "outcome_price_observed_at":self._price_observation["observed_at"].isoformat() if self._price_observation else None}
+
+    async def _outcome_price(self,bar)->dict:
+        now=datetime.now(timezone.utc)
+        should_poll=self.price_data and self.price_data.enabled and (
+            self._price_polled_at is None or (now-self._price_polled_at).total_seconds()>=self.price_poll_seconds
+        )
+        if should_poll:
+            self._price_polled_at=now
+            try:self._price_observation=await self.price_data.latest(bar.symbol)
+            except Exception as exc:
+                event={"level":"WARNING","component":"twelve_data","message":str(exc),"timestamp":now.isoformat()}
+                if hasattr(self.repository,"save_system_event"):await self.repository.save_system_event(event)
+                await self.publisher.publish("system_event",event)
+        return self._price_observation or {"price":bar.close,"source":"THETADATA_OPTIONS_UNDERLYING",
+            "observed_at":now,"source_timestamp":bar.timestamp}
 
     async def run(self,symbol:str,resolution_seconds:int)->None:
         self._stop.clear();self.running=True;self.symbol=symbol.upper();self.resolution_seconds=resolution_seconds
@@ -82,7 +121,7 @@ class LiveEngine(_EngineRunner):
                 try:
                     async for bar in self.data.live_bars(symbol,resolution_seconds):
                         if self._stop.is_set():return
-                        result=await self.handle(bar,EngineMode.LIVE);self.bars_processed+=1
+                        result=await self.handle(bar,EngineMode.LIVE,await self._outcome_price(bar));self.bars_processed+=1
                         self.alerts_generated+=int(result.alert is not None);self.last_update=bar.timestamp;self.last_error=None
                         self.average_latency_ms+=(result.processing_latency_ms-self.average_latency_ms)/self.bars_processed
                         await self.publisher.publish("engine_status",self.status());backoff=1.0

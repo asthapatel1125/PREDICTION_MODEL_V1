@@ -14,7 +14,7 @@ export function toDashboardAlert(alert) {
   return {
     id: alert.id,
     timestamp: alert.timestamp,
-    time: new Date(alert.timestamp).toLocaleTimeString("en-US", { hour12: false }),
+    time: new Date(alert.timestamp).toLocaleTimeString("en-US", { hour12: false, hour:"2-digit", minute:"2-digit", second:"2-digit", fractionalSecondDigits:3 }),
     symbol: alert.symbol,
     direction: alert.direction,
     channel: alert.engine_mode,
@@ -47,6 +47,8 @@ export const fetchStateHistory = (symbol, limit = 5000, signal) =>
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
+export const fetchOutcomeAttribution = (symbol, signal) =>
+  request(`/api/v1/outcome-attribution/${encodeURIComponent(symbol)}`, { signal });
 export const fetchInstruments = (signal) => request("/api/v1/instruments", { signal });
 export const fetchChart = (symbol, intervalSeconds, before, signal) => {
   const query = new URLSearchParams({ interval_seconds: String(intervalSeconds), limit: "240" });
