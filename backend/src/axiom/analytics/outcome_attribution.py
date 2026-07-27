@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Any
-from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from axiom.domain.enums import Direction, EngineMode
 from axiom.domain.models import MarketState
@@ -27,6 +27,7 @@ class OutcomeAttributionTracker:
         self._history: dict[str, dict[str, deque[float]]] = defaultdict(
             lambda: defaultdict(lambda: deque(maxlen=100))
         )
+        self.eastern = ZoneInfo("America/New_York")
 
     @staticmethod
     def _direction_sign(direction: Direction) -> int:
@@ -70,6 +71,77 @@ class OutcomeAttributionTracker:
             return None, None
         return max(scores, key=scores.get), min(scores, key=scores.get)
 
+    def _call_id(self,timestamp:datetime,system:str,symbol:str)->str:
+        system_code={"PRIMARY_OPTIONS":"PO","MOMENTUM_TRIAD":"MT","GAMMA_DYNAMICS":"GD"}[system]
+        eastern=timestamp.astimezone(self.eastern)
+        milliseconds=eastern.microsecond//1000
+        return f"{eastern:%Y/%m/%d/%H/%M/%S}/{milliseconds:03d}-{system_code}-{symbol}"
+
+    @staticmethod
+    def _pivot(kind:str,sequence:int,price:float,timestamp:datetime,record:dict[str,Any],
+        scores:dict[str,float],confirmed_at:datetime)->dict[str,Any]:
+        return {"kind":kind,"sequence":sequence,"price":price,"timestamp":timestamp,
+            "confirmed_at":confirmed_at,"points_from_datum":price-record["entry_price"],
+            "seconds_from_alert":max(0.0,(timestamp-record["alerted_at"]).total_seconds()),
+            "greek_scores":scores}
+
+    def _update_turning_points(self,record:dict[str,Any],price:float,now:datetime,scores:dict[str,float])->None:
+        """Reversal-confirmed zigzag; datum is the alert price, never a synthetic zero."""
+        threshold=record["reversal_points"];trend=record["swing_trend"]
+        if trend=="SEEKING":
+            if price>record["candidate_high_price"]:
+                record.update(candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
+            if price<record["candidate_low_price"]:
+                record.update(candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
+            if price>=record["candidate_low_price"]+threshold:
+                record.update(swing_trend="UP",candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
+            elif price<=record["candidate_high_price"]-threshold:
+                record.update(swing_trend="DOWN",candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
+            return
+        if trend=="UP":
+            if price>record["candidate_high_price"]:
+                record.update(candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
+            elif record["candidate_high_price"]-price>=threshold:
+                if len(record["turning_highs"])<3:
+                    record["turning_highs"].append(self._pivot("HIGH",len(record["turning_highs"])+1,
+                        record["candidate_high_price"],record["candidate_high_at"],record,
+                        record["candidate_high_scores"],now))
+                record.update(swing_trend="DOWN",candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
+            return
+        if price<record["candidate_low_price"]:
+            record.update(candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
+        elif price-record["candidate_low_price"]>=threshold:
+            if len(record["turning_lows"])<3:
+                record["turning_lows"].append(self._pivot("LOW",len(record["turning_lows"])+1,
+                    record["candidate_low_price"],record["candidate_low_at"],record,
+                    record["candidate_low_scores"],now))
+            record.update(swing_trend="UP",candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
+
+    @staticmethod
+    def _decision_reasons(system: str, state: MarketState, direction: Direction) -> list[str]:
+        side = "bullish" if direction == Direction.UP else "bearish"
+        sign_word = "positive" if direction == Direction.UP else "negative"
+        if system == "MOMENTUM_TRIAD" and state.momentum_triad:
+            triad = state.momentum_triad
+            return [
+                f"Zomma {triad.acceleration:+.4g} is {sign_word}, indicating {side} Gamma acceleration.",
+                f"Speed {triad.direction:+.4g} is {sign_word}, aligning Gamma's spot sensitivity with the {side} call.",
+                f"Delta {triad.confirmation:+.4g} is {sign_word}, providing first-order {side} confirmation.",
+            ]
+        if system == "GAMMA_DYNAMICS" and state.gamma_dynamics:
+            gamma = state.gamma_dynamics
+            inputs = gamma.inputs
+            return [
+                f"Speed {inputs.get('speed', 0):+.4g} supplies the {side} direction while Gamma magnitude {abs(inputs.get('gamma', 0)):.4g} supplies the active curvature base.",
+                f"Zomma/Color relative intensity is {gamma.intensity:.1%}, above the {gamma.intensity_threshold:.1%} qualification threshold.",
+                f"Signed curvature pressure is {gamma.pressure:+.2f}, confirming the {side} Gamma-dynamics state.",
+            ]
+        return [
+            f"Explosion {state.explosion.value:.2f} passed its {state.active_thresholds.get('explosion_min', 0):.2f} energy threshold.",
+            f"Direction {state.direction.value:+.0f}/3 and signed pressure {state.pressure.value:+.2f} align {side}.",
+            f"Options confidence {state.supporting_indicators.get('options_confidence', 0):.1%} passed while risk remained inside the active gate.",
+        ]
+
     def process(
         self,
         state: MarketState,
@@ -88,6 +160,7 @@ class OutcomeAttributionTracker:
             if record["symbol"] != symbol:
                 continue
             scores = self._relative_scores(symbol, record["system"], state, Direction(record["direction"]))
+            self._update_turning_points(record,price,now,scores)
             if price > record["highest_price"]:
                 record["highest_price"] = price
                 record["highest_at"] = now
@@ -126,9 +199,11 @@ class OutcomeAttributionTracker:
                 continue
             scores = self._relative_scores(symbol, system, state, direction)
             strongest, weakest = self._leaders(scores)
-            signal_id = str(uuid4())
+            signal_id = self._call_id(now,system,symbol)
+            reversal_points=max(price*.0002,.01)
             record = {
                 "id": signal_id,
+                "call_id": signal_id,
                 "system": system,
                 "mode": mode.value,
                 "symbol": symbol,
@@ -149,6 +224,17 @@ class OutcomeAttributionTracker:
                 "strongest_greek": strongest,
                 "weakest_greek": weakest,
                 "decay_greek": weakest,
+                "decision_reasons": self._decision_reasons(system, state, direction),
+                "reversal_points":reversal_points,
+                "swing_trend":"SEEKING",
+                "turning_highs":[],
+                "turning_lows":[],
+                "candidate_high_price":price,
+                "candidate_high_at":now,
+                "candidate_high_scores":scores,
+                "candidate_low_price":price,
+                "candidate_low_at":now,
+                "candidate_low_scores":scores,
                 "greek_scores_at_signal": scores,
                 "greek_scores_at_high": scores,
                 "greek_scores_at_low": scores,

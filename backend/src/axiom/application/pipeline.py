@@ -53,15 +53,16 @@ except ModuleNotFoundError:
             inputs={name:float(getattr(greeks,name)) for name in ("zomma","speed","color","gamma")}
             percentiles={name:self._percentile(value,[getattr(item,name) for item in history]) for name,value in inputs.items()}
             intensity=(percentiles["zomma"]+percentiles["color"])/2;pressure_magnitude=(percentiles["speed"]+percentiles["gamma"])/2
-            up=inputs["speed"]>self.zero_tolerance and inputs["gamma"]>self.zero_tolerance
-            down=inputs["speed"]< -self.zero_tolerance and inputs["gamma"]< -self.zero_tolerance
+            gamma_active=abs(inputs["gamma"])>self.zero_tolerance
+            up=inputs["speed"]>self.zero_tolerance and gamma_active
+            down=inputs["speed"]< -self.zero_tolerance and gamma_active
             warmed=len(history)>=self.minimum_history;qualified=warmed and intensity>=self.intensity_threshold and (up or down)
             decision=Direction.UP if qualified and up else Direction.DOWN if qualified and down else Direction.NEUTRAL
             pressure=pressure_magnitude if up else -pressure_magnitude if down else 0.0
             explanation=(f"Building a relative baseline: {len(history)}/{self.minimum_history} observations." if not warmed else
-                "Gamma and Speed disagree, so signed curvature pressure is not confirmed." if not (up or down) else
+                "Gamma or Speed is effectively zero, so signed curvature pressure is not confirmed." if not (up or down) else
                 "Gamma and Speed align, but Zomma/Color intensity is below its rolling threshold." if intensity<self.intensity_threshold else
-                f"Gamma and Speed confirm {'upward' if up else 'downward'} curvature pressure while Zomma and Color show elevated Gamma sensitivity.")
+                f"Speed indicates {'upward' if up else 'downward'} curvature change while active Gamma supplies the curvature base and Zomma/Color show elevated sensitivity.")
             return GammaDynamics(decision=decision,qualified=qualified,source_symbol=source_symbol,intensity=intensity,
                 pressure=pressure,history_points=len(history),intensity_threshold=self.intensity_threshold,
                 inputs=inputs,percentiles=percentiles,explanation=explanation)

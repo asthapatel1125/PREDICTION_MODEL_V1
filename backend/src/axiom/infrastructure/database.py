@@ -138,6 +138,7 @@ class SqlAlchemyRepository:
             systems[system]={
                 "highest":sorted(items,key=lambda item:float(item.get("favorable_points",0)),reverse=True)[:per_group],
                 "lowest":sorted(items,key=lambda item:float(item.get("adverse_points",0)))[:per_group],
+                "calls":items[:50],
                 "tracking":sum(item.get("status")=="TRACKING" for item in items),
                 "total":len(items),
             }
