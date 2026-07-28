@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
-from axiom.api.schemas import HealthResponse,LiveEngineRequest,ReplayRequestBody
+from axiom.api.schemas import LiveEngineRequest,ReplayRequestBody
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -65,10 +65,11 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     app.add_middleware(CORSMiddleware,allow_origins=cfg.cors_origins,allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
     api=APIRouter(prefix="/api/v1")
 
-    @api.get("/health",response_model=HealthResponse)
-    async def health()->HealthResponse:
+    @api.get("/health")
+    async def health()->dict[str,str]:
         database="connected" if await container.repository.ping() else "disconnected"
-        return HealthResponse(status="healthy" if database=="connected" else "degraded",database=database,event_bus="connected",version=__version__)
+        return {"status":"healthy" if database=="connected" else "degraded",
+            "database":database,"event_bus":"connected","version":__version__}
 
     @api.get("/alerts")
     async def alerts(limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0)):return await container.repository.list_alert_views(limit,offset)
