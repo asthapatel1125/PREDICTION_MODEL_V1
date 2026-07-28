@@ -15,7 +15,7 @@ export function toDashboardAlert(alert) {
     id: alert.id,
     displayId: alert.display_id ?? null,
     timestamp: alert.timestamp,
-    time: new Date(alert.timestamp).toLocaleTimeString("en-US", { timeZone:"America/New_York", hour12: false, hour:"2-digit", minute:"2-digit", second:"2-digit", fractionalSecondDigits:3, timeZoneName:"short" }),
+    time: new Date(alert.timestamp).toLocaleTimeString("en-US", { timeZone:"America/New_York", hour12: true, hour:"2-digit", minute:"2-digit", second:"2-digit", fractionalSecondDigits:3, timeZoneName:"short" }),
     symbol: alert.symbol,
     direction: alert.direction,
     channel: alert.engine_mode,
@@ -35,6 +35,9 @@ export function toDashboardAlert(alert) {
     invalidation: alert.invalidation_price == null ? null : Number(alert.invalidation_price),
     target: alert.target_price == null ? null : Number(alert.target_price),
     pressure: Number(alert.supporting_indicators?.pressure_score ?? 0),
+    session: alert.supporting_indicators?.detected_session ?? "UNKNOWN",
+    sessionState: alert.supporting_indicators?.session_state ?? "UNKNOWN",
+    sessionConfidence: Number(alert.supporting_indicators?.transition_confidence ?? 0),
   };
 }
 

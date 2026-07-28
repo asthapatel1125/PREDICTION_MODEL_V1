@@ -409,6 +409,8 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .focus-hold-policy{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-top:10px;border:1px solid rgba(var(--bias-rgb),.24);border-radius:7px;overflow:hidden;background:rgba(var(--bias-rgb),.24)}
 .focus-hold-policy span{padding:8px 10px;background:#08111a;color:#74869a;font:9px/1.4 var(--font-mono)}
 .focus-hold-policy b{display:block;margin-bottom:3px;color:var(--bias-color);font-size:8px;letter-spacing:.08em}
+.session-weight-strip{display:grid;grid-template-columns:1.15fr 1fr 1.35fr 1fr auto;align-items:stretch;gap:1px;margin-top:9px;border:1px solid rgba(var(--bias-rgb),.28);border-radius:7px;overflow:hidden;background:rgba(var(--bias-rgb),.25)}
+.session-weight-strip>div{padding:8px 10px;background:#07111a}.session-weight-strip span{display:block;color:#667e92;font:7px var(--font-mono);letter-spacing:.08em}.session-weight-strip b{display:block;margin-top:4px;color:#d8e5ed;font:10px var(--font-mono)}.session-weight-strip small{display:block;margin-top:3px;color:#70869a;font:7px var(--font-mono)}.session-weight-strip>em{display:flex;align-items:center;max-width:170px;padding:8px 10px;background:#201a0c;color:#e8c45e;font:7px/1.4 var(--font-mono);font-style:normal;letter-spacing:.06em}
 
 /* Nested, per-alert outcome episodes. */
 .alerts-panel .table-wrap{max-height:440px}
@@ -429,6 +431,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .slot-status.confirmed{border-color:#28725f;color:#58e6c4}.slot-status.tracking{border-color:#7a6229;color:#f0c85a}.slot-status.missing{color:#566979}
 .nested-outcome-empty{padding:14px;color:#708399;font:9px/1.5 var(--font-mono)}
 @media(max-width:900px){.focus-hold-policy{grid-template-columns:1fr 1fr}.nested-outcome-head{grid-template-columns:1fr}.nested-outcome-head small{text-align:left}}
+@media(max-width:1100px){.session-weight-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.session-weight-strip>em{max-width:none}}
 
 /* Per-call 50-point observed outcome paths. */
 .fifty-point-scroll{display:grid;gap:12px;max-height:760px;padding:12px;overflow:auto;background:#050a0f;scrollbar-color:#38536b #050a0f;scrollbar-width:thin}

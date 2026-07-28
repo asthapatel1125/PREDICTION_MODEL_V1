@@ -46,16 +46,22 @@ class DirectionScore(AnalyticsModule):
 
 
 class PressureScore(AnalyticsModule):
-    def calculate(self, current: MarketBar, history: Sequence[MarketBar]) -> ScoreResult:
+    def calculate(self, current: MarketBar, history: Sequence[MarketBar],
+        direction_weights: dict[str,float] | None = None) -> ScoreResult:
         g = current.greeks
-        directional = np.mean([np.sign(g.gamma), np.sign(g.vanna), np.sign(g.charm)])
+        weights=direction_weights or {"gamma":1/3,"vanna":1/3,"charm":1/3}
+        weight_total=sum(max(0.0,float(weights.get(name,0))) for name in ("gamma","vanna","charm"))
+        directional=(sum(max(0.0,float(weights.get(name,0)))*np.sign(getattr(g,name))
+            for name in ("gamma","vanna","charm"))/weight_total) if weight_total else 0.0
         curvature = np.mean([abs(g.speed), abs(g.zomma), abs(g.color), abs(g.ultima)])
         baseline = np.median([np.mean([abs(b.greeks.speed), abs(b.greeks.zomma), abs(b.greeks.color), abs(b.greeks.ultima)]) for b in history[-100:]]) if history else 1.0
         ratio = curvature / max(baseline, 1e-9)
         signed = float(np.tanh(ratio - 1) * directional)
         return ScoreResult(name="pressure", value=signed, confidence=clamp(abs(signed)),
             inputs={"curvature": curvature, "baseline": baseline, "directional_alignment": directional},
-            configuration={"normalization": "rolling_median"}, explanation=f"Signed dealer pressure is {signed:+.2f} at {ratio:.2f}x baseline.", components={"ratio": ratio})
+            configuration={"normalization": "rolling_median","session_direction_weights":weights},
+            explanation=f"Session-weighted estimated pressure is {signed:+.2f} at {ratio:.2f}x baseline.",
+            components={"ratio": ratio})
 
 
 class DealerHedgingPressure(AnalyticsModule):
@@ -81,4 +87,3 @@ class MomentumConfirmation(AnalyticsModule):
         signed = float(np.sign(slope) * efficiency)
         return ScoreResult(name="momentum", value=signed, confidence=clamp(efficiency), inputs={"return": slope, "efficiency": efficiency},
             configuration={"lookback_bars": 12}, explanation=f"Price confirmation efficiency is {efficiency:.0%}; price remains confirmatory, not causal.")
-

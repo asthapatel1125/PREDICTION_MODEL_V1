@@ -120,7 +120,8 @@ class MarketState(FrozenModel):
     greeks: Greeks | None = None
     momentum_triad: MomentumTriad | None = None
     gamma_dynamics: GammaDynamics | None = None
-    supporting_indicators: dict[str, float]
+    session_analysis: dict[str, Any] = Field(default_factory=dict)
+    supporting_indicators: dict[str, float | str | bool]
     signal_checks: dict[str, bool] = Field(default_factory=dict)
     active_thresholds: dict[str, float] = Field(default_factory=dict)
     options_bias: Direction = Direction.NEUTRAL
@@ -141,7 +142,7 @@ class Alert(FrozenModel):
     profile: AlertProfile
     micro_range: MicroRange
     reasoning: list[str]
-    supporting_indicators: dict[str, float]
+    supporting_indicators: dict[str, float | str | bool]
     recommended_action: str
     risk_level: RiskLevel
     price: float

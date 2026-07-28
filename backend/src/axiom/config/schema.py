@@ -29,6 +29,7 @@ class StrategyConfig(BaseModel):
     regime_thresholds: dict[str, dict[str, float]]
     score_weights: dict[str, dict[str, float]]
     risk_limits: dict[str, float]
+    session_model: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "StrategyConfig":
