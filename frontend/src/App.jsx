@@ -640,10 +640,11 @@ function GreekAuditBadge({label,tone="neutral",detail=null}){
 }
 
 function FiftyPointPathChart({call}){
-  const bars=(call.minute_bars??[]).filter(bar=>Number.isFinite(number(bar.high,NaN))&&Number.isFinite(number(bar.low,NaN))).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  const observedBars=(call.minute_bars??[]).filter(bar=>Number.isFinite(number(bar.high,NaN))&&Number.isFinite(number(bar.low,NaN))).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const [hovered,setHovered]=useState(null);
-  if(!bars.length)return <div className="nested-outcome-empty">This record predates one-minute path tracking. No candles are reconstructed and no missing prices are converted to zero.</div>;
   const datum=number(call.entry_price),target=number(call.target_price,datum+(call.direction==="UP"?50:-50));
+  const datumOnly=!observedBars.length;
+  const bars=datumOnly?[{timestamp:call.alerted_at,open:datum,high:datum,low:datum,close:datum,samples:1}]:observedBars;
   const values=bars.flatMap(bar=>[number(bar.high),number(bar.low),number(bar.open),number(bar.close)]).concat([datum,target]);
   const rawMin=Math.min(...values),rawMax=Math.max(...values),padding=Math.max((rawMax-rawMin)*.12,Math.abs(rawMax)*.0002,.05);
   const min=rawMin-padding,max=rawMax+padding,dims={width:920,height:270,left:76,right:24,top:20,bottom:48};
@@ -658,6 +659,7 @@ function FiftyPointPathChart({call}){
   const onPointerMove=event=>{const bounds=event.currentTarget.getBoundingClientRect(),ratio=(event.clientX-bounds.left)/Math.max(bounds.width,1),svgX=ratio*dims.width,index=Math.max(0,Math.min(bars.length-1,Math.round((svgX-dims.left)/Math.max(plotWidth,1)*bars.length-.5)));setHovered({index,bar:bars[index],leftPct:Math.max(8,Math.min(76,ratio*100))})};
   const diff=value=>{const result=number(value)-datum;return `${result>=0?"+":""}${result.toFixed(4)} pts`};
   return <div className="alert-path-chart">
+    {datumOnly&&<div className="datum-only-warning">DATUM ONLY · this older call has no stored one-minute observations. No highs or lows were reconstructed.</div>}
     <div className="alert-path-legend"><span className="datum">DATUM {datum.toFixed(4)}</span><span className="high">MINUTE HIGH</span><span className="low">MINUTE LOW</span><span className="close">MINUTE CLOSE</span><span className="target">50-POINT {call.direction==="UP"?"LONG":"SHORT"} TARGET {target.toFixed(4)}</span></div>
     <div className="alert-path-stage">
       <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`One-minute high and low path from the ${biasLabel(call.direction)} alert datum to its 50-point target`} onPointerMove={onPointerMove} onPointerLeave={()=>setHovered(null)}>
@@ -676,12 +678,11 @@ function FiftyPointPathChart({call}){
   </div>;
 }
 
-function FiftyPointOutcomeCard({call,system="PRIMARY_OPTIONS",defaultOpen=false}){
-  const [open,setOpen]=useState(defaultOpen);
+function FiftyPointOutcomeCard({call,system="PRIMARY_OPTIONS"}){
   const reached=Boolean(call.target_reached_at),callId=visibleCallId(call,system),closeState=call.target_close_confirmed===true?"CONFIRMED":call.target_close_confirmed===false?"NOT CONFIRMED":"PENDING";
   return <article className="fifty-point-card">
-    <header><div><span>CALL ID</span><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(callId)}>{callId}</button></div><div><span>CALL</span><b className={call.direction==="UP"?"positive":"negative"}>{biasLabel(call.direction)} · DATUM {number(call.entry_price).toFixed(4)}</b></div><div><span>STATUS</span><b>{reached?"50-POINT TARGET REACHED":call.status==="EXPIRED"?"OBSERVATION WINDOW EXPIRED":"TRACKING LIVE"}</b></div><button type="button" className="path-toggle" onClick={()=>setOpen(value=>!value)}>{open?"HIDE PATH":"OPEN PATH"}</button></header>
-    {open&&<><FiftyPointPathChart call={call}/>
+    <header><div><span>CALL ID</span><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(callId)}>{callId}</button></div><div><span>CALL</span><b className={call.direction==="UP"?"positive":"negative"}>{biasLabel(call.direction)} · DATUM {number(call.entry_price).toFixed(4)}</b></div><div><span>STATUS</span><b>{reached?"50-POINT TARGET REACHED":call.status==="EXPIRED"?"OBSERVATION WINDOW EXPIRED":"TRACKING LIVE"}</b></div></header>
+    <FiftyPointPathChart call={call}/>
     <div className="target-evaluation-row">
       <div><span>REACHED · EASTERN</span><b>{reached?<>{logDate(call.target_reached_at)}<small>{logTime(call.target_reached_at)}</small></>:"—"}</b></div>
       <div><span>REACH PRICE</span><b>{reached?number(call.target_reached_price).toFixed(4):"—"}</b></div>
@@ -691,13 +692,24 @@ function FiftyPointOutcomeCard({call,system="PRIMARY_OPTIONS",defaultOpen=false}
       <div><span>STRONGEST GREEK</span><GreekAuditBadge label={call.strongest_greek_at_target} tone="strong"/></div>
       <div><span>WEAKEST GREEK</span><GreekAuditBadge label={call.weakest_greek_at_target} tone="weak"/></div>
     </div>
-    <footer><span>Source {pretty(call.price_source??"unknown")}</span><span>One-minute OHLC is aggregated from observed updates; no synthetic candles.</span><span>Target {number(call.target_price,number(call.entry_price)+(call.direction==="UP"?50:-50)).toFixed(4)}</span></footer></>}
+    <footer><span>Source {pretty(call.price_source??"unknown")}</span><span>One-minute OHLC is aggregated from observed updates; no synthetic candles.</span><span>Target {number(call.target_price,number(call.entry_price)+(call.direction==="UP"?50:-50)).toFixed(4)}</span></footer>
   </article>;
+}
+
+function dedupeLogicalCalls(calls=[]){
+  const unresolved=new Set();
+  return calls.filter(call=>{
+    const tracking=!call.target_reached_at&&(call.status==="TRACKING"||call.status==null);
+    const key=`${call.system??""}|${call.symbol??""}|${call.direction??""}|${number(call.entry_price).toFixed(4)}`;
+    if(tracking&&unresolved.has(key))return false;
+    if(tracking)unresolved.add(key);
+    return true;
+  });
 }
 
 function OutcomeAttributionMini({system,data,symbol}){
   const group=data?.systems?.[system]??{highest:[],lowest:[],tracking:0,total:0};
-  const legacy=[...(group.highest??[]),...(group.lowest??[])],calls=group.calls??[...new Map(legacy.map(item=>[item.id,item])).values()];
+  const legacy=[...(group.highest??[]),...(group.lowest??[])],calls=dedupeLogicalCalls(group.calls??[...new Map(legacy.map(item=>[item.id,item])).values()]);
   const [copied,setCopied]=useState(false);
   const source=calls.find(Boolean)?.price_source??"WAITING";
   const copyTable=async()=>{
@@ -708,7 +720,7 @@ function OutcomeAttributionMini({system,data,symbol}){
   return <article className="panel outcome-attribution">
     <header className="panel-head"><div><span>50-POINT OUTCOME PATHS</span><h2>{SYSTEM_OUTCOME_LABELS[system]} · one-minute observed highs and lows per call</h2></div><div className="outcome-head-actions"><button type="button" className="copy-table" onClick={copyTable} disabled={!calls.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><div className="outcome-source"><b>{source.replaceAll("_"," ")}</b><small>{group.tracking} tracking · {group.total} calls</small></div></div></header>
     <div className="outcome-method"><b>Reading the path:</b> datum is fixed at the alert price. Each candle is the observed open, high, low, and close for one minute. The directional target is exactly 50 instrument points from datum. A target is never inferred from an unobserved interval.</div>
-    <div className="fifty-point-scroll">{calls.map(call=><FiftyPointOutcomeCard key={call.id} call={call} system={system} defaultOpen/>)}{!calls.length&&<div className="empty-state">{data?.unavailable?"Outcome tracking is waiting for the updated Render backend. The rest of the dashboard remains live.":`No qualified ${SYSTEM_OUTCOME_LABELS[system]} decisions have started tracking yet.`}</div>}</div>
+    <div className="fifty-point-scroll">{calls.map(call=><FiftyPointOutcomeCard key={call.id} call={call} system={system}/>)}{!calls.length&&<div className="empty-state">{data?.unavailable?"Outcome tracking is waiting for the updated Render backend. The rest of the dashboard remains live.":`No qualified ${SYSTEM_OUTCOME_LABELS[system]} decisions have started tracking yet.`}</div>}</div>
     <footer><span>Price source: {source.replaceAll("_"," ")}</span><span>Visible clocks: America/New_York (Eastern), 12-hour format.</span><span>Calls that do not reach 50 points are explicitly TRACKING or EXPIRED.</span></footer>
   </article>;
 }
@@ -717,7 +729,7 @@ function AlertOutcomeRows({alert,calls=[]}){
   const alertTime=new Date(alert.timestamp).getTime();
   const call=calls.find(item=>item.symbol===alert.symbol&&item.direction===alert.direction&&Math.abs(new Date(item.alerted_at).getTime()-alertTime)<=1000);
   if(!call)return <div className="nested-outcome-empty">No linked 50-point outcome path is available for this alert. Older rows are not reconstructed from missing observations.</div>;
-  return <div className="nested-outcome"><FiftyPointOutcomeCard call={call} defaultOpen/></div>;
+  return <div className="nested-outcome"><FiftyPointOutcomeCard call={call}/></div>;
 }
 
 function FiveMinuteForecast({history,state,symbol}){
@@ -832,7 +844,7 @@ export default function Home() {
     <DraggableOverviewModule id="score-modules" index={moduleOrder.indexOf("score-modules")} {...draggableProps}><OverviewDisclosure id="score-modules" title="Signal Scores" description="Explosion, Direction, Pressure, and score histories"><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div><div className="score-history-grid"><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="explosion"/></article><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="direction"/></article></div><OutcomeAttributionMini system="PRIMARY_OPTIONS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="greek-orders" index={moduleOrder.indexOf("greek-orders")} {...draggableProps}><OverviewDisclosure id="greek-orders" title="Greek Orders" description="First-, second-, and third-order streamed exposures"><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="custom-greeks" index={moduleOrder.indexOf("custom-greeks")} {...draggableProps}><OverviewDisclosure id="custom-greeks" title="Custom Greek Graphs" description="Up to ten configurable live charts"><CustomGreekWorkspace history={visualHistory} state={state} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
-    <DraggableOverviewModule id="live-alerts" index={moduleOrder.indexOf("live-alerts")} {...draggableProps}><OverviewDisclosure id="live-alerts" title="Live Options Pro Bias Alerts" description="Qualified primary-engine decisions"><article className="panel alerts-panel"><header className="panel-head table-head"><div><span>LIVE OPTIONS PRO BIAS ALERTS</span><h2>Confirmed signal episodes · expand any call to inspect its one-minute 50-point outcome path</h2></div></header><div className="table-wrap"><table><thead><tr><th>ALERT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>INSTRUMENT</th><th>PRICE</th><th>BIAS</th><th>EXPLOSION</th><th>DIR. SCORE</th><th>PRESSURE</th><th>OPTIONS CONF.</th><th>SESSION</th><th>REGIME</th><th>RISK</th></tr></thead><tbody>{liveBiasAlerts.map(a=>{const alertId=visibleEventId(a);return <Fragment key={a.id}><tr className="alert-primary-row"><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(alertId)} title="Copy alert ID">{alertId}</button></td><td>{logDate(a.timestamp)}</td><td>{logTime(a.timestamp)}</td><td><b>{a.symbol}</b></td><td>{Number.isFinite(a.rawPrice)?a.rawPrice.toFixed(4):a.price}</td><td><span className={`direction-pill ${a.direction.toLowerCase()}`}>{biasLabel(a.direction)}</span></td><td>{a.explosion}</td><td>{a.score}</td><td>{a.pressure>0?"+":""}{number(a.pressure).toFixed(2)}</td><td>{pct(a.confidence)}</td><td>{pretty(a.session)}<small>{pretty(a.sessionState)} · {a.sessionConfidence.toFixed(0)}%</small></td><td>{a.regime}</td><td>{pretty(a.risk)}</td></tr><tr className="alert-outcome-row"><td colSpan="13"><details><summary><span>↳ OBSERVED 50-POINT OUTCOME</span><b>OPEN 1-MINUTE HIGH / LOW PATH</b></summary><AlertOutcomeRows alert={a} calls={primaryOutcomeCalls}/></details></td></tr></Fragment>})}</tbody></table>{!liveBiasAlerts.length&&<div className="empty-state">WAIT · no confirmed Options Pro episode has completed its entry sequence yet.</div>}</div></article></OverviewDisclosure></DraggableOverviewModule>
+    <DraggableOverviewModule id="live-alerts" index={moduleOrder.indexOf("live-alerts")} {...draggableProps}><OverviewDisclosure id="live-alerts" title="Live Options Pro Bias Alerts" description="Qualified primary-engine decisions"><article className="panel alerts-panel"><header className="panel-head table-head"><div><span>LIVE OPTIONS PRO BIAS ALERTS</span><h2>Every call displays its observed one-minute high/low path from datum to the directional 50-point target</h2></div></header><div className="table-wrap"><table><thead><tr><th>ALERT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>INSTRUMENT</th><th>PRICE</th><th>BIAS</th><th>EXPLOSION</th><th>DIR. SCORE</th><th>PRESSURE</th><th>OPTIONS CONF.</th><th>SESSION</th><th>REGIME</th><th>RISK</th></tr></thead><tbody>{liveBiasAlerts.map(a=>{const alertId=visibleEventId(a);return <Fragment key={a.id}><tr className="alert-primary-row"><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(alertId)} title="Copy alert ID">{alertId}</button></td><td>{logDate(a.timestamp)}</td><td>{logTime(a.timestamp)}</td><td><b>{a.symbol}</b></td><td>{Number.isFinite(a.rawPrice)?a.rawPrice.toFixed(4):a.price}</td><td><span className={`direction-pill ${a.direction.toLowerCase()}`}>{biasLabel(a.direction)}</span></td><td>{a.explosion}</td><td>{a.score}</td><td>{a.pressure>0?"+":""}{number(a.pressure).toFixed(2)}</td><td>{pct(a.confidence)}</td><td>{pretty(a.session)}<small>{pretty(a.sessionState)} · {a.sessionConfidence.toFixed(0)}%</small></td><td>{a.regime}</td><td>{pretty(a.risk)}</td></tr><tr className="alert-outcome-row"><td colSpan="13"><details open><summary><span>↳ OBSERVED 50-POINT OUTCOME</span><b>1-MINUTE HIGH / LOW · PRICE VS EASTERN TIME</b></summary><AlertOutcomeRows alert={a} calls={primaryOutcomeCalls}/></details></td></tr></Fragment>})}</tbody></table>{!liveBiasAlerts.length&&<div className="empty-state">WAIT · no confirmed Options Pro episode has completed its entry sequence yet.</div>}</div></article></OverviewDisclosure></DraggableOverviewModule>
     </div></>}
     <footer className="disclaimer">Signal intelligence only · No broker execution enabled <span>Last persisted state {time(state?.timestamp)}</span></footer></section>{toast&&<div className="toast">✓ {toast}</div>}</main>;
 }

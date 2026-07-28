@@ -219,6 +219,18 @@ class OutcomeAttributionTracker:
             key = (symbol, system)
             if self._episode_direction.get(key)==direction:continue
             self._episode_direction[key]=direction
+            # A flickering qualified state must not create several logical
+            # calls that all track the same unresolved directional episode.
+            # Opposite-direction calls remain independent and may overlap.
+            same_direction_active=any(
+                record["symbol"]==symbol
+                and record["system"]==system
+                and record["direction"]==direction.value
+                and record.get("target_reached_at") is None
+                for record in self._active.values()
+            )
+            if same_direction_active:
+                continue
             scores = self._relative_scores(symbol, system, state, direction)
             strongest, weakest = self._leaders(scores)
             call_id = self._call_id(now,system)

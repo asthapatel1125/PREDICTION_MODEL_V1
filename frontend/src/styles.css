@@ -436,10 +436,11 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 /* Per-call 50-point observed outcome paths. */
 .fifty-point-scroll{display:grid;gap:12px;max-height:760px;padding:12px;overflow:auto;background:#050a0f;scrollbar-color:#38536b #050a0f;scrollbar-width:thin}
 .fifty-point-card{min-width:720px;border:1px solid #263b4d;border-radius:8px;background:#071019;overflow:hidden;box-shadow:0 10px 28px #0007}
-.fifty-point-card>header{display:grid;grid-template-columns:auto 1fr auto auto;gap:22px;align-items:center;padding:10px 12px;border-bottom:1px solid #203244;background:#0a151f}
+.fifty-point-card>header{display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:center;padding:10px 12px;border-bottom:1px solid #203244;background:#0a151f}
 .fifty-point-card>header>div{display:flex;align-items:center;gap:8px}.fifty-point-card>header span,.target-evaluation-row span{color:#71879a;font:8px var(--font-mono);letter-spacing:.07em}.fifty-point-card>header b{color:#cbd9e4;font:9px var(--font-mono)}.fifty-point-card>header b.positive{color:var(--teal)}.fifty-point-card>header b.negative{color:#ff7487}
 .path-toggle{height:29px;padding:0 9px;border:1px solid #34536b;border-radius:5px;background:#0a1721;color:#84cdef;font:8px var(--font-mono);letter-spacing:.06em;cursor:pointer}.path-toggle:hover{border-color:#67c9ff;color:#d8f2ff}
 .alert-path-chart{padding:10px 12px 4px;background:#020609}
+.datum-only-warning{margin-bottom:8px;padding:8px 10px;border:1px solid #6d5927;border-radius:5px;background:#211b0d;color:#e7c65e;font:9px/1.4 var(--font-mono);letter-spacing:.04em}
 .alert-path-legend{display:flex;flex-wrap:wrap;gap:7px 16px;margin:0 0 7px;padding:6px 8px;border:1px solid #172b3a;border-radius:5px;background:#07111a}
 .alert-path-legend span{display:flex;align-items:center;gap:6px;color:#91a5b7;font:8px var(--font-mono)}.alert-path-legend span:before{width:17px;height:2px;background:currentColor;content:""}.alert-path-legend .datum{color:#f1c65d}.alert-path-legend .high{color:#58d5ff}.alert-path-legend .low{color:#ff6e88}.alert-path-legend .close{color:#e5edf4}.alert-path-legend .target{color:#68e5b9}
 .alert-path-stage{position:relative;height:300px;border:1px solid #172b3a;border-radius:5px;background:#010407;overflow:hidden}.alert-path-stage svg{display:block;width:100%;height:100%;touch-action:none}

@@ -133,6 +133,19 @@ class SqlAlchemyRepository:
         systems={}
         for system in ("PRIMARY_OPTIONS","MOMENTUM_TRIAD","GAMMA_DYNAMICS"):
             items=[dict(row.payload) for row in rows if row.system==system]
+            # Preserve every raw row in Postgres, but present only one newest
+            # unresolved logical call for a repeated direction/datum pair.
+            # This also cleans up duplicates written by older deployments.
+            calls=[]
+            unresolved_keys=set()
+            for item in items:
+                unresolved=item.get("target_reached_at") is None and item.get("status") in {"TRACKING","TARGET_REACHED",None}
+                key=(str(item.get("direction")),round(float(item.get("entry_price",0)),4))
+                if unresolved and key in unresolved_keys:
+                    continue
+                calls.append(item)
+                if unresolved:
+                    unresolved_keys.add(key)
             # MFE ranks the strongest direction-adjusted follow-through. MAE is
             # negative; ascending order ranks the deepest adverse excursion.
             systems[system]={
@@ -140,9 +153,11 @@ class SqlAlchemyRepository:
                 "lowest":sorted(items,key=lambda item:float(item.get("adverse_points",0)))[:per_group],
                 # Match the dashboard's 100-alert window so every visible
                 # alert can resolve its own nested outcome path.
-                "calls":items[:100],
-                "tracking":sum(item.get("status")=="TRACKING" for item in items),
-                "total":len(items),
+                "calls":calls[:100],
+                "tracking":sum(item.get("status")=="TRACKING" for item in calls),
+                "total":len(calls),
+                "raw_total":len(items),
+                "duplicates_suppressed":len(items)-len(calls),
             }
         return {"symbol":symbol.upper(),"systems":systems}
 

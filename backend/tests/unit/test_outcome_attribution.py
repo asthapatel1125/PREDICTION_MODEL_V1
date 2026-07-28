@@ -60,3 +60,20 @@ def test_short_target_is_recorded_as_intraminute_low():
     assert record["target_reached_price"] == 450
     assert record["target_touch_type"] == "LOW"
     assert record["minute_bars"][0]["low"] == 450
+
+
+def test_flicker_does_not_open_duplicate_same_direction_call():
+    tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    first = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
+    first_id = first[0]["id"]
+    tracker.process(
+        state(start + timedelta(seconds=5), 501, Direction.NEUTRAL),
+        EngineMode.LIVE, 501, "THETADATA", start + timedelta(seconds=5),
+    )
+    updates = tracker.process(
+        state(start + timedelta(seconds=10), 502, Direction.UP),
+        EngineMode.LIVE, 502, "THETADATA", start + timedelta(seconds=10),
+    )
+    assert {item["id"] for item in updates} == {first_id}
+    assert len(tracker._active) == 1
