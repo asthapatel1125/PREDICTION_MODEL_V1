@@ -390,6 +390,10 @@ class OutcomeAttributionTracker:
                 "greek_values_at_signal": {
                     name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
                 } if state.greeks else {},
+                "gamma_dynamics_at_signal": (
+                    state.gamma_dynamics.model_dump(mode="json")
+                    if system == "GAMMA_DYNAMICS" and state.gamma_dynamics else None
+                ),
                 "price_source": price_source,
                 "price_observed_at": price_observed_at,
                 "price_source_timestamp": price_source_timestamp,
