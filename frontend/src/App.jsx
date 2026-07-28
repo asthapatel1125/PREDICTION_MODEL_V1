@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchInstruments, fetchOutcomeAttribution, fetchReplay, fetchStateHistory, fetchSystem, startLiveEngine,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchInstruments, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchStateHistory, fetchSystem, startLiveEngine,
   startReplay, stopLiveEngine, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
@@ -70,6 +70,14 @@ const time = value => value&&!Number.isNaN(new Date(value).getTime())?new Date(v
 const logDate = value => {const date=new Date(value);return Number.isNaN(date.getTime())?"—":easternDateFormatter.format(date)};
 const logTime = value => {const date=new Date(value);return Number.isNaN(date.getTime())?"—":easternTimeFormatter.format(date)};
 const chartTime = value => value&&!Number.isNaN(new Date(value).getTime())?new Date(value).toLocaleTimeString("en-US",{timeZone:EASTERN_TZ,hour12:true,hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
+const easternMarketPhase=value=>{
+  const parts=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:EASTERN_TZ,weekday:"short",hourCycle:"h23",hour:"2-digit",minute:"2-digit"}).formatToParts(new Date(value)).filter(part=>part.type!=="literal").map(part=>[part.type,part.value]));
+  if(["Sat","Sun"].includes(parts.weekday))return "WEEKEND_CLOSED";
+  const minute=Number(parts.hour)*60+Number(parts.minute);
+  if(minute>=240&&minute<570)return "PREMARKET";
+  if(minute>960&&minute<1200)return "AFTER_HOURS";
+  return minute>=570&&minute<=960?"RTH":"CLOSED";
+};
 const formatAge=value=>{const seconds=Math.max(0,number(value));if(seconds<60)return `${Math.floor(seconds)}s`;const minutes=Math.floor(seconds/60),rest=Math.floor(seconds%60);return `${minutes}m ${rest}s`};
 const numericEventId=(value,stream=0)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return "—";const parts=Object.fromEntries(easternIdFormatter.formatToParts(date).filter(part=>part.type!=="literal").map(part=>[part.type,part.value]));return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}${parts.second}${String(date.getUTCMilliseconds()).padStart(3,"0")}${String(stream).padStart(2,"0")}`};
 const visibleEventId=(record,stream=0)=>record?.displayId??record?.display_id??(/^\d{17,21}$/.test(String(record?.id??""))?String(record.id):numericEventId(record?.timestamp,stream));
@@ -541,7 +549,7 @@ function PriorityAlert({ alert, state, symbol }) {
   </article>;
 }
 
-function FocusView({state,symbol,engine,decision,lastQualifiedAlert}) {
+function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
   const tone=decision.qualified?(decision.direction==="UP"?"long":"short"):"neutral";
   const label=decision.qualified?biasLabel(decision.direction):"WAIT";
   const lifecycleMessage=decision.lifecycle==="IDLE"?"ENGINE IDLE · WAIT":
@@ -552,7 +560,10 @@ function FocusView({state,symbol,engine,decision,lastQualifiedAlert}) {
     decision.lifecycle==="EXIT_PENDING"?`HOLD ${label} · EXIT CHECK ${decision.exitProgress}/${decision.exitRequired}`:
     decision.lifecycle==="REVERSAL_PENDING"?`HOLD ${label} · OPPOSITE CHECK ${decision.entryProgress}/${decision.entryRequired}`:"WAITING FOR QUALIFIED PRESSURE";
   const directionThreshold=number(state?.active_thresholds?.direction_min,2);
-  const session=state?.session_analysis??{},sessionWeights=session.active_alert_weights??{};
+  const session=state?.session_analysis??{},sessionWeights=session.active_alert_weights??{},wallPhase=easternMarketPhase(clock);
+  const staleClosed=["CLOSED","WEEKEND_CLOSED"].includes(session.detected_session),displaySession=staleClosed&&wallPhase!=="RTH"?wallPhase:(session.detected_session??"waiting");
+  const sessionNote=["PREMARKET","PRE_MARKET"].includes(displaySession)?"PRE-MARKET SESSION ACTIVE · RTH OPENS 9:30 ET":displaySession==="AFTER_HOURS"?"OPTIONS RTH CLOSED":`${pretty(session.session_state??"current")} · clock ${pretty(session.clock_session??"waiting")}`;
+  const missingConfirmations=session?.unavailable_confirmations??[];
   const metrics=[
     ["Explosion",number(state?.explosion?.value).toFixed(2),`Ideal ≥ ${number(decision.thresholds?.explosion,.58).toFixed(2)}`,decision.checks.explosion],
     ["Direction",`${number(state?.direction?.value)>0?"+":""}${number(state?.direction?.value).toFixed(0)} / 3`,`Ideal |score| ≥ ${directionThreshold.toFixed(0)}`,decision.checks.direction],
@@ -564,11 +575,11 @@ function FocusView({state,symbol,engine,decision,lastQualifiedAlert}) {
     <div className="focus-heading"><div><span>ONE-SCREEN OPTIONS FOCUS</span><h2>{symbol} · {label}</h2><small>{engine.running?"● LIVE OPTIONS PRO":"○ ENGINE IDLE"} · {time(state?.timestamp)} · {pretty(state?.regime??"waiting")}</small></div><div className="focus-alert"><span>{decision.lifecycle.replaceAll("_"," ")}</span><b>{lifecycleMessage}</b><small>Bias state only · never a safety or execution guarantee</small></div></div>
     <div className="focus-hold-policy"><span><b>ENTRY</b> {decision.entryRequired} consecutive qualified snapshots</span><span><b>MINIMUM HOLD</b> {decision.minHoldSeconds}s</span><span><b>EXIT</b> {decision.exitRequired} consecutive failed snapshots after minimum hold</span><span><b>RAW NOW</b> {decision.rawQualified?"QUALIFIED":"NOT QUALIFIED"}</span></div>
     <div className="session-weight-strip">
-      <div><span>DETECTED SESSION</span><b>{pretty(session.detected_session??"waiting")}</b><small>{pretty(session.session_state??"current")} · clock {pretty(session.clock_session??"waiting")}</small></div>
+      <div><span>MARKET PHASE / SESSION</span><b>{pretty(displaySession)}</b><small>{sessionNote}</small></div>
       <div><span>TRANSITION CONFIDENCE</span><b>{number(session.transition_confidence).toFixed(0)}%</b><small>Candidate {number(session.candidate_session_score).toFixed(2)} · current {number(session.current_session_score).toFixed(2)}</small></div>
-      <div><span>ACTIVE GREEK WEIGHTS</span><b>Γ {pct(sessionWeights.gamma)} · V {pct(sessionWeights.vanna)} · C {pct(sessionWeights.charm)}</b><small>Gamma · Vanna · Charm</small></div>
-      <div><span>WEIGHTED ALIGNMENT</span><b>{number(session.active_greek_score)>0?"+":""}{number(session.active_greek_score).toFixed(2)}</b><small>{session.directional_qualified?"2 Greeks + price confirmed":"No directional confirmation"}</small></div>
-      <em>INITIAL HYPOTHESIS · NOT YET WALK-FORWARD VALIDATED</em>
+      <div><span>ACTIVE GREEK WEIGHTS</span><b>Γ {pct(sessionWeights.gamma)} · V {pct(sessionWeights.vanna)} · C {pct(sessionWeights.charm)}</b><small>Main Greek · {pretty(session.main_greek??"waiting")}</small></div>
+      <div><span>WEIGHTED ALIGNMENT</span><b>{number(session.active_greek_score)>0?"+":""}{number(session.active_greek_score).toFixed(2)}</b><small>{session.directional_qualified?"2 Greeks + price confirmed":session.main_greek==="VANNA"&&missingConfirmations.includes("overnight_iv_shift")?"Vanna direction unavailable · live IV shift required":"No directional confirmation"}</small></div>
+      <em><b>SESSION-CHANGE CONFIRMATION</b>{session.expected_confirmation??"Waiting for an active phase"}<small>{missingConfirmations.length?`Unavailable inputs: ${missingConfirmations.map(pretty).join(", ")}`:"All configured inputs observable"} · initial hypothesis, not walk-forward validated</small></em>
     </div>
     <div className={`last-qualified-bias ${lastQualifiedAlert?"has-alert":"no-alert"}`}><div><span>LAST QUALIFIED BIAS</span><b>{lastQualifiedAlert?`${lastQualifiedAlert.symbol} · ${biasLabel(lastQualifiedAlert.direction)}`:"NONE RECORDED"}</b></div>{lastQualifiedAlert?<><div><span>QUALIFIED AT</span><b>{logDate(lastQualifiedAlert.timestamp)} · {logTime(lastQualifiedAlert.timestamp)}</b></div><div><span>GATES AT EVENT</span><b>EXP {lastQualifiedAlert.explosion} · DIR {lastQualifiedAlert.score} · PRESSURE {lastQualifiedAlert.pressure>=0?"+":""}{number(lastQualifiedAlert.pressure).toFixed(2)}</b></div><div><span>OPTIONS CONFIDENCE</span><b>{pct(lastQualifiedAlert.confidence)}</b></div></>:<small>A historical LONG or SHORT appears here after the confirmation sequence completes.</small>}</div>
     <div className="focus-score-grid">{metrics.map(([name,value,ideal,passed])=><div className={`focus-score ${passed?"gate-pass":"gate-fail"}`} key={name}><span>{name}</span><b>{value}</b><small>{passed?"PASS":"WAIT"} · {ideal}</small></div>)}</div>
@@ -626,9 +637,10 @@ function MomentumTriadChart({history=[],state,symbol,variant="triad"}){
   </ChartShell>;
 }
 
-function GammaDynamicsLog({history,state,symbol}){
+function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const events=useMemo(()=>deriveGammaDynamicsEvents(history,state,symbol),[history,state,symbol]);
-  return <article className="panel gamma-dynamics-log"><header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Qualified pressure transitions · 5 visible rows</h2></div><b>{events.length} EVENTS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>PRICE</th><th>STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead><tbody>{events.map((event,index)=><tr key={`${event.timestamp}-${event.decision}-${index}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td>{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{event.decision==="UP"?"UPWARD":"DOWNWARD"}</span></td><td>{pct(event.intensity)}</td><td>{number(event.pressure)>0?"+":""}{number(event.pressure).toFixed(2)}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>)}</tbody></table>{!events.length&&<div className="empty-state">No qualified Gamma dynamics transition is present in the loaded persisted history.</div>}</div></article>;
+  const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id)??calls.find(call=>call.direction===event.decision&&Math.abs(new Date(call.alerted_at)-new Date(event.timestamp))<=1000);
+  return <article className="panel gamma-dynamics-log"><header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Qualified transitions · dynamic path values · 5 visible rows</h2></div><b>{events.length} EVENTS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC HIGH</th><th>DYNAMIC LOW</th><th>CURRENT QQQ</th><th>STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead><tbody>{events.map((event,index)=>{const call=linkedCall(event),current=call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close;return <tr key={`${event.timestamp}-${event.decision}-${index}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td>{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td>{call?number(call.dynamic_high,call.highest_price).toFixed(4):"—"}</td><td>{call?number(call.dynamic_low,call.lowest_price).toFixed(4):"—"}</td><td>{Number.isFinite(Number(current))?number(current).toFixed(4):"—"}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{call?.status??(event.decision==="UP"?"UPWARD":"DOWNWARD")}</span></td><td>{pct(event.intensity)}</td><td>{number(event.pressure)>0?"+":""}{number(event.pressure).toFixed(2)}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>})}</tbody></table>{!events.length&&<div className="empty-state">No qualified Gamma dynamics transition is present in the loaded persisted history.</div>}</div></article>;
 }
 
 const SYSTEM_OUTCOME_LABELS={PRIMARY_OPTIONS:"Primary Options Bias",MOMENTUM_TRIAD:"Momentum Triad",GAMMA_DYNAMICS:"Gamma Dynamics"};
@@ -641,13 +653,14 @@ function GreekAuditBadge({label,tone="neutral",detail=null}){
 
 function FiftyPointPathChart({call}){
   const observedBars=(call.minute_bars??[]).filter(bar=>Number.isFinite(number(bar.high,NaN))&&Number.isFinite(number(bar.low,NaN))).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
-  const [hovered,setHovered]=useState(null);
+  const [hovered,setHovered]=useState(null),[expanded,setExpanded]=useState(false),[yZoom,setYZoom]=useState(1),[yCenter,setYCenter]=useState(null);
   const datum=number(call.entry_price),target=number(call.target_price,datum+(call.direction==="UP"?50:-50));
   const datumOnly=!observedBars.length;
   const bars=datumOnly?[{timestamp:call.alerted_at,open:datum,high:datum,low:datum,close:datum,samples:1}]:observedBars;
-  const values=bars.flatMap(bar=>[number(bar.high),number(bar.low),number(bar.open),number(bar.close)]).concat([datum,target]);
-  const rawMin=Math.min(...values),rawMax=Math.max(...values),padding=Math.max((rawMax-rawMin)*.12,Math.abs(rawMax)*.0002,.05);
-  const min=rawMin-padding,max=rawMax+padding,dims={width:920,height:270,left:76,right:24,top:20,bottom:48};
+  const values=bars.flatMap(bar=>[number(bar.high),number(bar.low),number(bar.open),number(bar.close)]).concat([datum]);
+  const rawMin=Math.min(...values),rawMax=Math.max(...values),padding=Math.max((rawMax-rawMin)*.18,Math.abs(rawMax)*.00012,.025);
+  const baseMin=rawMin-padding,baseMax=rawMax+padding,baseSpan=Math.max(baseMax-baseMin,.05),baseCenter=(baseMin+baseMax)/2;
+  const viewSpan=baseSpan/yZoom,center=yCenter??baseCenter,min=center-viewSpan/2,max=center+viewSpan/2,dims={width:920,height:270,left:76,right:24,top:20,bottom:48};
   const plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom;
   const x=index=>dims.left+(index+.5)*plotWidth/Math.max(1,bars.length);
   const y=value=>dims.top+(max-value)*plotHeight/Math.max(max-min,1e-9);
@@ -657,40 +670,64 @@ function FiftyPointPathChart({call}){
   const ticks=Array.from({length:5},(_,index)=>max-(max-min)*index/4);
   const xTickIndexes=[...new Set(Array.from({length:Math.min(5,bars.length)},(_,index)=>Math.round(index*(bars.length-1)/Math.max(1,Math.min(5,bars.length)-1))))];
   const onPointerMove=event=>{const bounds=event.currentTarget.getBoundingClientRect(),ratio=(event.clientX-bounds.left)/Math.max(bounds.width,1),svgX=ratio*dims.width,index=Math.max(0,Math.min(bars.length-1,Math.round((svgX-dims.left)/Math.max(plotWidth,1)*bars.length-.5)));setHovered({index,bar:bars[index],leftPct:Math.max(8,Math.min(76,ratio*100))})};
+  const onWheel=event=>{
+    event.preventDefault();
+    if(event.shiftKey){
+      setYCenter((yCenter??baseCenter)+(event.deltaY>0?-1:1)*viewSpan*.14);
+      return;
+    }
+    const bounds=event.currentTarget.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(event.clientY-bounds.top)/Math.max(bounds.height,1)));
+    const cursorPrice=max-ratio*(max-min),nextZoom=Math.max(1,Math.min(40,yZoom*(event.deltaY<0?1.25:.8))),nextSpan=baseSpan/nextZoom;
+    setYZoom(nextZoom);setYCenter(nextZoom===1?null:cursorPrice+(ratio-.5)*nextSpan);
+  };
+  const resetY=()=>{setYZoom(1);setYCenter(null)};
   const diff=value=>{const result=number(value)-datum;return `${result>=0?"+":""}${result.toFixed(4)} pts`};
-  return <div className="alert-path-chart">
+  const targetVisible=target>=min&&target<=max,targetAtTop=target>max;
+  useEffect(()=>{if(!expanded)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";const close=event=>event.key==="Escape"&&setExpanded(false);window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previous;window.removeEventListener("keydown",close)}},[expanded]);
+  const content=<div className={`alert-path-chart ${expanded?"is-expanded":""}`}>
+    <div className="alert-path-toolbar"><div><b>{call.symbol} · {biasLabel(call.direction)} CALL</b><span>Observed price auto-scale · wheel zooms Y · Shift+wheel moves Y</span></div><div><button type="button" onClick={()=>setYCenter((yCenter??baseCenter)+viewSpan*.14)}>Y ↑</button><button type="button" onClick={()=>setYCenter((yCenter??baseCenter)-viewSpan*.14)}>Y ↓</button><b>Y {yZoom.toFixed(1)}×</b><button type="button" onClick={resetY} disabled={yZoom===1&&yCenter==null}>RESET Y</button><button type="button" className="expand-path" onClick={()=>setExpanded(value=>!value)}>{expanded?"↙ MINIMIZE":"↗ EXPAND"}</button></div></div>
     {datumOnly&&<div className="datum-only-warning">DATUM ONLY · this older call has no stored one-minute observations. No highs or lows were reconstructed.</div>}
     <div className="alert-path-legend"><span className="datum">DATUM {datum.toFixed(4)}</span><span className="high">MINUTE HIGH</span><span className="low">MINUTE LOW</span><span className="close">MINUTE CLOSE</span><span className="target">50-POINT {call.direction==="UP"?"LONG":"SHORT"} TARGET {target.toFixed(4)}</span></div>
     <div className="alert-path-stage">
-      <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`One-minute high and low path from the ${biasLabel(call.direction)} alert datum to its 50-point target`} onPointerMove={onPointerMove} onPointerLeave={()=>setHovered(null)}>
+      <svg viewBox={`0 0 ${dims.width} ${dims.height}`} role="img" aria-label={`One-minute high and low path from the ${biasLabel(call.direction)} alert datum to its 50-point target`} onWheel={onWheel} onDoubleClick={resetY} onPointerMove={onPointerMove} onPointerLeave={()=>setHovered(null)}>
         {ticks.map((tick,index)=><g key={tick}><line className="path-grid" x1={dims.left} x2={dims.width-dims.right} y1={y(tick)} y2={y(tick)}/><text className="path-axis-text" x={dims.left-10} y={y(tick)+4} textAnchor="end">{tick.toFixed(4)}</text></g>)}
         {xTickIndexes.map(index=><g key={index}><line className="path-grid vertical" x1={x(index)} x2={x(index)} y1={dims.top} y2={dims.height-dims.bottom}/><text className="path-axis-text" x={x(index)} y={dims.height-24} textAnchor="middle">{chartTime(bars[index].timestamp)}</text></g>)}
         <text className="path-axis-title" transform={`translate(16 ${dims.top+plotHeight/2}) rotate(-90)`} textAnchor="middle">PRICE ({call.symbol})</text>
         <text className="path-axis-title" x={dims.left+plotWidth/2} y={dims.height-4} textAnchor="middle">TIME · EASTERN</text>
         <line className="path-reference datum" x1={dims.left} x2={dims.width-dims.right} y1={y(datum)} y2={y(datum)}/>
-        <line className="path-reference target" x1={dims.left} x2={dims.width-dims.right} y1={y(target)} y2={y(target)}/>
+        {targetVisible?<line className="path-reference target" x1={dims.left} x2={dims.width-dims.right} y1={y(target)} y2={y(target)}/>:<g className="path-target-edge"><line x1={dims.left} x2={dims.width-dims.right} y1={targetAtTop?dims.top:dims.height-dims.bottom} y2={targetAtTop?dims.top:dims.height-dims.bottom}/><text x={dims.width-dims.right-6} y={targetAtTop?dims.top+14:dims.height-dims.bottom-7} textAnchor="end">TARGET {targetAtTop?"↑":"↓"} {target.toFixed(4)}</text></g>}
         {bars.map((bar,index)=><g className="minute-candle" key={`${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={y(number(bar.high))} y2={y(number(bar.low))}/><line className="open-tick" x1={x(index)-5} x2={x(index)} y1={y(number(bar.open))} y2={y(number(bar.open))}/><line className="close-tick" x1={x(index)} x2={x(index)+5} y1={y(number(bar.close))} y2={y(number(bar.close))}/></g>)}
         <path className="minute-high-line" d={highPath}/><path className="minute-low-line" d={lowPath}/><path className="minute-close-line" d={closePath}/>
         {hovered&&<line className="path-crosshair" x1={x(hovered.index)} x2={x(hovered.index)} y1={dims.top} y2={dims.height-dims.bottom}/>}
       </svg>
       {hovered&&<div className="alert-path-tooltip" style={{left:`${hovered.leftPct}%`}}><b>{logDate(hovered.bar.timestamp)} · {logTime(hovered.bar.timestamp)}</b><span>OPEN {number(hovered.bar.open).toFixed(4)} <i>{diff(hovered.bar.open)}</i></span><span>HIGH {number(hovered.bar.high).toFixed(4)} <i>{diff(hovered.bar.high)}</i></span><span>LOW {number(hovered.bar.low).toFixed(4)} <i>{diff(hovered.bar.low)}</i></span><span>CLOSE {number(hovered.bar.close).toFixed(4)} <i>{diff(hovered.bar.close)}</i></span></div>}
     </div>
+    <div className="alert-path-help"><span>Wheel: zoom Y around cursor price</span><span>Shift + wheel or Y ↑/↓: move Y-axis</span><span>Double-click: reset observed-price scale</span></div>
   </div>;
+  return expanded?createPortal(<div className="alert-path-expanded">{content}</div>,document.body):content;
 }
 
 function FiftyPointOutcomeCard({call,system="PRIMARY_OPTIONS"}){
-  const reached=Boolean(call.target_reached_at),callId=visibleCallId(call,system),closeState=call.target_close_confirmed===true?"CONFIRMED":call.target_close_confirmed===false?"NOT CONFIRMED":"PENDING";
+  const reached=Boolean(call.target_reached_at),expired=call.status==="EXPIRED",callId=visibleCallId(call,system),closeState=expired?"EXPIRED":call.target_close_confirmed===true?"CONFIRMED":call.target_close_confirmed===false?"NOT CONFIRMED":"PENDING";
+  const currentPrice=call.current_price??call.final_price??call.minute_bars?.at(-1)?.close;
+  const liveElapsed=Math.max(0,(new Date(call.current_price_at??call.price_observed_at??call.alerted_at)-new Date(call.alerted_at))/1000);
+  const strongest=reached?call.strongest_greek_at_target:(call.strongest_greek_current??call.strongest_greek);
+  const weakest=reached?call.weakest_greek_at_target:(call.weakest_greek_current??call.weakest_greek);
   return <article className="fifty-point-card">
     <header><div><span>CALL ID</span><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(callId)}>{callId}</button></div><div><span>CALL</span><b className={call.direction==="UP"?"positive":"negative"}>{biasLabel(call.direction)} · DATUM {number(call.entry_price).toFixed(4)}</b></div><div><span>STATUS</span><b>{reached?"50-POINT TARGET REACHED":call.status==="EXPIRED"?"OBSERVATION WINDOW EXPIRED":"TRACKING LIVE"}</b></div></header>
     <FiftyPointPathChart call={call}/>
     <div className="target-evaluation-row">
+      <div><span>EXPIRES · EASTERN</span><b>{logDate(call.expires_at)}<small>{logTime(call.expires_at)}</small></b></div>
       <div><span>REACHED · EASTERN</span><b>{reached?<>{logDate(call.target_reached_at)}<small>{logTime(call.target_reached_at)}</small></>:"—"}</b></div>
       <div><span>REACH PRICE</span><b>{reached?number(call.target_reached_price).toFixed(4):"—"}</b></div>
-      <div><span>ELAPSED</span><b>{reached?duration(call.seconds_to_target):"TRACKING"}</b></div>
-      <div><span>TARGET TOUCH</span><b>{reached?call.target_touch_type:"—"}</b><small>{reached?(call.target_touch_type==="OPEN"?"First observation of minute":call.direction==="UP"?"Minute high touched target":"Minute low touched target"):"Awaiting observed touch"}</small></div>
-      <div><span>MINUTE CLOSE</span><b>{closeState}</b><small>{call.target_close_price!=null?number(call.target_close_price).toFixed(4):"Finalizes after target minute"}</small></div>
-      <div><span>STRONGEST GREEK</span><GreekAuditBadge label={call.strongest_greek_at_target} tone="strong"/></div>
-      <div><span>WEAKEST GREEK</span><GreekAuditBadge label={call.weakest_greek_at_target} tone="weak"/></div>
+      <div><span>ELAPSED</span><b>{reached?duration(call.seconds_to_target):expired?duration(call.seconds_observed):duration(liveElapsed)}</b><small>{expired?"WINDOW COMPLETE":"Observed time"}</small></div>
+      <div><span>TARGET TOUCH</span><b>{reached?call.target_touch_type:expired?"NOT REACHED":"—"}</b><small>{reached?(call.target_touch_type==="OPEN"?"First observation of minute":call.direction==="UP"?"Minute high touched target":"Minute low touched target"):expired?`${number(call.target_shortfall_points).toFixed(4)} points short`:"Awaiting observed touch"}</small></div>
+      <div><span>MINUTE CLOSE</span><b>{closeState}</b><small>{call.target_close_price!=null?number(call.target_close_price).toFixed(4):expired?"No target minute":"Finalizes after target minute"}</small></div>
+      <div><span>DYNAMIC HIGH</span><b>{number(call.dynamic_high,call.highest_price).toFixed(4)}</b></div>
+      <div><span>DYNAMIC LOW</span><b>{number(call.dynamic_low,call.lowest_price).toFixed(4)}</b></div>
+      <div><span>CURRENT PRICE</span><b>{Number.isFinite(Number(currentPrice))?number(currentPrice).toFixed(4):"—"}</b><small>{expired?"Final observed":"Updates with feed"}</small></div>
+      <div><span>{reached?"STRONGEST AT TARGET":"STRONGEST · CURRENT"}</span><GreekAuditBadge label={strongest} tone="strong"/></div>
+      <div><span>{reached?"WEAKEST AT TARGET":"WEAKEST · CURRENT"}</span><GreekAuditBadge label={weakest} tone="weak"/></div>
     </div>
     <footer><span>Source {pretty(call.price_source??"unknown")}</span><span>One-minute OHLC is aggregated from observed updates; no synthetic candles.</span><span>Target {number(call.target_price,number(call.entry_price)+(call.direction==="UP"?50:-50)).toFixed(4)}</span></footer>
   </article>;
@@ -710,17 +747,30 @@ function dedupeLogicalCalls(calls=[]){
 function OutcomeAttributionMini({system,data,symbol}){
   const group=data?.systems?.[system]??{highest:[],lowest:[],tracking:0,total:0};
   const legacy=[...(group.highest??[]),...(group.lowest??[])],calls=dedupeLogicalCalls(group.calls??[...new Map(legacy.map(item=>[item.id,item])).values()]);
-  const [copied,setCopied]=useState(false);
+  const [copied,setCopied]=useState(false),[query,setQuery]=useState(""),[selectedId,setSelectedId]=useState(""),[lookedUpCall,setLookedUpCall]=useState(null),[lookupError,setLookupError]=useState("");
   const source=calls.find(Boolean)?.price_source??"WAITING";
+  const normalized=query.trim(),localMatch=calls.find(call=>visibleCallId(call,system)===normalized),selectedCall=lookedUpCall??calls.find(call=>visibleCallId(call,system)===selectedId);
+  const filteredCalls=normalized&&!selectedCall?calls.filter(call=>visibleCallId(call,system).includes(normalized)):selectedCall?[selectedCall]:calls;
+  const lookup=async()=>{
+    if(!normalized){setSelectedId("");setLookedUpCall(null);setLookupError("");return}
+    if(localMatch){setSelectedId(normalized);setLookedUpCall(null);setLookupError("");return}
+    try{
+      const stored=await fetchOutcomeCall(normalized);
+      if(stored.system!==system||stored.symbol!==symbol)throw new Error("That ID belongs to a different system or instrument.");
+      setSelectedId(normalized);setLookedUpCall(stored);setLookupError("");
+    }catch(error){setSelectedId("");setLookedUpCall(null);setLookupError(error.message)}
+  };
+  useEffect(()=>{setQuery("");setSelectedId("");setLookedUpCall(null);setLookupError("")},[system,symbol]);
   const copyTable=async()=>{
-    const header=["CALL ID","STATUS","CALL","ALERT DATE ET","ALERT TIME ET","DATUM","TARGET","REACHED DATE ET","REACHED TIME ET","REACH PRICE","SECONDS TO TARGET","TOUCH TYPE","CLOSE CONFIRMED","STRONGEST GREEK","WEAKEST GREEK","SOURCE"];
-    const lines=calls.map(call=>[visibleCallId(call,system),call.status,biasLabel(call.direction),logDate(call.alerted_at),logTime(call.alerted_at),number(call.entry_price).toFixed(4),call.target_price==null?"—":number(call.target_price).toFixed(4),call.target_reached_at?logDate(call.target_reached_at):"—",call.target_reached_at?logTime(call.target_reached_at):"—",call.target_reached_price==null?"—":number(call.target_reached_price).toFixed(4),call.seconds_to_target==null?"—":number(call.seconds_to_target).toFixed(1),call.target_touch_type??"—",call.target_close_confirmed==null?"PENDING":call.target_close_confirmed?"YES":"NO",call.strongest_greek_at_target??"—",call.weakest_greek_at_target??"—",pretty(call.price_source??"unknown")].join("\t"));
+    const header=["CALL ID","STATUS","CALL","ALERT DATE ET","ALERT TIME ET","EXPIRES DATE ET","EXPIRES TIME ET","DATUM","TARGET","DYNAMIC HIGH","DYNAMIC LOW","CURRENT/FINAL PRICE","REACHED DATE ET","REACHED TIME ET","REACH PRICE","SECONDS TO TARGET","TOUCH TYPE","CLOSE CONFIRMED","CURRENT STRONGEST GREEK","CURRENT WEAKEST GREEK","SOURCE"];
+    const lines=filteredCalls.map(call=>[visibleCallId(call,system),call.status,biasLabel(call.direction),logDate(call.alerted_at),logTime(call.alerted_at),logDate(call.expires_at),logTime(call.expires_at),number(call.entry_price).toFixed(4),call.target_price==null?"—":number(call.target_price).toFixed(4),number(call.dynamic_high,call.highest_price).toFixed(4),number(call.dynamic_low,call.lowest_price).toFixed(4),Number.isFinite(Number(call.current_price??call.final_price))?number(call.current_price??call.final_price).toFixed(4):"—",call.target_reached_at?logDate(call.target_reached_at):"—",call.target_reached_at?logTime(call.target_reached_at):"—",call.target_reached_price==null?"—":number(call.target_reached_price).toFixed(4),call.seconds_to_target==null?"—":number(call.seconds_to_target).toFixed(1),call.target_touch_type??"—",call.target_close_confirmed==null?"PENDING":call.target_close_confirmed?"YES":"NO",call.strongest_greek_at_target??call.strongest_greek_current??"—",call.weakest_greek_at_target??call.weakest_greek_current??"—",pretty(call.price_source??"unknown")].join("\t"));
     try{await navigator.clipboard.writeText([header.join("\t"),...lines].join("\n"));setCopied(true);window.setTimeout(()=>setCopied(false),1800)}catch{setCopied(false)}
   };
   return <article className="panel outcome-attribution">
-    <header className="panel-head"><div><span>50-POINT OUTCOME PATHS</span><h2>{SYSTEM_OUTCOME_LABELS[system]} · one-minute observed highs and lows per call</h2></div><div className="outcome-head-actions"><button type="button" className="copy-table" onClick={copyTable} disabled={!calls.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><div className="outcome-source"><b>{source.replaceAll("_"," ")}</b><small>{group.tracking} tracking · {group.total} calls</small></div></div></header>
-    <div className="outcome-method"><b>Reading the path:</b> datum is fixed at the alert price. Each candle is the observed open, high, low, and close for one minute. The directional target is exactly 50 instrument points from datum. A target is never inferred from an unobserved interval.</div>
-    <div className="fifty-point-scroll">{calls.map(call=><FiftyPointOutcomeCard key={call.id} call={call} system={system}/>)}{!calls.length&&<div className="empty-state">{data?.unavailable?"Outcome tracking is waiting for the updated Render backend. The rest of the dashboard remains live.":`No qualified ${SYSTEM_OUTCOME_LABELS[system]} decisions have started tracking yet.`}</div>}</div>
+    <header className="panel-head"><div><span>50-POINT OUTCOME PATHS</span><h2>{SYSTEM_OUTCOME_LABELS[system]} · one-minute observed highs and lows per call</h2></div><div className="outcome-head-actions"><button type="button" className="copy-table" onClick={copyTable} disabled={!filteredCalls.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><div className="outcome-source"><b>{source.replaceAll("_"," ")}</b><small>{group.tracking} tracking · {group.total} calls</small></div></div></header>
+    <div className="outcome-call-finder"><label><span>LOOK UP STORED CALL ID</span><input list={`call-ids-${system}`} value={query} onChange={event=>{setQuery(event.target.value.replace(/\D/g,""));setSelectedId("");setLookedUpCall(null);setLookupError("")}} onKeyDown={event=>{if(event.key==="Enter")lookup()}} placeholder="YYYYMMDDHHMMSSmmmss"/></label><datalist id={`call-ids-${system}`}>{calls.map(call=><option key={call.id} value={visibleCallId(call,system)}>{call.status} · {biasLabel(call.direction)}</option>)}</datalist><button type="button" onClick={lookup}>FIND</button><button type="button" onClick={()=>{setQuery("");setSelectedId("");setLookedUpCall(null);setLookupError("")}}>ALL CALLS</button>{lookupError&&<small>{lookupError}</small>}</div>
+    <div className="outcome-method"><b>Reading the path:</b> datum is fixed at the alert price. Each candle is observed OHLC for one minute. The target is exactly 50 {symbol} points and expires at the displayed Eastern deadline. Post-expiry prices never count.</div>
+    <div className="fifty-point-scroll">{filteredCalls.map(call=><FiftyPointOutcomeCard key={call.id} call={call} system={system}/>)}{!filteredCalls.length&&<div className="empty-state">{normalized?"No loaded call ID matches. Enter the complete ID and select FIND to query Postgres.":data?.unavailable?"Outcome tracking is waiting for the updated Render backend. The rest of the dashboard remains live.":`No qualified ${SYSTEM_OUTCOME_LABELS[system]} decisions have started tracking yet.`}</div>}</div>
     <footer><span>Price source: {source.replaceAll("_"," ")}</span><span>Visible clocks: America/New_York (Eastern), 12-hour format.</span><span>Calls that do not reach 50 points are explicitly TRACKING or EXPIRED.</span></footer>
   </article>;
 }
@@ -836,10 +886,10 @@ export default function Home() {
     <aside className="sidebar"><div className="side-top"><div className="nav-context"><span>WORKSPACE</span><b>Live Overview</b><small>Decision → models → evidence</small></div><div className="nav-section-label"><span>NAVIGATION</span><b>{orderedOverviewSections.length} SECTIONS</b></div><nav className="overview-subnav" aria-label="Overview sections">{orderedOverviewSections.map(([label,section],index)=><button className={activeSection===section?"active":""} aria-current={activeSection===section?"location":undefined} key={section} onClick={()=>jumpTo(section)}><b>{String(index+1).padStart(2,"0")}</b><span><strong>{label}</strong><small>{OVERVIEW_CATEGORIES[section]}</small></span></button>)}</nav><div className="layout-actions"><button type="button" onClick={()=>setAllSections(true)}>Expand all</button><button type="button" onClick={()=>setAllSections(false)}>Collapse all</button></div><button type="button" className="reset-layout" onClick={()=>{setModuleOrder(DEFAULT_MODULE_ORDER);notify("Overview order reset")}}>↺ Reset section order</button></div><div className="side-bottom"><div className={`system-health ${system?.database_connected?"is-good":"is-bad"}`}><span><i/>{system?.database_connected?"System healthy":"System degraded"}</span><small>v{config?.version??"—"} · Render</small></div></div></aside>
     <section className="content">{view!=="Overview"?<ModulePage {...{view,state,history,alerts,performance,system,config,replay,onReplay:runReplay,notify}}/>:<><div id="overview-top" className="page-head overview-command overview-section"><div><div className="eyebrow">LIVE TRADING COMMAND</div><h1>Pressure intelligence</h1><p>Options-derived directional pressure with independent price confirmation.</p></div><div className="controls"><label>Instrument<select value={symbol} disabled={engine.running} onChange={e=>setSymbol(e.target.value)}>{instruments.map(item=><option value={item.symbol} key={item.symbol}>{item.symbol}</option>)}</select><small className={selectedInstrument?.available?"provider-ready":"provider-missing"}>{selectedInstrument?.provider}{selectedInstrument?.requirement?` · ${selectedInstrument.requirement}`:""}</small></label><label>Update interval<select value={resolution} onChange={e=>setResolution(Number(e.target.value))}><option value="5">5 seconds</option><option value="15">15 seconds</option><option value="60">1 minute</option></select></label><button className={engine.running?"stop":"start"} disabled={!engine.running&&!selectedInstrument?.available} onClick={toggle}><i/>{engine.running?"Stop live engine":selectedInstrument?.available?"Start live engine":"Feed required"}</button></div></div>
     <OverviewSectionHeading number="01" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
-    <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert}/>
+    <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="momentum-triad" index={moduleOrder.indexOf("momentum-triad")} {...draggableProps}><OverviewDisclosure id="momentum-triad" title="NQ Momentum Triad" description="Zomma acceleration · Speed direction · Delta confirmation"><NQMomentumTriadModule state={state} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><MomentumTriadChart history={visualHistory} state={state} symbol={symbol}/></article><OutcomeAttributionMini system="MOMENTUM_TRIAD" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
-    <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics Quartet" description="Zomma/Color intensity · Speed/Gamma signed curvature pressure"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><MomentumTriadChart history={visualHistory} state={state} symbol={symbol} variant="quartet"/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
+    <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics Quartet" description="Zomma/Color intensity · Speed/Gamma signed curvature pressure"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><MomentumTriadChart history={visualHistory} state={state} symbol={symbol} variant="quartet"/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="forecast" index={moduleOrder.indexOf("forecast")} {...draggableProps}><OverviewDisclosure id="forecast" title="Experimental Forecast" description="Research-only 5-minute / 30-point probability model"><FiveMinuteForecast history={visualHistory} state={state} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="score-modules" index={moduleOrder.indexOf("score-modules")} {...draggableProps}><OverviewDisclosure id="score-modules" title="Signal Scores" description="Explosion, Direction, Pressure, and score histories"><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div><div className="score-history-grid"><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="explosion"/></article><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="direction"/></article></div><OutcomeAttributionMini system="PRIMARY_OPTIONS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="greek-orders" index={moduleOrder.indexOf("greek-orders")} {...draggableProps}><OverviewDisclosure id="greek-orders" title="Greek Orders" description="First-, second-, and third-order streamed exposures"><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article></OverviewDisclosure></DraggableOverviewModule>

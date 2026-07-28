@@ -72,6 +72,25 @@ class OutcomeAttributionTracker:
             return None, None
         return max(scores, key=scores.get), min(scores, key=scores.get)
 
+    def _expire(self, record: dict[str, Any]) -> None:
+        """Close an untouched path using its last real observation."""
+        scores = record.get("greek_scores_current", {})
+        strongest, weakest = self._leaders(scores)
+        final_price = float(record.get("current_price", record["entry_price"]))
+        target = float(record["target_price"])
+        is_long = record["direction"] == Direction.UP.value
+        shortfall = max(0.0, target-final_price if is_long else final_price-target)
+        record.update(
+            status="EXPIRED",
+            completion_reason="HORIZON_EXPIRED",
+            expired_at=record["expires_at"],
+            final_price=final_price,
+            seconds_observed=max(0.0, (record["expires_at"]-record["alerted_at"]).total_seconds()),
+            target_shortfall_points=shortfall,
+            strongest_greek_current=strongest,
+            weakest_greek_current=weakest,
+        )
+
     def _call_id(self,timestamp:datetime,system:str)->str:
         stream={"PRIMARY_OPTIONS":1,"MOMENTUM_TRIAD":2,"GAMMA_DYNAMICS":3}[system]
         eastern=timestamp.astimezone(self.eastern)
@@ -168,8 +187,27 @@ class OutcomeAttributionTracker:
         for signal_id, record in list(self._active.items()):
             if record["symbol"] != symbol:
                 continue
+            # A price first observed after the declared horizon cannot be used
+            # to manufacture a target touch. Finalize from the last stored tick.
+            if record.get("target_reached_at") is None and now > record["expires_at"]:
+                self._expire(record)
+                del self._active[signal_id]
+                updates.append(dict(record))
+                continue
             scores = self._relative_scores(symbol, record["system"], state, Direction(record["direction"]))
             self._update_minute_path(record,price,now,scores)
+            strongest_current, weakest_current = self._leaders(scores)
+            record.update(
+                current_price=price,
+                current_price_at=now,
+                greek_scores_current=scores,
+                strongest_greek_current=strongest_current,
+                weakest_greek_current=weakest_current,
+            )
+            if symbol == "QQQ":
+                record["qqq_price"] = price
+            elif symbol == "NQ":
+                record["nq_price"] = price
             if price > record["highest_price"]:
                 record["highest_price"] = price
                 record["highest_at"] = now
@@ -196,8 +234,13 @@ class OutcomeAttributionTracker:
             record["price_source"] = price_source
             record["price_observed_at"] = price_observed_at
             record["price_source_timestamp"] = price_source_timestamp
+            record["dynamic_high"] = record["highest_price"]
+            record["dynamic_low"] = record["lowest_price"]
             target_minute=self._minute_bucket(record["target_reached_at"]) if record.get("target_reached_at") else None
-            if target_minute is not None and self._minute_bucket(now)>target_minute:
+            if record.get("target_reached_at") is None and now >= record["expires_at"]:
+                self._expire(record)
+                del self._active[signal_id]
+            elif target_minute is not None and self._minute_bucket(now)>target_minute:
                 record["status"] = "COMPLETE"
                 record["completion_reason"]="TARGET_REACHED"
                 del self._active[signal_id]
@@ -260,6 +303,10 @@ class OutcomeAttributionTracker:
                 "target_touch_type":None,
                 "target_close_confirmed":None,
                 "target_close_price":None,
+                "expired_at":None,
+                "final_price":None,
+                "seconds_observed":0.0,
+                "target_shortfall_points":target_points,
                 "strongest_greek_at_target":None,
                 "weakest_greek_at_target":None,
                 "decay_greek_at_target":None,
@@ -272,6 +319,10 @@ class OutcomeAttributionTracker:
                 "highest_at": now,
                 "lowest_price": price,
                 "lowest_at": now,
+                "dynamic_high": price,
+                "dynamic_low": price,
+                "current_price": price,
+                "current_price_at": now,
                 "favorable_points": 0.0,
                 "adverse_points": 0.0,
                 "seconds_to_high": 0.0,
@@ -279,9 +330,12 @@ class OutcomeAttributionTracker:
                 "strongest_greek": strongest,
                 "leading_greek": strongest,
                 "weakest_greek": weakest,
+                "strongest_greek_current": strongest,
+                "weakest_greek_current": weakest,
                 "decay_greek": weakest,
                 "decision_reasons": self._decision_reasons(system, state, direction),
                 "greek_scores_at_signal": scores,
+                "greek_scores_current": scores,
                 "greek_scores_at_high": scores,
                 "greek_scores_at_low": scores,
                 "greek_values_at_signal": {

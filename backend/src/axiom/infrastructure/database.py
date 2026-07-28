@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime,timezone
 from typing import Any
 
 from sqlalchemy import JSON,DateTime,Float,ForeignKey,Integer,String,Text,UniqueConstraint,func,select,text
@@ -126,10 +126,45 @@ class SqlAlchemyRepository:
                 for key,value in values.items():setattr(row,key,value)
             await s.commit()
 
+    @staticmethod
+    def _reconcile_expired_outcome(row:SystemOutcomeRow,now:datetime)->bool:
+        """Finalize an overdue persisted call after a service restart."""
+        expires_at=row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+        alerted_at=row.alerted_at if row.alerted_at.tzinfo else row.alerted_at.replace(tzinfo=timezone.utc)
+        if row.status!="TRACKING" or expires_at>now:
+            return False
+        payload=dict(row.payload)
+        if payload.get("target_reached_at") is not None:
+            return False
+        bars=payload.get("minute_bars") or []
+        final_price=float(payload.get("current_price")
+            or (bars[-1].get("close") if bars else None)
+            or payload.get("entry_price",row.entry_price))
+        entry=float(payload.get("entry_price",row.entry_price))
+        target=float(payload.get("target_price",
+            entry+(50 if row.direction=="UP" else -50)))
+        shortfall=max(0.0,target-final_price if row.direction=="UP" else final_price-target)
+        payload.update(
+            status="EXPIRED",completion_reason="HORIZON_EXPIRED",
+            expired_at=expires_at.isoformat(),final_price=final_price,
+            current_price=final_price,
+            seconds_observed=max(0.0,(expires_at-alerted_at).total_seconds()),
+            target_shortfall_points=shortfall,
+            dynamic_high=float(payload.get("dynamic_high",payload.get("highest_price",row.highest_price))),
+            dynamic_low=float(payload.get("dynamic_low",payload.get("lowest_price",row.lowest_price))),
+            strongest_greek_current=payload.get("strongest_greek_current",payload.get("strongest_greek")),
+            weakest_greek_current=payload.get("weakest_greek_current",payload.get("weakest_greek")),
+        )
+        row.status="EXPIRED"
+        row.payload=payload
+        return True
+
     async def outcome_attribution(self,symbol:str,per_group:int=3)->dict[str,Any]:
         async with self.sessions() as s:
             rows=(await s.execute(select(SystemOutcomeRow).where(SystemOutcomeRow.symbol==symbol.upper())
                 .order_by(SystemOutcomeRow.alerted_at.desc()).limit(1000))).scalars().all()
+            changed=any(self._reconcile_expired_outcome(row,datetime.now(timezone.utc)) for row in rows)
+            if changed:await s.commit()
         systems={}
         for system in ("PRIMARY_OPTIONS","MOMENTUM_TRIAD","GAMMA_DYNAMICS"):
             items=[dict(row.payload) for row in rows if row.system==system]
@@ -160,6 +195,16 @@ class SqlAlchemyRepository:
                 "duplicates_suppressed":len(items)-len(calls),
             }
         return {"symbol":symbol.upper(),"systems":systems}
+
+    async def system_outcome_by_call_id(self,call_id:str)->dict[str,Any]|None:
+        """Return the persisted JSON record for an exact visible call ID."""
+        async with self.sessions() as s:
+            row=(await s.execute(select(SystemOutcomeRow)
+                .where(SystemOutcomeRow.id.like(f"{call_id}-%"))
+                .order_by(SystemOutcomeRow.alerted_at.desc()).limit(1))).scalar_one_or_none()
+            if row is not None and self._reconcile_expired_outcome(row,datetime.now(timezone.utc)):
+                await s.commit()
+        return None if row is None else dict(row.payload)
 
     async def list_alerts(self,limit:int=100,offset:int=0)->list[Alert]:
         async with self.sessions() as s:

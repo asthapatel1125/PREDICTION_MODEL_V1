@@ -77,3 +77,36 @@ def test_flicker_does_not_open_duplicate_same_direction_call():
     )
     assert {item["id"] for item in updates} == {first_id}
     assert len(tracker._active) == 1
+
+
+def test_unreached_call_expires_at_horizon_with_last_observed_values():
+    tracker = OutcomeAttributionTracker(horizon_minutes=30)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
+    signal_id = created[0]["id"]
+    last_time = start + timedelta(minutes=29, seconds=55)
+    tracker.process(state(last_time, 512), EngineMode.LIVE, 512, "THETADATA", last_time)
+    updates = tracker.process(
+        state(start + timedelta(minutes=30, seconds=5), 560),
+        EngineMode.LIVE, 560, "THETADATA", start + timedelta(minutes=30, seconds=5),
+    )
+    record = next(item for item in updates if item["id"] == signal_id)
+    assert record["status"] == "EXPIRED"
+    assert record["final_price"] == 512
+    assert record["highest_price"] == 512
+    assert record["target_reached_at"] is None
+    assert record["target_shortfall_points"] == 38
+    assert signal_id not in tracker._active
+
+
+def test_target_touch_exactly_at_expiry_counts():
+    tracker = OutcomeAttributionTracker(horizon_minutes=30)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
+    signal_id = created[0]["id"]
+    expiry = start + timedelta(minutes=30)
+    updates = tracker.process(state(expiry, 550), EngineMode.LIVE, 550, "THETADATA", expiry)
+    record = next(item for item in updates if item["id"] == signal_id)
+    assert record["status"] == "TARGET_REACHED"
+    assert record["target_reached_at"] == expiry
+    assert record["target_reached_price"] == 550

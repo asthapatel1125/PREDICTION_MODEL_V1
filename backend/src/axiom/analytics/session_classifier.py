@@ -151,15 +151,28 @@ class IntradaySessionClassifier:
         eligible = self.eligible_sessions(timestamp)
         return eligible[-1] if eligible else "CLOSED"
 
+    def _market_phase(self,timestamp:datetime)->str:
+        eastern=timestamp.astimezone(self.timezone)
+        if eastern.weekday()>=5:
+            return "WEEKEND_CLOSED"
+        minute=eastern.hour*60+eastern.minute
+        if 4*60<=minute<9*60+30:
+            return "PREMARKET"
+        close=13*60 if eastern.date().isoformat() in self.early_close_dates else 16*60
+        if close<minute<20*60:
+            return "AFTER_HOURS"
+        return "CLOSED"
+
     def calculate(self, current: MarketBar, history: Sequence[MarketBar]) -> dict[str, Any]:
         timestamp_et = current.timestamp.astimezone(self.timezone)
         prior = [bar for bar in history if bar.timestamp < current.timestamp]
         eligible = self.eligible_sessions(current.timestamp)
         if not eligible:
+            phase=self._market_phase(current.timestamp)
             return {
                 "timestamp_et": timestamp_et.isoformat(),
-                "clock_session": "CLOSED",
-                "detected_session": "CLOSED",
+                "clock_session": phase,
+                "detected_session": phase,
                 "session_state": "CURRENT",
                 "transition_confidence": 0.0,
                 "current_session_score": 0.0,
@@ -176,7 +189,7 @@ class IntradaySessionClassifier:
                 "price_confirmation": False,
                 "directional_qualified": False,
                 "alerts": ["LOW_CONFIDENCE_NO_TRADE"],
-                "explanation": ["Outside configured regular trading hours."],
+                "explanation": [f"{phase.replace('_',' ').title()}; active options-session Greek weights begin at 9:30 a.m. Eastern."],
                 "weight_status": "INITIAL_HYPOTHESIS_NOT_BACKTESTED",
             }
 

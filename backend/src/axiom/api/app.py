@@ -105,6 +105,12 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     async def outcome_attribution(symbol:str):
         return await container.repository.outcome_attribution(symbol,3)
 
+    @api.get("/system-outcomes/{call_id}")
+    async def system_outcome(call_id:str):
+        record=await container.repository.system_outcome_by_call_id(call_id)
+        if record is None:raise HTTPException(status_code=404,detail="Stored call ID not found")
+        return record
+
     @api.get("/system")
     async def system():return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),

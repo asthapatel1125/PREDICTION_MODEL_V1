@@ -53,6 +53,8 @@ export const fetchConfiguration = (signal) => request("/api/v1/configuration", {
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
 export const fetchOutcomeAttribution = (symbol, signal) =>
   request(`/api/v1/outcome-attribution/${encodeURIComponent(symbol)}`, { signal });
+export const fetchOutcomeCall = (callId, signal) =>
+  request(`/api/v1/system-outcomes/${encodeURIComponent(callId)}`, { signal });
 export const fetchInstruments = (signal) => request("/api/v1/instruments", { signal });
 export const fetchChart = (symbol, intervalSeconds, before, signal) => {
   const query = new URLSearchParams({ interval_seconds: String(intervalSeconds), limit: "240" });
