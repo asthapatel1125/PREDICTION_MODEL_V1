@@ -23,6 +23,8 @@ services:
         value: "40"
       - key: AXIOM_OUTCOME_SIGNAL_COOLDOWN_SECONDS
         value: "300"
+      - key: AXIOM_OUTCOME_QQQ_POINTS_PER_50_NQ
+        value: "1.235"
       - key: AXIOM_THETADATA_TRANSPORT
         value: python
       - key: AXIOM_THETADATA_POLL_SECONDS

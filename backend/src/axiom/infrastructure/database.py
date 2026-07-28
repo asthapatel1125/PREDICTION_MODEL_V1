@@ -144,9 +144,11 @@ class SqlAlchemyRepository:
             entry+(50 if row.direction=="UP" else -50)))
         shortfall=max(0.0,target-final_price if row.direction=="UP" else final_price-target)
         favorable=max(0.0,float(payload.get("favorable_points",0.0)))
+        target_points=float(payload.get("target_points",abs(target-entry)))
+        partial_threshold=float(payload.get("partial_target_points",target_points*0.6))
         payload.update(
             status="EXPIRED",completion_reason="HORIZON_EXPIRED",
-            outcome_grade="PARTIAL" if favorable>=30.0 else "FAILED",
+            outcome_grade="PARTIAL" if favorable>=partial_threshold else "FAILED",
             final_favorable_points=favorable,
             expired_at=expires_at.isoformat(),final_price=final_price,
             final_price_at=payload.get("current_price_at",expires_at.isoformat()),

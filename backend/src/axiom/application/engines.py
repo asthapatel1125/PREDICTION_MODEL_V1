@@ -40,9 +40,12 @@ class ReplayRequest:
 
 class _EngineRunner:
     def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,
-        outcome_horizon_minutes:int=40,outcome_signal_cooldown_seconds:int=300):
+        outcome_horizon_minutes:int=40,outcome_signal_cooldown_seconds:int=300,
+        outcome_qqq_points_per_50_nq:float=1.235):
         self.pipeline=pipeline;self.repository=repository;self.publisher=publisher;self._stop=asyncio.Event();self._pending=[]
-        self.attribution=OutcomeAttributionTracker(outcome_horizon_minutes,outcome_signal_cooldown_seconds)
+        self.attribution=OutcomeAttributionTracker(
+            outcome_horizon_minutes,outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq
+        )
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
@@ -77,8 +80,10 @@ class _EngineRunner:
 
 class TrainingEngine(_EngineRunner):
     def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
-        outcome_horizon_minutes:int=40,outcome_signal_cooldown_seconds:int=300):
-        super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,outcome_signal_cooldown_seconds);self.data=data
+        outcome_horizon_minutes:int=40,outcome_signal_cooldown_seconds:int=300,
+        outcome_qqq_points_per_50_nq:float=1.235):
+        super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,
+            outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq);self.data=data
 
     async def replay(self,request:ReplayRequest)->dict[str,float]:
         count=alerts=0;latency=0.0;previous=None
@@ -94,8 +99,9 @@ class TrainingEngine(_EngineRunner):
 class LiveEngine(_EngineRunner):
     def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
         price_data:TwelveDataPriceClient|None=None,price_poll_seconds:int=60,outcome_horizon_minutes:int=40,
-        outcome_signal_cooldown_seconds:int=300):
-        super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,outcome_signal_cooldown_seconds);self.data=data
+        outcome_signal_cooldown_seconds:int=300,outcome_qqq_points_per_50_nq:float=1.235):
+        super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,
+            outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq);self.data=data
         self.price_data=price_data;self.price_poll_seconds=price_poll_seconds;self._price_observation=None;self._price_polled_at=None
         self.running=False;self.symbol:str|None=None;self.resolution_seconds=5;self.started_at:datetime|None=None
         self.last_update:datetime|None=None;self.last_error:str|None=None;self.bars_processed=0;self.alerts_generated=0

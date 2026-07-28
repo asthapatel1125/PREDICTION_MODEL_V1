@@ -19,9 +19,15 @@ SYSTEM_GREEKS = {
 class OutcomeAttributionTracker:
     """Tracks observed excursions after qualified, independent system decisions."""
 
-    def __init__(self, horizon_minutes: int = 40, cooldown_seconds: int = 300):
+    def __init__(
+        self,
+        horizon_minutes: int = 40,
+        cooldown_seconds: int = 300,
+        qqq_points_per_50_nq: float = 1.235,
+    ):
         self.horizon = timedelta(minutes=horizon_minutes)
         self.cooldown = timedelta(seconds=cooldown_seconds)
+        self.qqq_points_per_50_nq = float(qqq_points_per_50_nq)
         self._active: dict[str, dict[str, Any]] = {}
         self._last_signal: dict[tuple[str, str], datetime] = {}
         self._episode_direction: dict[tuple[str, str], Direction] = {}
@@ -33,6 +39,26 @@ class OutcomeAttributionTracker:
     @staticmethod
     def _direction_sign(direction: Direction) -> int:
         return 1 if direction == Direction.UP else -1
+
+    def _target_spec(self, symbol: str) -> dict[str, Any]:
+        """Describe the target without pretending that QQQ and NQ share a point scale."""
+        if symbol == "QQQ":
+            return {
+                "target_points": self.qqq_points_per_50_nq,
+                "target_basis": "NQ_50_POINT_EQUIVALENT",
+                "target_nq_points": 50.0,
+                "target_conversion_method": "CONFIGURED_QQQ_PROXY",
+                "target_conversion_quality": "ESTIMATED_NO_LIVE_NQ",
+                "target_label": "50 NQ-POINT EQUIVALENT",
+            }
+        return {
+            "target_points": 50.0,
+            "target_basis": "INSTRUMENT_POINTS",
+            "target_nq_points": 50.0 if symbol in {"NQ", "NDX"} else None,
+            "target_conversion_method": "DIRECT_INSTRUMENT_POINTS",
+            "target_conversion_quality": "OBSERVED_INSTRUMENT_SCALE",
+            "target_label": f"50 {symbol} POINTS",
+        }
 
     @staticmethod
     def _qualified_systems(state: MarketState) -> list[tuple[str, Direction]]:
@@ -81,10 +107,11 @@ class OutcomeAttributionTracker:
         is_long = record["direction"] == Direction.UP.value
         shortfall = max(0.0, target-final_price if is_long else final_price-target)
         favorable = max(0.0, float(record.get("favorable_points", 0.0)))
+        partial_threshold = float(record.get("partial_target_points", float(record["target_points"]) * 0.6))
         record.update(
             status="EXPIRED",
             completion_reason="HORIZON_EXPIRED",
-            outcome_grade="PARTIAL" if favorable >= 30.0 else "FAILED",
+            outcome_grade="PARTIAL" if favorable >= partial_threshold else "FAILED",
             final_favorable_points=favorable,
             expired_at=record["expires_at"],
             final_price=final_price,
@@ -211,7 +238,7 @@ class OutcomeAttributionTracker:
                 record.update(
                     status="COMPLETE",completion_reason="TARGET_REACHED",
                     outcome_grade="SUCCESS",final_favorable_points=max(
-                        50.0,float(record.get("favorable_points",0.0))),
+                        float(record["target_points"]),float(record.get("favorable_points",0.0))),
                     final_price=final_price,final_price_at=now,
                     current_price=final_price,current_price_at=now,
                 )
@@ -298,7 +325,8 @@ class OutcomeAttributionTracker:
             # contract. The two-digit stream inside call_id already separates
             # systems that fire during the same millisecond.
             signal_id = f"{call_id}-{symbol}"
-            target_points=50.0
+            target_spec=self._target_spec(symbol)
+            target_points=float(target_spec["target_points"])
             target_price=price+target_points if direction==Direction.UP else price-target_points
             record = {
                 "id": signal_id,
@@ -314,7 +342,9 @@ class OutcomeAttributionTracker:
                 "outcome_grade":"TRACKING",
                 "entry_price": price,
                 "target_points":target_points,
+                "partial_target_points":target_points*0.6,
                 "target_price":target_price,
+                **target_spec,
                 "target_reached_at":None,
                 "target_reached_price":None,
                 "seconds_to_target":None,

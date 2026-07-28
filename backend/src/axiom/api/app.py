@@ -66,9 +66,10 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         twelve_key=cfg.twelve_data_api_key.get_secret_value() if cfg.twelve_data_api_key else None
         price_data=TwelveDataPriceClient(twelve_key)
         container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data,
-            cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds)
+            cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
         container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data,
-            price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds)
+            price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
+            cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
         container.replay_runs={};container.replay_tasks=set()
         yield
         if container.live_task:container.live_task.cancel()
@@ -130,7 +131,9 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),
         "theta_transport":cfg.thetadata_transport,"theta_poll_seconds":cfg.thetadata_poll_seconds,
         "outcome_price_provider":"TWELVE_DATA" if cfg.twelve_data_api_key else "THETADATA_OPTIONS_UNDERLYING",
-        "outcome_horizon_minutes":cfg.outcome_horizon_minutes}
+        "outcome_horizon_minutes":cfg.outcome_horizon_minutes,
+        "outcome_qqq_points_per_50_nq":cfg.outcome_qqq_points_per_50_nq,
+        "outcome_target_note":"Estimated QQQ proxy until a synchronized licensed NQ feed is connected."}
 
     async def execute_replay(run_id:str,request:ReplayRequest)->None:
         try:

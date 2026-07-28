@@ -67,6 +67,7 @@ class PlatformSettings(BaseSettings):
     outcome_price_poll_seconds: int = Field(default=60, ge=60, le=3600)
     outcome_horizon_minutes: int = Field(default=40, ge=5, le=240)
     outcome_signal_cooldown_seconds: int = Field(default=300, ge=30, le=3600)
+    outcome_qqq_points_per_50_nq: float = Field(default=1.235, gt=0, le=10)
     market_timezone: str = "America/New_York"
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
