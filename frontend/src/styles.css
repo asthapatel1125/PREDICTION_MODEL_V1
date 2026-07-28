@@ -464,7 +464,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .outcome-attribution .path-toggle{height:34px;padding:0 12px;font-size:10px}
 .outcome-attribution .alert-path-legend{gap:9px 20px;padding:8px 10px}
 .outcome-attribution .alert-path-legend span{font-size:10px}
-.outcome-attribution .alert-path-stage{height:360px}
+.outcome-attribution .alert-path-stage{height:1.5in}
 .outcome-attribution .path-axis-text{font-size:14px}
 .outcome-attribution .path-axis-title{font-size:12px}
 .outcome-attribution .alert-path-tooltip{min-width:245px;padding:11px 12px}
@@ -474,3 +474,4 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .outcome-attribution .target-evaluation-row b small,.outcome-attribution .target-evaluation-row>div>small{font-size:9px}
 .outcome-attribution .fifty-point-card>footer{font-size:10px}
 .outcome-attribution .outcome-method{font-size:11px}
+@media(max-width:900px){.outcome-attribution .alert-path-stage{height:1.5in}}
