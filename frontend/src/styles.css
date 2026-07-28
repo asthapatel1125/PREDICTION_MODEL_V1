@@ -455,3 +455,21 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .fifty-point-card>footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 18px;padding:8px 11px;border-top:1px solid #1d3141;background:#061018;color:#647c8f;font:8px var(--font-mono)}
 .nested-outcome>.fifty-point-card{min-width:0}.alerts-panel .nested-outcome{padding:10px}.alerts-panel .alert-path-stage{height:330px}
 @media(max-width:900px){.fifty-point-card>header{grid-template-columns:1fr}.target-evaluation-row{grid-template-columns:repeat(2,minmax(150px,1fr))}.alert-path-stage{height:260px}}
+
+/* Readable per-call time-versus-price audit charts at normal browser zoom. */
+.outcome-attribution .fifty-point-card>header span,.outcome-attribution .target-evaluation-row span{font-size:10px}
+.outcome-attribution .fifty-point-card>header b{font-size:12px}
+.outcome-attribution .fifty-point-card .call-id{font-size:10px}
+.outcome-attribution .path-toggle{height:34px;padding:0 12px;font-size:10px}
+.outcome-attribution .alert-path-legend{gap:9px 20px;padding:8px 10px}
+.outcome-attribution .alert-path-legend span{font-size:10px}
+.outcome-attribution .alert-path-stage{height:360px}
+.outcome-attribution .path-axis-text{font-size:14px}
+.outcome-attribution .path-axis-title{font-size:12px}
+.outcome-attribution .alert-path-tooltip{min-width:245px;padding:11px 12px}
+.outcome-attribution .alert-path-tooltip b,.outcome-attribution .alert-path-tooltip span{font-size:11px}
+.outcome-attribution .target-evaluation-row>div{min-height:72px;padding:11px 12px}
+.outcome-attribution .target-evaluation-row b{font-size:12px}
+.outcome-attribution .target-evaluation-row b small,.outcome-attribution .target-evaluation-row>div>small{font-size:9px}
+.outcome-attribution .fifty-point-card>footer{font-size:10px}
+.outcome-attribution .outcome-method{font-size:11px}
