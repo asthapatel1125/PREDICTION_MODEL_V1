@@ -112,6 +112,13 @@ class LiveEngine(_EngineRunner):
 
     async def _outcome_price(self,bar)->dict:
         now=datetime.now(timezone.utc)
+        # The ThetaData live bar closes arrive at the engine cadence (normally
+        # every five seconds), which is required to form meaningful one-minute
+        # highs and lows. A slower quote API remains a fallback only.
+        bar_price=float(bar.close)
+        if bar_price>0:
+            return {"price":bar_price,"source":"THETADATA_OPTIONS_UNDERLYING",
+                "observed_at":now,"source_timestamp":bar.timestamp}
         should_poll=self.price_data and self.price_data.enabled and (
             self._price_polled_at is None or (now-self._price_polled_at).total_seconds()>=self.price_poll_seconds
         )

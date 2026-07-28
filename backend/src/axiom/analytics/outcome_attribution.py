@@ -24,6 +24,7 @@ class OutcomeAttributionTracker:
         self.cooldown = timedelta(seconds=cooldown_seconds)
         self._active: dict[str, dict[str, Any]] = {}
         self._last_signal: dict[tuple[str, str], datetime] = {}
+        self._episode_direction: dict[tuple[str, str], Direction] = {}
         self._history: dict[str, dict[str, deque[float]]] = defaultdict(
             lambda: defaultdict(lambda: deque(maxlen=100))
         )
@@ -78,55 +79,52 @@ class OutcomeAttributionTracker:
         return f"{eastern:%Y%m%d%H%M%S}{milliseconds:03d}{stream:02d}"
 
     @staticmethod
-    def _pivot(kind:str,sequence:int,price:float,timestamp:datetime,record:dict[str,Any],
-        scores:dict[str,float],confirmed_at:datetime)->dict[str,Any]:
-        ordered=sorted(scores.items(),key=lambda item:item[1],reverse=True)
-        strongest=ordered[0][0] if ordered else None
-        weakest=ordered[-1][0] if ordered else None
+    def _minute_bucket(timestamp:datetime)->datetime:
+        return timestamp.replace(second=0,microsecond=0)
+
+    def _update_minute_path(self,record:dict[str,Any],price:float,now:datetime,
+        scores:dict[str,float])->None:
+        """Aggregate observed prices into one-minute OHLC candles for this call."""
+        bucket=self._minute_bucket(now)
+        bars=record["minute_bars"]
+        new_bar=not bars or bars[-1]["timestamp"]!=bucket
+        if new_bar:
+            if bars and record.get("target_reached_at") and record.get("target_close_confirmed") is None:
+                prior_close=float(bars[-1]["close"])
+                target=float(record["target_price"])
+                is_long=record["direction"]==Direction.UP.value
+                record["target_close_confirmed"]=prior_close>=target if is_long else prior_close<=target
+                record["target_close_price"]=prior_close
+            bars.append({"timestamp":bucket,"open":price,"high":price,"low":price,"close":price,"samples":1})
+        else:
+            candle=bars[-1]
+            candle["high"]=max(float(candle["high"]),price)
+            candle["low"]=min(float(candle["low"]),price)
+            candle["close"]=price
+            candle["samples"]=int(candle.get("samples",0))+1
+
+        if record.get("target_reached_at") is not None:
+            return
+        target=float(record["target_price"])
+        is_long=record["direction"]==Direction.UP.value
+        reached=price>=target if is_long else price<=target
+        if not reached:
+            return
+        strongest,weakest=self._leaders(scores)
         baseline=record.get("greek_scores_at_signal",{})
         decays={name:float(baseline[name])-float(scores.get(name,baseline[name])) for name in baseline}
         decay=max(decays,key=decays.get) if decays else None
-        direction=record.get("direction")
-        matched=(direction==Direction.UP.value and kind=="HIGH") or (direction==Direction.DOWN.value and kind=="LOW")
-        return {"kind":kind,"sequence":sequence,"price":price,"timestamp":timestamp,
-            "confirmed_at":confirmed_at,"points_from_datum":price-record["entry_price"],
-            "seconds_from_alert":max(0.0,(timestamp-record["alerted_at"]).total_seconds()),
-            "greek_scores":scores,"matched_call":matched,
-            "success_leading_greek":strongest if matched else None,
-            "strongest_greek":strongest,"weakest_greek":weakest,
-            "decay_greek":decay,"decay_amount":decays.get(decay,0.0) if decay else 0.0}
-
-    def _update_turning_points(self,record:dict[str,Any],price:float,now:datetime,scores:dict[str,float])->None:
-        """Reversal-confirmed zigzag; datum is the alert price, never a synthetic zero."""
-        threshold=record["reversal_points"];trend=record["swing_trend"]
-        if trend=="SEEKING":
-            if price>record["candidate_high_price"]:
-                record.update(candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
-            if price<record["candidate_low_price"]:
-                record.update(candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
-            if price>=record["candidate_low_price"]+threshold:
-                record.update(swing_trend="UP",candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
-            elif price<=record["candidate_high_price"]-threshold:
-                record.update(swing_trend="DOWN",candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
-            return
-        if trend=="UP":
-            if price>record["candidate_high_price"]:
-                record.update(candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
-            elif record["candidate_high_price"]-price>=threshold:
-                if len(record["turning_highs"])<3:
-                    record["turning_highs"].append(self._pivot("HIGH",len(record["turning_highs"])+1,
-                        record["candidate_high_price"],record["candidate_high_at"],record,
-                        record["candidate_high_scores"],now))
-                record.update(swing_trend="DOWN",candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
-            return
-        if price<record["candidate_low_price"]:
-            record.update(candidate_low_price=price,candidate_low_at=now,candidate_low_scores=scores)
-        elif price-record["candidate_low_price"]>=threshold:
-            if len(record["turning_lows"])<3:
-                record["turning_lows"].append(self._pivot("LOW",len(record["turning_lows"])+1,
-                    record["candidate_low_price"],record["candidate_low_at"],record,
-                    record["candidate_low_scores"],now))
-            record.update(swing_trend="UP",candidate_high_price=price,candidate_high_at=now,candidate_high_scores=scores)
+        record.update(
+            status="TARGET_REACHED",
+            target_reached_at=now,
+            target_reached_price=price,
+            seconds_to_target=max(0.0,(now-record["alerted_at"]).total_seconds()),
+            target_touch_type="OPEN" if new_bar else ("HIGH" if is_long else "LOW"),
+            strongest_greek_at_target=strongest,
+            weakest_greek_at_target=weakest,
+            decay_greek_at_target=decay,
+            greek_scores_at_target=scores,
+        )
 
     @staticmethod
     def _decision_reasons(system: str, state: MarketState, direction: Direction) -> list[str]:
@@ -171,7 +169,7 @@ class OutcomeAttributionTracker:
             if record["symbol"] != symbol:
                 continue
             scores = self._relative_scores(symbol, record["system"], state, Direction(record["direction"]))
-            self._update_turning_points(record,price,now,scores)
+            self._update_minute_path(record,price,now,scores)
             if price > record["highest_price"]:
                 record["highest_price"] = price
                 record["highest_at"] = now
@@ -198,16 +196,29 @@ class OutcomeAttributionTracker:
             record["price_source"] = price_source
             record["price_observed_at"] = price_observed_at
             record["price_source_timestamp"] = price_source_timestamp
-            if now >= record["expires_at"]:
+            target_minute=self._minute_bucket(record["target_reached_at"]) if record.get("target_reached_at") else None
+            if target_minute is not None and self._minute_bucket(now)>target_minute:
                 record["status"] = "COMPLETE"
+                record["completion_reason"]="TARGET_REACHED"
                 del self._active[signal_id]
             updates.append(dict(record))
 
-        # Create one event per system after cooldown; this prevents five-second duplicates.
-        for system, direction in self._qualified_systems(state):
+        # A continuing signal remains one episode. When it becomes neutral or
+        # reverses, its independent price path keeps running until its target
+        # is reached or the configured observation horizon expires.
+        qualified=self._qualified_systems(state)
+        current={system:direction for system,direction in qualified}
+        for key,previous_direction in list(self._episode_direction.items()):
+            episode_symbol,system=key
+            if episode_symbol!=symbol:continue
+            next_direction=current.get(system)
+            if next_direction==previous_direction:continue
+            if next_direction is None:del self._episode_direction[key]
+
+        for system, direction in qualified:
             key = (symbol, system)
-            if key in self._last_signal and now - self._last_signal[key] < self.cooldown:
-                continue
+            if self._episode_direction.get(key)==direction:continue
+            self._episode_direction[key]=direction
             scores = self._relative_scores(symbol, system, state, direction)
             strongest, weakest = self._leaders(scores)
             call_id = self._call_id(now,system)
@@ -215,7 +226,8 @@ class OutcomeAttributionTracker:
             # contract. The two-digit stream inside call_id already separates
             # systems that fire during the same millisecond.
             signal_id = f"{call_id}-{symbol}"
-            reversal_points=max(price*.0002,.01)
+            target_points=50.0
+            target_price=price+target_points if direction==Direction.UP else price-target_points
             record = {
                 "id": signal_id,
                 "call_id": call_id,
@@ -228,6 +240,22 @@ class OutcomeAttributionTracker:
                 "expires_at": now + self.horizon,
                 "status": "TRACKING",
                 "entry_price": price,
+                "target_points":target_points,
+                "target_price":target_price,
+                "target_reached_at":None,
+                "target_reached_price":None,
+                "seconds_to_target":None,
+                "target_touch_type":None,
+                "target_close_confirmed":None,
+                "target_close_price":None,
+                "strongest_greek_at_target":None,
+                "weakest_greek_at_target":None,
+                "decay_greek_at_target":None,
+                "greek_scores_at_target":{},
+                "minute_bars":[{
+                    "timestamp":self._minute_bucket(now),
+                    "open":price,"high":price,"low":price,"close":price,"samples":1,
+                }],
                 "highest_price": price,
                 "highest_at": now,
                 "lowest_price": price,
@@ -241,16 +269,6 @@ class OutcomeAttributionTracker:
                 "weakest_greek": weakest,
                 "decay_greek": weakest,
                 "decision_reasons": self._decision_reasons(system, state, direction),
-                "reversal_points":reversal_points,
-                "swing_trend":"SEEKING",
-                "turning_highs":[],
-                "turning_lows":[],
-                "candidate_high_price":price,
-                "candidate_high_at":now,
-                "candidate_high_scores":scores,
-                "candidate_low_price":price,
-                "candidate_low_at":now,
-                "candidate_low_scores":scores,
                 "greek_scores_at_signal": scores,
                 "greek_scores_at_high": scores,
                 "greek_scores_at_low": scores,
@@ -267,6 +285,7 @@ class OutcomeAttributionTracker:
             self._last_signal[key] = now
             updates.append(dict(record))
 
+        updates=list({record["id"]:record for record in updates}.values())
         for record in updates:
             record["seconds_to_high"] = max(
                 0.0, (record["highest_at"] - record["alerted_at"]).total_seconds()

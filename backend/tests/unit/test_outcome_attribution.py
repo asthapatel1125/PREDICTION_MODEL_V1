@@ -22,7 +22,7 @@ def state(timestamp: datetime, price: float, direction: Direction = Direction.UP
     )
 
 
-def test_long_momentum_tracks_favorable_and_adverse_excursions():
+def test_long_momentum_tracks_one_minute_ohlc_and_fifty_point_target():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
     created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "TWELVE_DATA", start)
@@ -31,32 +31,32 @@ def test_long_momentum_tracks_favorable_and_adverse_excursions():
     assert created[0]["call_id"] == "2026072710300000002"
     assert signal_id == "2026072710300000002-QQQ"
 
-    high_time = start + timedelta(minutes=2)
-    tracker.process(state(high_time, 507), EngineMode.LIVE, 507, "TWELVE_DATA", high_time)
-    low_time = start + timedelta(minutes=3)
-    updates = tracker.process(state(low_time, 497), EngineMode.LIVE, 497, "TWELVE_DATA", low_time)
+    tracker.process(state(start + timedelta(seconds=5), 507), EngineMode.LIVE, 507, "TWELVE_DATA", start + timedelta(seconds=5))
+    tracker.process(state(start + timedelta(seconds=10), 497), EngineMode.LIVE, 497, "TWELVE_DATA", start + timedelta(seconds=10))
+    target_time = start + timedelta(minutes=2,seconds=5)
+    updates = tracker.process(state(target_time, 550), EngineMode.LIVE, 550, "TWELVE_DATA", target_time)
     record = next(item for item in updates if item["id"] == signal_id)
 
-    assert record["favorable_points"] == 7
+    assert record["favorable_points"] == 50
     assert record["adverse_points"] == -3
-    assert record["seconds_to_high"] == 120
-    assert record["seconds_to_low"] == 180
-    assert record["turning_highs"][0]["price"] == 507
-    assert record["turning_highs"][0]["matched_call"] is True
-    assert record["turning_highs"][0]["success_leading_greek"]
-    assert record["turning_highs"][0]["strongest_greek"]
-    assert record["turning_highs"][0]["weakest_greek"]
-    assert record["turning_highs"][0]["decay_greek"]
+    assert record["target_reached_price"] == 550
+    assert record["seconds_to_target"] == 125
+    assert record["target_touch_type"] == "OPEN"
+    assert record["minute_bars"][0] == {
+        "timestamp": start.replace(second=0,microsecond=0),
+        "open":500,"high":507,"low":497,"close":497,"samples":3,
+    }
+    assert record["strongest_greek_at_target"]
+    assert record["weakest_greek_at_target"]
 
 
-def test_turning_low_is_confirmed_only_after_an_upward_reversal():
+def test_short_target_is_recorded_as_intraminute_low():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
-    created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
+    created = tracker.process(state(start, 500,Direction.DOWN), EngineMode.LIVE, 500, "THETADATA", start)
     signal_id = created[0]["id"]
-    tracker.process(state(start + timedelta(seconds=5), 499), EngineMode.LIVE, 499, "THETADATA", start + timedelta(seconds=5))
-    tracker.process(state(start + timedelta(seconds=10), 498), EngineMode.LIVE, 498, "THETADATA", start + timedelta(seconds=10))
-    updates = tracker.process(state(start + timedelta(seconds=15), 498.2), EngineMode.LIVE, 498.2, "THETADATA", start + timedelta(seconds=15))
+    updates = tracker.process(state(start + timedelta(seconds=5), 450,Direction.DOWN), EngineMode.LIVE, 450, "THETADATA", start + timedelta(seconds=5))
     record = next(item for item in updates if item["id"] == signal_id)
-    assert record["turning_lows"][0]["price"] == 498
-    assert record["turning_lows"][0]["confirmed_at"] == start + timedelta(seconds=15)
+    assert record["target_reached_price"] == 450
+    assert record["target_touch_type"] == "LOW"
+    assert record["minute_bars"][0]["low"] == 450
