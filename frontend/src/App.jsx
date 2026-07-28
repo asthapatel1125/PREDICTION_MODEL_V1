@@ -640,19 +640,31 @@ function MomentumTriadChart({history=[],state,symbol,variant="triad"}){
 function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const events=useMemo(()=>deriveGammaDynamicsEvents(history,state,symbol),[history,state,symbol]);
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id)??calls.find(call=>call.direction===event.decision&&Math.abs(new Date(call.alerted_at)-new Date(event.timestamp))<=1000);
-  return <article className="panel gamma-dynamics-log"><header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Qualified transitions · dynamic path values · 5 visible rows</h2></div><b>{events.length} EVENTS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC HIGH</th><th>DYNAMIC LOW</th><th>CURRENT QQQ</th><th>STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead><tbody>{events.map((event,index)=>{const call=linkedCall(event),current=call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close;return <tr key={`${event.timestamp}-${event.decision}-${index}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td>{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td>{call?number(call.dynamic_high,call.highest_price).toFixed(4):"—"}</td><td>{call?number(call.dynamic_low,call.lowest_price).toFixed(4):"—"}</td><td>{Number.isFinite(Number(current))?number(current).toFixed(4):"—"}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{call?.status??(event.decision==="UP"?"UPWARD":"DOWNWARD")}</span></td><td>{pct(event.intensity)}</td><td>{number(event.pressure)>0?"+":""}{number(event.pressure).toFixed(2)}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>})}</tbody></table>{!events.length&&<div className="empty-state">No qualified Gamma dynamics transition is present in the loaded persisted history.</div>}</div></article>;
+  return <article className="panel gamma-dynamics-log"><header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Qualified transitions · dynamic path values · 5 visible rows</h2></div><b>{events.length} EVENTS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC HIGH</th><th>DYNAMIC LOW</th><th>CURRENT QQQ</th><th>STATE</th><th>OUTCOME</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead><tbody>{events.map((event,index)=>{const call=linkedCall(event),expired=call&&callDeadlinePassed(call),snapshot=call?deadlineSnapshot(call):{},current=expired?snapshot.price:(call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close),outcome=callOutcome(call);return <tr className={`outcome-${outcome.grade}`} key={`${event.timestamp}-${event.decision}-${index}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td>{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td>{call?number(expired?snapshot.high:call.dynamic_high,call.highest_price).toFixed(4):"—"}</td><td>{call?number(expired?snapshot.low:call.dynamic_low,call.lowest_price).toFixed(4):"—"}</td><td>{Number.isFinite(Number(current))?number(current).toFixed(4):"—"}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{expired?"EXPIRED":call?.status??(event.decision==="UP"?"UPWARD":"DOWNWARD")}</span></td><td><span className={`outcome-grade ${outcome.grade}`}>{outcome.grade==="partial"?"30+ POINTS":outcome.grade.toUpperCase()}</span></td><td>{pct(event.intensity)}</td><td>{number(event.pressure)>0?"+":""}{number(event.pressure).toFixed(2)}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>})}</tbody></table>{!events.length&&<div className="empty-state">No qualified Gamma dynamics transition is present in the loaded persisted history.</div>}</div></article>;
 }
 
 const SYSTEM_OUTCOME_LABELS={PRIMARY_OPTIONS:"Primary Options Bias",MOMENTUM_TRIAD:"Momentum Triad",GAMMA_DYNAMICS:"Gamma Dynamics"};
 const SYSTEM_OUTCOME_STREAMS={PRIMARY_OPTIONS:1,MOMENTUM_TRIAD:2,GAMMA_DYNAMICS:3};
 const visibleCallId=(call,system)=>/^\d{19}$/.test(String(call?.call_id??""))?String(call.call_id):numericEventId(call?.alerted_at,SYSTEM_OUTCOME_STREAMS[system]??0);
 const duration=value=>{const seconds=Math.max(0,number(value));if(seconds<60)return `${seconds.toFixed(1)}s`;const minutes=Math.floor(seconds/60),rest=(seconds-minutes*60).toFixed(1);return `${minutes}m ${rest}s`};
+const callDeadlinePassed=call=>{const deadline=new Date(call?.expires_at).getTime();return !call?.target_reached_at&&Number.isFinite(deadline)&&Date.now()>=deadline};
+const deadlineBars=call=>{const deadline=new Date(call?.expires_at).getTime();return (call?.minute_bars??[]).filter(bar=>{const timestamp=new Date(bar.timestamp).getTime();return Number.isFinite(timestamp)&&(!Number.isFinite(deadline)||timestamp<=deadline)})};
+const deadlineSnapshot=call=>{const bars=deadlineBars(call),last=bars.at(-1),values=bars.flatMap(bar=>[number(bar.high,NaN),number(bar.low,NaN)]).filter(Number.isFinite);return {bars,last,high:values.length?Math.max(...values):number(call?.highest_price,NaN),low:values.length?Math.min(...values):number(call?.lowest_price,NaN),price:number(call?.final_price??last?.close??call?.entry_price,NaN)}};
+const callOutcome=call=>{
+  if(!call)return {grade:"tracking",favorable:0,closed:false};
+  const snapshot=deadlineSnapshot(call),datum=number(call.entry_price),favorable=call.direction==="UP"?Math.max(0,number(snapshot.high,datum)-datum):Math.max(0,datum-number(snapshot.low,datum));
+  const closed=Boolean(call.target_reached_at)||call.status==="COMPLETE"||call.status==="EXPIRED"||callDeadlinePassed(call);
+  const stored=String(call.outcome_grade??"").toLowerCase();
+  const grade=!closed?"tracking":stored==="success"||call.target_reached_at?"success":stored==="partial"||favorable>=30?"partial":"failed";
+  return {grade,favorable,closed};
+};
+const easternFilterParts=value=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return {date:"",time:""};const parts=Object.fromEntries(easternIdFormatter.formatToParts(date).filter(part=>part.type!=="literal").map(part=>[part.type,part.value]));return {date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}:${parts.second}`}};
 function GreekAuditBadge({label,tone="neutral",detail=null}){
   return <span className={`greek-audit-badge ${tone}`}>{label?pretty(label).toUpperCase():"—"}{detail&&<small>{detail}</small>}</span>;
 }
 
 function FiftyPointPathChart({call}){
-  const observedBars=(call.minute_bars??[]).filter(bar=>Number.isFinite(number(bar.high,NaN))&&Number.isFinite(number(bar.low,NaN))).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  const observedBars=deadlineBars(call).filter(bar=>Number.isFinite(number(bar.high,NaN))&&Number.isFinite(number(bar.low,NaN))).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const [hovered,setHovered]=useState(null),[expanded,setExpanded]=useState(false),[yZoom,setYZoom]=useState(1),[yCenter,setYCenter]=useState(null);
   const datum=number(call.entry_price),target=number(call.target_price,datum+(call.direction==="UP"?50:-50));
   const datumOnly=!observedBars.length;
@@ -708,14 +720,30 @@ function FiftyPointPathChart({call}){
 }
 
 function FiftyPointOutcomeCard({call,system="PRIMARY_OPTIONS"}){
-  const reached=Boolean(call.target_reached_at),expired=call.status==="EXPIRED",callId=visibleCallId(call,system),closeState=expired?"EXPIRED":call.target_close_confirmed===true?"CONFIRMED":call.target_close_confirmed===false?"NOT CONFIRMED":"PENDING";
-  const currentPrice=call.current_price??call.final_price??call.minute_bars?.at(-1)?.close;
-  const liveElapsed=Math.max(0,(new Date(call.current_price_at??call.price_observed_at??call.alerted_at)-new Date(call.alerted_at))/1000);
+  const reached=Boolean(call.target_reached_at),expired=call.status==="EXPIRED"||callDeadlinePassed(call),callId=visibleCallId(call,system),closeState=expired?"EXPIRED":call.target_close_confirmed===true?"CONFIRMED":call.target_close_confirmed===false?"NOT CONFIRMED":"PENDING";
+  const finished=expired||call.status==="COMPLETE";
+  const snapshot=deadlineSnapshot(call),currentPrice=expired?snapshot.price:(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close);
+  const elapsedEnd=expired?new Date(call.expires_at):new Date(call.current_price_at??call.price_observed_at??call.alerted_at);
+  const liveElapsed=Math.max(0,(elapsedEnd-new Date(call.alerted_at))/1000);
   const strongest=reached?call.strongest_greek_at_target:(call.strongest_greek_current??call.strongest_greek);
   const weakest=reached?call.weakest_greek_at_target:(call.weakest_greek_current??call.weakest_greek);
-  return <article className="fifty-point-card">
-    <header><div><span>CALL ID</span><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(callId)}>{callId}</button></div><div><span>CALL</span><b className={call.direction==="UP"?"positive":"negative"}>{biasLabel(call.direction)} · DATUM {number(call.entry_price).toFixed(4)}</b></div><div><span>STATUS</span><b>{reached?"50-POINT TARGET REACHED":call.status==="EXPIRED"?"OBSERVATION WINDOW EXPIRED":"TRACKING LIVE"}</b></div></header>
-    <FiftyPointPathChart call={call}/>
+  const datum=number(call.entry_price),dynamicHigh=number(expired?snapshot.high:call.dynamic_high,call.highest_price),dynamicLow=number(expired?snapshot.low:call.dynamic_low,call.lowest_price),outcome=callOutcome(call);
+  const rawDiff=value=>number(value)-datum,toneFor=value=>Math.abs(rawDiff(value))<1e-9?"neutral":call.direction==="UP"?(value>datum?"favor":"against"):(value<datum?"favor":"against");
+  const towardsTarget=call.direction==="UP"?number(currentPrice)-datum:datum-number(currentPrice),progress=Math.max(0,Math.min(100,towardsTarget/50*100));
+  const pointLabel=value=>{const difference=rawDiff(value);return `${difference>=0?"+":""}${difference.toFixed(4)} pts`};
+  return <article className={`fifty-point-card outcome-${outcome.grade}`}>
+    <header><div><span>CALL ID</span><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(callId)}>{callId}</button></div><div><span>CALL</span><b className={call.direction==="UP"?"positive":"negative"}>{biasLabel(call.direction)} · DATUM {datum.toFixed(4)}</b></div><div><span>STATUS</span><b>{reached?"50-POINT TARGET REACHED":expired?"OBSERVATION WINDOW EXPIRED":"TRACKING LIVE"}</b><em className={`outcome-grade ${outcome.grade}`}>{outcome.grade==="partial"?"30+ POINTS":outcome.grade.toUpperCase()}</em></div></header>
+    <div className="outcome-path-focus">
+      <FiftyPointPathChart call={call}/>
+      <aside className="path-focus-dashboard">
+        <div className={`path-focus-stat ${toneFor(dynamicHigh)}`}><span>{finished?"FINAL HIGH":"DYNAMIC HIGH"}</span><b>{dynamicHigh.toFixed(4)}</b><small>({pointLabel(dynamicHigh)})</small></div>
+        <div className={`path-focus-stat ${toneFor(dynamicLow)}`}><span>{finished?"FINAL LOW":"DYNAMIC LOW"}</span><b>{dynamicLow.toFixed(4)}</b><small>({pointLabel(dynamicLow)})</small></div>
+        <div className={`path-focus-stat progress ${towardsTarget>0?"favor":towardsTarget<0?"against":"neutral"}`}><span>TOWARD 50-POINT TARGET</span><b>{towardsTarget>=0?"+":""}{towardsTarget.toFixed(4)} / 50</b><i><em style={{width:`${progress}%`}}/></i><small>{progress.toFixed(1)}% of directional target</small></div>
+        <div className={`path-focus-stat ${toneFor(currentPrice)}`}><span>{finished?"FINAL PRICE":"CURRENT PRICE"}</span><b>{Number.isFinite(Number(currentPrice))?number(currentPrice).toFixed(4):"—"}</b><small>({Number.isFinite(Number(currentPrice))?pointLabel(currentPrice):"—"})</small></div>
+        <div className="path-focus-stat greek"><span>{reached?"STRONGEST AT TARGET":"STRONGEST · CURRENT"}</span><GreekAuditBadge label={strongest} tone="strong"/></div>
+        <div className="path-focus-stat greek"><span>{reached?"WEAKEST AT TARGET":"WEAKEST · CURRENT"}</span><GreekAuditBadge label={weakest} tone="weak"/></div>
+      </aside>
+    </div>
     <div className="target-evaluation-row">
       <div><span>EXPIRES · EASTERN</span><b>{logDate(call.expires_at)}<small>{logTime(call.expires_at)}</small></b></div>
       <div><span>REACHED · EASTERN</span><b>{reached?<>{logDate(call.target_reached_at)}<small>{logTime(call.target_reached_at)}</small></>:"—"}</b></div>
@@ -723,11 +751,6 @@ function FiftyPointOutcomeCard({call,system="PRIMARY_OPTIONS"}){
       <div><span>ELAPSED</span><b>{reached?duration(call.seconds_to_target):expired?duration(call.seconds_observed):duration(liveElapsed)}</b><small>{expired?"WINDOW COMPLETE":"Observed time"}</small></div>
       <div><span>TARGET TOUCH</span><b>{reached?call.target_touch_type:expired?"NOT REACHED":"—"}</b><small>{reached?(call.target_touch_type==="OPEN"?"First observation of minute":call.direction==="UP"?"Minute high touched target":"Minute low touched target"):expired?`${number(call.target_shortfall_points).toFixed(4)} points short`:"Awaiting observed touch"}</small></div>
       <div><span>MINUTE CLOSE</span><b>{closeState}</b><small>{call.target_close_price!=null?number(call.target_close_price).toFixed(4):expired?"No target minute":"Finalizes after target minute"}</small></div>
-      <div><span>DYNAMIC HIGH</span><b>{number(call.dynamic_high,call.highest_price).toFixed(4)}</b></div>
-      <div><span>DYNAMIC LOW</span><b>{number(call.dynamic_low,call.lowest_price).toFixed(4)}</b></div>
-      <div><span>CURRENT PRICE</span><b>{Number.isFinite(Number(currentPrice))?number(currentPrice).toFixed(4):"—"}</b><small>{expired?"Final observed":"Updates with feed"}</small></div>
-      <div><span>{reached?"STRONGEST AT TARGET":"STRONGEST · CURRENT"}</span><GreekAuditBadge label={strongest} tone="strong"/></div>
-      <div><span>{reached?"WEAKEST AT TARGET":"WEAKEST · CURRENT"}</span><GreekAuditBadge label={weakest} tone="weak"/></div>
     </div>
     <footer><span>Source {pretty(call.price_source??"unknown")}</span><span>One-minute OHLC is aggregated from observed updates; no synthetic candles.</span><span>Target {number(call.target_price,number(call.entry_price)+(call.direction==="UP"?50:-50)).toFixed(4)}</span></footer>
   </article>;
@@ -747,10 +770,12 @@ function dedupeLogicalCalls(calls=[]){
 function OutcomeAttributionMini({system,data,symbol}){
   const group=data?.systems?.[system]??{highest:[],lowest:[],tracking:0,total:0};
   const legacy=[...(group.highest??[]),...(group.lowest??[])],calls=dedupeLogicalCalls(group.calls??[...new Map(legacy.map(item=>[item.id,item])).values()]);
-  const [copied,setCopied]=useState(false),[query,setQuery]=useState(""),[selectedId,setSelectedId]=useState(""),[lookedUpCall,setLookedUpCall]=useState(null),[lookupError,setLookupError]=useState("");
+  const [copied,setCopied]=useState(false),[query,setQuery]=useState(""),[dateFilter,setDateFilter]=useState(""),[timeFilter,setTimeFilter]=useState(""),[pickerOpen,setPickerOpen]=useState(false),[selectedId,setSelectedId]=useState(""),[lookedUpCall,setLookedUpCall]=useState(null),[lookupError,setLookupError]=useState("");
   const source=calls.find(Boolean)?.price_source??"WAITING";
   const normalized=query.trim(),localMatch=calls.find(call=>visibleCallId(call,system)===normalized),selectedCall=lookedUpCall??calls.find(call=>visibleCallId(call,system)===selectedId);
-  const filteredCalls=normalized&&!selectedCall?calls.filter(call=>visibleCallId(call,system).includes(normalized)):selectedCall?[selectedCall]:calls;
+  const matchingCalls=calls.filter(call=>{const parts=easternFilterParts(call.alerted_at);return (!normalized||visibleCallId(call,system).includes(normalized))&&(!dateFilter||parts.date===dateFilter)&&(!timeFilter||parts.time.startsWith(timeFilter))});
+  const filteredCalls=selectedCall?[selectedCall]:(normalized||dateFilter||timeFilter?matchingCalls:calls);
+  const selectCall=call=>{const id=visibleCallId(call,system);setQuery(id);setSelectedId(id);setLookedUpCall(null);setPickerOpen(false);setLookupError("")};
   const lookup=async()=>{
     if(!normalized){setSelectedId("");setLookedUpCall(null);setLookupError("");return}
     if(localMatch){setSelectedId(normalized);setLookedUpCall(null);setLookupError("");return}
@@ -760,15 +785,20 @@ function OutcomeAttributionMini({system,data,symbol}){
       setSelectedId(normalized);setLookedUpCall(stored);setLookupError("");
     }catch(error){setSelectedId("");setLookedUpCall(null);setLookupError(error.message)}
   };
-  useEffect(()=>{setQuery("");setSelectedId("");setLookedUpCall(null);setLookupError("")},[system,symbol]);
+  useEffect(()=>{setQuery("");setDateFilter("");setTimeFilter("");setPickerOpen(false);setSelectedId("");setLookedUpCall(null);setLookupError("")},[system,symbol]);
   const copyTable=async()=>{
     const header=["CALL ID","STATUS","CALL","ALERT DATE ET","ALERT TIME ET","EXPIRES DATE ET","EXPIRES TIME ET","DATUM","TARGET","DYNAMIC HIGH","DYNAMIC LOW","CURRENT/FINAL PRICE","REACHED DATE ET","REACHED TIME ET","REACH PRICE","SECONDS TO TARGET","TOUCH TYPE","CLOSE CONFIRMED","CURRENT STRONGEST GREEK","CURRENT WEAKEST GREEK","SOURCE"];
     const lines=filteredCalls.map(call=>[visibleCallId(call,system),call.status,biasLabel(call.direction),logDate(call.alerted_at),logTime(call.alerted_at),logDate(call.expires_at),logTime(call.expires_at),number(call.entry_price).toFixed(4),call.target_price==null?"—":number(call.target_price).toFixed(4),number(call.dynamic_high,call.highest_price).toFixed(4),number(call.dynamic_low,call.lowest_price).toFixed(4),Number.isFinite(Number(call.current_price??call.final_price))?number(call.current_price??call.final_price).toFixed(4):"—",call.target_reached_at?logDate(call.target_reached_at):"—",call.target_reached_at?logTime(call.target_reached_at):"—",call.target_reached_price==null?"—":number(call.target_reached_price).toFixed(4),call.seconds_to_target==null?"—":number(call.seconds_to_target).toFixed(1),call.target_touch_type??"—",call.target_close_confirmed==null?"PENDING":call.target_close_confirmed?"YES":"NO",call.strongest_greek_at_target??call.strongest_greek_current??"—",call.weakest_greek_at_target??call.weakest_greek_current??"—",pretty(call.price_source??"unknown")].join("\t"));
     try{await navigator.clipboard.writeText([header.join("\t"),...lines].join("\n"));setCopied(true);window.setTimeout(()=>setCopied(false),1800)}catch{setCopied(false)}
   };
   return <article className="panel outcome-attribution">
-    <header className="panel-head"><div><span>50-POINT OUTCOME PATHS</span><h2>{SYSTEM_OUTCOME_LABELS[system]} · one-minute observed highs and lows per call</h2></div><div className="outcome-head-actions"><button type="button" className="copy-table" onClick={copyTable} disabled={!filteredCalls.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><div className="outcome-source"><b>{source.replaceAll("_"," ")}</b><small>{group.tracking} tracking · {group.total} calls</small></div></div></header>
-    <div className="outcome-call-finder"><label><span>LOOK UP STORED CALL ID</span><input list={`call-ids-${system}`} value={query} onChange={event=>{setQuery(event.target.value.replace(/\D/g,""));setSelectedId("");setLookedUpCall(null);setLookupError("")}} onKeyDown={event=>{if(event.key==="Enter")lookup()}} placeholder="YYYYMMDDHHMMSSmmmss"/></label><datalist id={`call-ids-${system}`}>{calls.map(call=><option key={call.id} value={visibleCallId(call,system)}>{call.status} · {biasLabel(call.direction)}</option>)}</datalist><button type="button" onClick={lookup}>FIND</button><button type="button" onClick={()=>{setQuery("");setSelectedId("");setLookedUpCall(null);setLookupError("")}}>ALL CALLS</button>{lookupError&&<small>{lookupError}</small>}</div>
+    <header className="panel-head"><div><span>GAMMA DYNAMICS BLACK BOX</span><h2>{SYSTEM_OUTCOME_LABELS[system]} · one-minute observed highs and lows per call</h2></div><div className="outcome-head-actions"><button type="button" className="copy-table" onClick={copyTable} disabled={!filteredCalls.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><div className="outcome-source"><b>{source.replaceAll("_"," ")}</b><small>{group.tracking} tracking · {group.total} calls</small></div></div></header>
+    <div className="outcome-call-finder">
+      <div className="call-id-combobox"><label><span>CALL ID</span><input value={query} maxLength="19" inputMode="numeric" onFocus={()=>setPickerOpen(true)} onChange={event=>{setQuery(event.target.value.replace(/\D/g,"").slice(0,19));setSelectedId("");setLookedUpCall(null);setPickerOpen(true);setLookupError("")}} onKeyDown={event=>{if(event.key==="Enter")lookup();if(event.key==="Escape")setPickerOpen(false)}} placeholder="YYYYMMDDHHMMSSmmmss"/></label><button type="button" className="picker-toggle" onClick={()=>setPickerOpen(value=>!value)} aria-label="Show matching call IDs">⌄</button>{pickerOpen&&<div className="call-id-menu">{matchingCalls.slice(0,30).map(call=>{const parts=easternFilterParts(call.alerted_at),id=visibleCallId(call,system);return <button type="button" key={call.id} onMouseDown={event=>event.preventDefault()} onClick={()=>selectCall(call)}><b>{id}</b><span>{parts.date} · {parts.time} ET</span><small>{call.status} · {biasLabel(call.direction)}</small></button>})}{!matchingCalls.length&&<p>No loaded calls match these filters.</p>}</div>}</div>
+      <label className="finder-filter"><span>DATE · EASTERN</span><input type="date" value={dateFilter} onChange={event=>{setDateFilter(event.target.value);setSelectedId("");setLookedUpCall(null);setPickerOpen(true)}}/></label>
+      <label className="finder-filter"><span>TIME · EASTERN</span><input type="time" step="1" value={timeFilter} onChange={event=>{setTimeFilter(event.target.value);setSelectedId("");setLookedUpCall(null);setPickerOpen(true)}}/></label>
+      <button type="button" onClick={lookup}>FIND EXACT ID</button><button type="button" onClick={()=>{setQuery("");setDateFilter("");setTimeFilter("");setSelectedId("");setLookedUpCall(null);setPickerOpen(false);setLookupError("")}}>ALL CALLS</button>{lookupError&&<small>{lookupError}</small>}
+    </div>
     <div className="outcome-method"><b>Reading the path:</b> datum is fixed at the alert price. Each candle is observed OHLC for one minute. The target is exactly 50 {symbol} points and expires at the displayed Eastern deadline. Post-expiry prices never count.</div>
     <div className="fifty-point-scroll">{filteredCalls.map(call=><FiftyPointOutcomeCard key={call.id} call={call} system={system}/>)}{!filteredCalls.length&&<div className="empty-state">{normalized?"No loaded call ID matches. Enter the complete ID and select FIND to query Postgres.":data?.unavailable?"Outcome tracking is waiting for the updated Render backend. The rest of the dashboard remains live.":`No qualified ${SYSTEM_OUTCOME_LABELS[system]} decisions have started tracking yet.`}</div>}</div>
     <footer><span>Price source: {source.replaceAll("_"," ")}</span><span>Visible clocks: America/New_York (Eastern), 12-hour format.</span><span>Calls that do not reach 50 points are explicitly TRACKING or EXPIRED.</span></footer>
@@ -778,7 +808,7 @@ function OutcomeAttributionMini({system,data,symbol}){
 function AlertOutcomeRows({alert,calls=[]}){
   const alertTime=new Date(alert.timestamp).getTime();
   const call=calls.find(item=>item.symbol===alert.symbol&&item.direction===alert.direction&&Math.abs(new Date(item.alerted_at).getTime()-alertTime)<=1000);
-  if(!call)return <div className="nested-outcome-empty">No linked 50-point outcome path is available for this alert. Older rows are not reconstructed from missing observations.</div>;
+  if(!call)return <div className="nested-outcome-empty">No linked gamma dynamic Black Box is available for this alert. Older rows are not reconstructed from missing observations.</div>;
   return <div className="nested-outcome"><FiftyPointOutcomeCard call={call}/></div>;
 }
 

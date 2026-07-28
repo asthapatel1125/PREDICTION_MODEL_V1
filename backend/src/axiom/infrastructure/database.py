@@ -131,10 +131,9 @@ class SqlAlchemyRepository:
         """Finalize an overdue persisted call after a service restart."""
         expires_at=row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
         alerted_at=row.alerted_at if row.alerted_at.tzinfo else row.alerted_at.replace(tzinfo=timezone.utc)
-        if row.status!="TRACKING" or expires_at>now:
-            return False
         payload=dict(row.payload)
-        if payload.get("target_reached_at") is not None:
+        stored_status=str(payload.get("status") or row.status or "TRACKING").upper()
+        if stored_status in {"EXPIRED","COMPLETE"} or payload.get("target_reached_at") is not None or expires_at>now:
             return False
         bars=payload.get("minute_bars") or []
         final_price=float(payload.get("current_price")
@@ -144,9 +143,13 @@ class SqlAlchemyRepository:
         target=float(payload.get("target_price",
             entry+(50 if row.direction=="UP" else -50)))
         shortfall=max(0.0,target-final_price if row.direction=="UP" else final_price-target)
+        favorable=max(0.0,float(payload.get("favorable_points",0.0)))
         payload.update(
             status="EXPIRED",completion_reason="HORIZON_EXPIRED",
+            outcome_grade="PARTIAL" if favorable>=30.0 else "FAILED",
+            final_favorable_points=favorable,
             expired_at=expires_at.isoformat(),final_price=final_price,
+            final_price_at=payload.get("current_price_at",expires_at.isoformat()),
             current_price=final_price,
             seconds_observed=max(0.0,(expires_at-alerted_at).total_seconds()),
             target_shortfall_points=shortfall,
@@ -163,7 +166,13 @@ class SqlAlchemyRepository:
         async with self.sessions() as s:
             rows=(await s.execute(select(SystemOutcomeRow).where(SystemOutcomeRow.symbol==symbol.upper())
                 .order_by(SystemOutcomeRow.alerted_at.desc()).limit(1000))).scalars().all()
-            changed=any(self._reconcile_expired_outcome(row,datetime.now(timezone.utc)) for row in rows)
+            changed=False
+            now=datetime.now(timezone.utc)
+            for row in rows:
+                # Do not use any(generator): it short-circuits after the first
+                # changed row and can leave the rest of an old deployment's
+                # overdue calls marked TRACKING.
+                changed=self._reconcile_expired_outcome(row,now) or changed
             if changed:await s.commit()
         systems={}
         for system in ("PRIMARY_OPTIONS","MOMENTUM_TRIAD","GAMMA_DYNAMICS"):

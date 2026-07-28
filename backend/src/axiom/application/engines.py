@@ -40,7 +40,7 @@ class ReplayRequest:
 
 class _EngineRunner:
     def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,
-        outcome_horizon_minutes:int=30,outcome_signal_cooldown_seconds:int=300):
+        outcome_horizon_minutes:int=40,outcome_signal_cooldown_seconds:int=300):
         self.pipeline=pipeline;self.repository=repository;self.publisher=publisher;self._stop=asyncio.Event();self._pending=[]
         self.attribution=OutcomeAttributionTracker(outcome_horizon_minutes,outcome_signal_cooldown_seconds)
 
@@ -77,7 +77,7 @@ class _EngineRunner:
 
 class TrainingEngine(_EngineRunner):
     def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
-        outcome_horizon_minutes:int=30,outcome_signal_cooldown_seconds:int=300):
+        outcome_horizon_minutes:int=40,outcome_signal_cooldown_seconds:int=300):
         super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,outcome_signal_cooldown_seconds);self.data=data
 
     async def replay(self,request:ReplayRequest)->dict[str,float]:
@@ -93,7 +93,7 @@ class TrainingEngine(_EngineRunner):
 
 class LiveEngine(_EngineRunner):
     def __init__(self,pipeline:DecisionPipeline,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
-        price_data:TwelveDataPriceClient|None=None,price_poll_seconds:int=60,outcome_horizon_minutes:int=30,
+        price_data:TwelveDataPriceClient|None=None,price_poll_seconds:int=60,outcome_horizon_minutes:int=40,
         outcome_signal_cooldown_seconds:int=300):
         super().__init__(pipeline,repository,publisher,outcome_horizon_minutes,outcome_signal_cooldown_seconds);self.data=data
         self.price_data=price_data;self.price_poll_seconds=price_poll_seconds;self._price_observation=None;self._price_polled_at=None

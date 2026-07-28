@@ -19,7 +19,7 @@ SYSTEM_GREEKS = {
 class OutcomeAttributionTracker:
     """Tracks observed excursions after qualified, independent system decisions."""
 
-    def __init__(self, horizon_minutes: int = 30, cooldown_seconds: int = 300):
+    def __init__(self, horizon_minutes: int = 40, cooldown_seconds: int = 300):
         self.horizon = timedelta(minutes=horizon_minutes)
         self.cooldown = timedelta(seconds=cooldown_seconds)
         self._active: dict[str, dict[str, Any]] = {}
@@ -80,11 +80,15 @@ class OutcomeAttributionTracker:
         target = float(record["target_price"])
         is_long = record["direction"] == Direction.UP.value
         shortfall = max(0.0, target-final_price if is_long else final_price-target)
+        favorable = max(0.0, float(record.get("favorable_points", 0.0)))
         record.update(
             status="EXPIRED",
             completion_reason="HORIZON_EXPIRED",
+            outcome_grade="PARTIAL" if favorable >= 30.0 else "FAILED",
+            final_favorable_points=favorable,
             expired_at=record["expires_at"],
             final_price=final_price,
+            final_price_at=record.get("current_price_at", record["expires_at"]),
             seconds_observed=max(0.0, (record["expires_at"]-record["alerted_at"]).total_seconds()),
             target_shortfall_points=shortfall,
             strongest_greek_current=strongest,
@@ -196,6 +200,24 @@ class OutcomeAttributionTracker:
                 continue
             scores = self._relative_scores(symbol, record["system"], state, Direction(record["direction"]))
             self._update_minute_path(record,price,now,scores)
+            target_minute=self._minute_bucket(record["target_reached_at"]) if record.get("target_reached_at") else None
+            if target_minute is not None and self._minute_bucket(now)>target_minute:
+                # The new-minute observation only closes the preceding target
+                # candle. It is not part of this call's completed path.
+                if record["minute_bars"] and record["minute_bars"][-1]["timestamp"]>target_minute:
+                    record["minute_bars"].pop()
+                final_price=float(record.get("target_close_price")
+                    or record.get("target_reached_price") or record["entry_price"])
+                record.update(
+                    status="COMPLETE",completion_reason="TARGET_REACHED",
+                    outcome_grade="SUCCESS",final_favorable_points=max(
+                        50.0,float(record.get("favorable_points",0.0))),
+                    final_price=final_price,final_price_at=now,
+                    current_price=final_price,current_price_at=now,
+                )
+                del self._active[signal_id]
+                updates.append(dict(record))
+                continue
             strongest_current, weakest_current = self._leaders(scores)
             record.update(
                 current_price=price,
@@ -236,13 +258,8 @@ class OutcomeAttributionTracker:
             record["price_source_timestamp"] = price_source_timestamp
             record["dynamic_high"] = record["highest_price"]
             record["dynamic_low"] = record["lowest_price"]
-            target_minute=self._minute_bucket(record["target_reached_at"]) if record.get("target_reached_at") else None
             if record.get("target_reached_at") is None and now >= record["expires_at"]:
                 self._expire(record)
-                del self._active[signal_id]
-            elif target_minute is not None and self._minute_bucket(now)>target_minute:
-                record["status"] = "COMPLETE"
-                record["completion_reason"]="TARGET_REACHED"
                 del self._active[signal_id]
             updates.append(dict(record))
 
@@ -294,6 +311,7 @@ class OutcomeAttributionTracker:
                 "alerted_at": now,
                 "expires_at": now + self.horizon,
                 "status": "TRACKING",
+                "outcome_grade":"TRACKING",
                 "entry_price": price,
                 "target_points":target_points,
                 "target_price":target_price,
@@ -305,6 +323,7 @@ class OutcomeAttributionTracker:
                 "target_close_price":None,
                 "expired_at":None,
                 "final_price":None,
+                "final_price_at":None,
                 "seconds_observed":0.0,
                 "target_shortfall_points":target_points,
                 "strongest_greek_at_target":None,
