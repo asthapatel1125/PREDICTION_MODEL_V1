@@ -9,11 +9,11 @@ from uuid import uuid4
 
 from fastapi import APIRouter,FastAPI,HTTPException,Query,WebSocket,WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel,Field
 
 from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
-from axiom.api.schemas import LiveEngineRequest,ReplayRequestBody
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -29,6 +29,19 @@ INSTRUMENTS={
     "YM":{"provider":"CBOT futures","available":False,"requirement":"Separate licensed CME/CBOT futures feed"},
 }
 CHART_INTERVALS={5,15,60,180,300,720,900,1800,3600,14400,86400}
+
+
+class ReplayRequestBody(BaseModel):
+    symbol:str=Field(min_length=1,max_length=16)
+    start:datetime
+    end:datetime
+    bar_resolution_seconds:int=Field(gt=0)
+    replay_speed:float=Field(default=0,ge=0)
+
+
+class LiveEngineRequest(BaseModel):
+    symbol:str=Field(min_length=1,max_length=16)
+    resolution_seconds:int=Field(default=5,gt=0)
 
 
 class Container:

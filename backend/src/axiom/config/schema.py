@@ -65,7 +65,7 @@ class PlatformSettings(BaseSettings):
         validation_alias=AliasChoices("TWELVE_DATA_API_KEY", "AXIOM_TWELVE_DATA_API_KEY"),
     )
     outcome_price_poll_seconds: int = Field(default=60, ge=60, le=3600)
-    outcome_horizon_minutes: int = Field(default=30, ge=5, le=240)
+    outcome_horizon_minutes: int = Field(default=40, ge=5, le=240)
     outcome_signal_cooldown_seconds: int = Field(default=300, ge=30, le=3600)
     market_timezone: str = "America/New_York"
     log_level: str = "INFO"
