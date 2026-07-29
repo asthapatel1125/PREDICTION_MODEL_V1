@@ -579,11 +579,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-log-scroll .point-delta.down{border:1px solid #d9546b;background:transparent;color:#ff8798}
 .gamma-log-scroll .point-delta.flat{border:1px solid #6f879a;background:transparent;color:#c4d2dc}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) td{background:#14202b;color:#c9d6e0;border-bottom:1px solid transparent}
-.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) td{background:#14202b;color:#9ee8d1;border-bottom-color:#4de0bd}
-.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) td{background:#14202b;color:#f5a0ae;border-bottom-color:#ff5f79}
+.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) td{background:#123127;color:#a9f5dc;border-bottom-color:#4de0bd}
+.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) td{background:#351820;color:#ffc0ca;border-bottom-color:#ff5f79}
 .gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td{background:#14202b;color:#a9d2f5;border-bottom-color:#5aa8ff}
 .gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td{background:#14202b;color:#ead38d;border-bottom-color:#e7bb43}
-.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row):hover td{background:#192936}
+.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row):hover td{background:#174235}
+.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row):hover td{background:#48212b}
+.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row):hover td{background:#192936}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) td:first-child,.gamma-log-scroll tr:not(.gamma-call-chart-row) td:last-child{border-radius:0}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .call-id{border-color:#4b6980;background:transparent;color:#b8dcf2}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .direction-pill{border:1px solid #587185;background:transparent;color:#e4edf4}
@@ -592,6 +594,10 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) td:first-child{box-shadow:inset 1px 0 #ff5f79}
 .gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td:first-child{box-shadow:inset 1px 0 #5aa8ff}
 .gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td:first-child{box-shadow:inset 1px 0 #e7bb43}
+.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) .call-id,.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) .direction-pill,.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) .gamma-call-state{border-color:#4de0bd;color:#a9f5dc}
+.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .call-id,.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .direction-pill,.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .gamma-call-state{border-color:#ff5f79;color:#ffc0ca}
+.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) .point-delta{border-color:#4de0bd;background:transparent;color:#a9f5dc}
+.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .point-delta{border-color:#ff5f79;background:transparent;color:#ffc0ca}
 @media(max-width:760px){
   .gamma-log-scroll th{font-size:9px}
   .gamma-log-scroll td{font-size:11px}
