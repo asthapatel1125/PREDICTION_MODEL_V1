@@ -568,13 +568,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 
 /* Gamma call matrix: larger type, separated excursion fields, vivid row states. */
 .gamma-log-scroll table{min-width:2260px}
-.gamma-log-scroll th{font-size:10px;line-height:1.25}
-.gamma-log-scroll td{height:56px;font-size:12px;line-height:1.35}
-.gamma-log-scroll .call-id{font-size:11px}
-.gamma-log-scroll .direction-pill,.gamma-log-scroll .gamma-call-state{font-size:10px}
-.gamma-log-scroll .extreme-price{color:#fff;font-size:13px;font-weight:750}
-.gamma-log-scroll .extreme-time{color:#fff;font-size:11px;font-weight:700}
-.gamma-log-scroll .point-delta{display:inline-block;padding:4px 7px;border-radius:5px;font-size:11px;font-weight:800}
+.gamma-log-scroll th{font-size:5px;line-height:1.25}
+.gamma-log-scroll td{height:44px;font-size:6px;line-height:1.35}
+.gamma-log-scroll .call-id{font-size:5.5px}
+.gamma-log-scroll .direction-pill,.gamma-log-scroll .gamma-call-state{font-size:5px}
+.gamma-log-scroll .extreme-price{color:#fff;font-size:6.5px;font-weight:750}
+.gamma-log-scroll .extreme-time{color:#fff;font-size:5.5px;font-weight:700}
+.gamma-log-scroll .point-delta{display:inline-block;padding:3px 5px;border-radius:4px;font-size:5.5px;font-weight:800}
 .gamma-log-scroll .point-delta.up{border:1px solid #00d897;background:#004f3d;color:#7effd4}
 .gamma-log-scroll .point-delta.down{border:1px solid #ff4f6a;background:#681629;color:#ffd4dc}
 .gamma-log-scroll .point-delta.flat{border:1px solid #8ca4b8;background:#304354;color:#f1f7fb}
@@ -590,6 +590,6 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .direction-pill{border:1px solid #ffffff75;background:#07111a99;color:#fff}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .gamma-call-state{border-color:#fff;background:#06111ab8;color:#fff;box-shadow:0 0 14px #fff5}
 @media(max-width:760px){
-  .gamma-log-scroll th{font-size:9px}
-  .gamma-log-scroll td{font-size:11px}
+  .gamma-log-scroll th{font-size:5px}
+  .gamma-log-scroll td{font-size:6px}
 }
