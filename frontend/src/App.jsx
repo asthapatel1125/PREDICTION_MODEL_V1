@@ -623,7 +623,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     return [...new Map([...persisted,...derived].map(event=>[event.id,event])).values()]
       .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[history,state,symbol,calls]);
-  const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id)??calls.find(call=>call.direction===event.decision&&Math.abs(new Date(call.alerted_at)-new Date(event.timestamp))<=1000);
+  const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id);
   const visualState=call=>{
     if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
     const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);

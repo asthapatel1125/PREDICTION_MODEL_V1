@@ -179,19 +179,17 @@ class SqlAlchemyRepository:
         systems={}
         for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS"):
             items=[dict(row.payload) for row in rows if row.system==system]
-            # Preserve every raw row in Postgres, but present only one newest
-            # unresolved logical call for a repeated direction/datum pair.
-            # This also cleans up duplicates written by older deployments.
-            calls=[]
-            unresolved_keys=set()
-            for item in items:
-                unresolved=item.get("target_reached_at") is None and item.get("status") in {"TRACKING","TARGET_REACHED",None}
-                key=(str(item.get("direction")),round(float(item.get("entry_price",0)),4))
-                if unresolved and key in unresolved_keys:
-                    continue
-                calls.append(item)
-                if unresolved:
-                    unresolved_keys.add(key)
+            # Every database row has a stable primary-key/call ID. Never hide
+            # a live call merely because another call shares its direction or
+            # rounded entry price. Return all active calls, plus the newest
+            # completed calls for history.
+            active_calls=[item for item in items if str(item.get("status") or "TRACKING").upper()=="TRACKING"]
+            completed_calls=[item for item in items if str(item.get("status") or "TRACKING").upper()!="TRACKING"]
+            calls=sorted(
+                [*active_calls,*completed_calls[:100]],
+                key=lambda item:str(item.get("alerted_at") or ""),
+                reverse=True,
+            )
             # MFE ranks the strongest direction-adjusted follow-through. MAE is
             # negative; ascending order ranks the deepest adverse excursion.
             systems[system]={
@@ -199,11 +197,11 @@ class SqlAlchemyRepository:
                 "lowest":sorted(items,key=lambda item:float(item.get("adverse_points",0)))[:per_group],
                 # Match the dashboard's 100-alert window so every visible
                 # alert can resolve its own nested outcome path.
-                "calls":calls[:100],
+                "calls":calls,
                 "tracking":sum(item.get("status")=="TRACKING" for item in calls),
-                "total":len(calls),
+                "total":len(items),
                 "raw_total":len(items),
-                "duplicates_suppressed":len(items)-len(calls),
+                "duplicates_suppressed":0,
             }
         return {"symbol":symbol.upper(),"systems":systems}
 
