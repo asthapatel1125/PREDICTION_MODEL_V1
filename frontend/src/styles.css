@@ -598,6 +598,17 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .call-id,.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .direction-pill,.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .gamma-call-state{border-color:#ff5f79;color:#ffc0ca}
 .gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) .point-delta{border-color:#4de0bd;background:transparent;color:#a9f5dc}
 .gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) .point-delta{border-color:#ff5f79;background:transparent;color:#ffc0ca}
+
+/* True-black Gamma log canvas; status rows remain independently green/red/blue/yellow. */
+.gamma-dynamics-log{background:#000;border-color:#263746;box-shadow:0 18px 48px #000}
+.gamma-dynamics-log>.panel-head{background:#000;border-bottom-color:#263746}
+.gamma-log-scroll,.gamma-log-scroll table,.gamma-log-scroll tbody{background:#000}
+.gamma-log-scroll thead,.gamma-log-scroll th{background:#050505}
+.gamma-call-chart-row td{background:#000!important}
+.gamma-call-chart-row details{background:#000}
+.gamma-call-chart-row details>summary{background:#080808}
+.gamma-call-chart-row details>summary:hover{background:#101010}
+.gamma-log-empty{background:#000}
 @media(max-width:760px){
   .gamma-log-scroll th{font-size:9px}
   .gamma-log-scroll td{font-size:11px}
