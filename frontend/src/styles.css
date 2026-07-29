@@ -482,3 +482,86 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .alert-path-expanded .alert-path-toolbar{flex:0 0 auto;padding:10px 12px}.alert-path-expanded .alert-path-toolbar b{font-size:13px}.alert-path-expanded .alert-path-toolbar span,.alert-path-expanded .alert-path-toolbar button{font-size:10px}
 .alert-path-expanded .alert-path-legend{flex:0 0 auto}.alert-path-expanded .alert-path-stage{flex:1 1 auto;height:auto!important;min-height:0;border-color:#29485d}.alert-path-expanded .path-axis-text{font-size:14px}.alert-path-expanded .path-axis-title{font-size:12px}.alert-path-expanded .alert-path-help{flex:0 0 auto;font-size:10px}
 @media(max-width:760px){.alert-path-toolbar{align-items:flex-start;flex-direction:column}.alert-path-toolbar>div:last-child{flex-wrap:wrap}.alert-path-expanded{padding:6px}}
+
+/* Gamma Dynamics readability and vivid workstation-theme treatment. */
+.gamma-dynamics-log{
+  border-color:#28506a;
+  background:linear-gradient(145deg,#0d1823,#08111a 68%);
+  box-shadow:0 18px 48px #0007,0 0 32px #4cc9f012;
+}
+.gamma-dynamics-log>.panel-head{
+  min-height:76px;
+  padding:16px 18px;
+  border-bottom-color:#28475c;
+  background:linear-gradient(90deg,#102333,#0b1722 62%,#10261f);
+}
+.gamma-dynamics-log>.panel-head>div>span{color:#62d8ff;font-size:11px;font-weight:700;letter-spacing:.15em}
+.gamma-dynamics-log>.panel-head h2{margin-top:7px;color:#f0f7fc;font-size:16px;font-weight:650}
+.gamma-log-actions{gap:15px}.gamma-log-actions>b{color:#75ddff;font-size:12px}
+.gamma-log-actions .copy-table{
+  height:38px;
+  padding:0 14px;
+  border-color:#3585aa;
+  background:linear-gradient(180deg,#12354a,#0c2434);
+  color:#bcecff;
+  font-size:11px;
+  font-weight:700;
+  box-shadow:0 0 18px #4cc9f020;
+}
+.gamma-log-actions .copy-table:hover{border-color:#65dcff;background:#16445d;color:#fff}
+.gamma-log-scroll{max-height:410px;background:#050b11;scrollbar-color:#4386a8 #071019}
+.gamma-log-scroll table{min-width:1640px}
+.gamma-log-scroll th,.gamma-log-scroll td{height:58px;padding:11px 13px}
+.gamma-log-scroll th{
+  border-bottom-color:#31546b;
+  background:#10202d;
+  color:#9bb9cc;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.085em;
+}
+.gamma-log-scroll td{border-bottom-color:#22384a;color:#d1dfeb;font-size:12px;line-height:1.35}
+.gamma-log-scroll .call-id{padding:7px 9px;border-color:#367899;background:#0b2534;color:#91ddff;font-size:11px}
+.gamma-log-scroll .direction-pill{padding:5px 8px;font-size:10px;font-weight:700}
+.gamma-log-scroll tr.gamma-call-success td{background:linear-gradient(90deg,#0b3328,#0a261f);color:#dcfff2}
+.gamma-log-scroll tr.gamma-call-failed td{background:linear-gradient(90deg,#38151d,#291118);color:#ffe2e7}
+.gamma-log-scroll tr.gamma-call-tracking-success td{background:linear-gradient(90deg,#102f4b,#0b243a);color:#e0f2ff}
+.gamma-log-scroll tr.gamma-call-tracking-failing td{background:linear-gradient(90deg,#3b2e0b,#2c230d);color:#fff2c2}
+.gamma-log-scroll tr.gamma-call-success td:first-child{box-shadow:inset 4px 0 #4de0bd}
+.gamma-log-scroll tr.gamma-call-failed td:first-child{box-shadow:inset 4px 0 #ff6377}
+.gamma-log-scroll tr.gamma-call-tracking-success td:first-child{box-shadow:inset 4px 0 #4ca7ff}
+.gamma-log-scroll tr.gamma-call-tracking-failing td:first-child{box-shadow:inset 4px 0 #f4c84f}
+.gamma-price-cell{gap:4px}.gamma-price-cell>b{color:#f5fbff;font-size:13px}.gamma-price-cell small{font-size:10px;font-weight:700}
+.point-delta.up{color:#55f0bf}.point-delta.down{color:#ff7588}.point-delta.flat{color:#adc0cf}
+.gamma-call-state{padding:6px 9px;background:#071019;font-size:10px;box-shadow:0 0 14px currentColor}
+.gamma-call-state.success{border-color:#4de0bd;color:#5af0c7}
+.gamma-call-state.failed{border-color:#ff6377;color:#ff7f91}
+.gamma-call-state.tracking-success{border-color:#55b5ff;color:#70c2ff}
+.gamma-call-state.tracking-failing{border-color:#f4c84f;color:#ffd864}
+.gamma-call-chart-row td{padding:0 13px 13px!important;background:#050b11!important}
+.gamma-call-chart-row details{border:1px solid #29495e;border-radius:7px;background:#07111a;overflow:hidden}
+.gamma-call-chart-row details>summary{
+  padding:11px 13px;
+  background:linear-gradient(90deg,#0d2230,#0a1823);
+  color:#9edfff;
+  font-size:11px;
+  font-weight:700;
+}
+.gamma-call-chart-row details>summary:hover{background:#123044;color:#e6f8ff}
+.gamma-call-chart-row details[open]>summary{border-bottom:1px solid #29495e}
+.gamma-call-chart-row .alert-path-toolbar b{font-size:12px}.gamma-call-chart-row .alert-path-toolbar span{font-size:10px}
+.gamma-call-chart-row .alert-path-legend span{font-size:10px;font-weight:650}
+.gamma-call-chart-row .alert-path-help{font-size:10px}
+.gamma-call-chart-row .minute-high-line{stroke:#4cc9f0}.gamma-call-chart-row .minute-low-line{stroke:#ff5f79}
+.gamma-call-chart-row .minute-high-line,.gamma-call-chart-row .minute-low-line{stroke-width:1.25}
+.gamma-dynamics-history-chart .greek-chart-header span{color:#63d8ff;font-size:11px;font-weight:700}
+.gamma-dynamics-history-chart .greek-chart-header h2{font-size:17px}
+.gamma-dynamics-history-chart .greek-chart-legend span,.gamma-dynamics-history-chart .greek-chart-legend b{font-size:11px}
+.gamma-dynamics-history-chart .greek-axis{fill:#c0d1df;font-size:14px}
+.gamma-dynamics-history-chart .triad-lane-name{font-size:14px}.gamma-dynamics-history-chart .triad-lane-role{fill:#96aabd;font-size:11px}
+.gamma-dynamics-history-chart .triad-chart-note,.gamma-dynamics-history-chart .greek-chart-readout{font-size:11px}
+@media(max-width:760px){
+  .gamma-dynamics-log>.panel-head{align-items:flex-start;gap:12px}
+  .gamma-log-actions{align-items:flex-end;flex-direction:column}
+  .gamma-log-scroll th,.gamma-log-scroll td{padding:10px;font-size:11px}
+}
