@@ -23,27 +23,13 @@ from axiom.analytics.thresholds import AdaptiveThresholdManager, PerformanceWind
 from axiom.analytics.timeframes import MultiTimeframeEngine
 from axiom.config.schema import StrategyConfig
 from axiom.domain.enums import Direction, EngineMode
-from axiom.domain.models import Alert, GammaDynamics, Greeks, MarketBar, MarketState, MomentumTriad, PipelineResult, ScoreResult
+from axiom.domain.models import Alert, GammaDynamics, Greeks, MarketBar, MarketState, PipelineResult, ScoreResult
 
 try:
     from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet
-    from axiom.analytics.momentum_triad import NQMomentumTriad
 except ModuleNotFoundError:
     # Backward-compatible single-file implementations for deployments where
     # the optional analytics modules have not been added to GitHub yet.
-    class NQMomentumTriad:
-        def __init__(self,zero_tolerance:float=1e-12):self.zero_tolerance=zero_tolerance
-        def calculate(self,greeks:Greeks,source_symbol:str)->MomentumTriad:
-            values={"zomma":float(greeks.zomma),"speed":float(greeks.speed),"delta":float(greeks.delta)}
-            votes={name:(1 if value>self.zero_tolerance else -1 if value< -self.zero_tolerance else 0) for name,value in values.items()}
-            long=all(value==1 for value in votes.values());short=all(value==-1 for value in votes.values())
-            decision=Direction.UP if long else Direction.DOWN if short else Direction.NEUTRAL
-            explanation=("Zomma acceleration, Speed direction, and Delta confirmation are all positive." if long else
-                "Zomma acceleration, Speed direction, and Delta confirmation are all negative." if short else
-                "Zomma acceleration, Speed direction, and Delta confirmation are not aligned.")
-            return MomentumTriad(decision=decision,aligned=long or short,source_symbol=source_symbol,
-                acceleration=values["zomma"],direction=values["speed"],confirmation=values["delta"],votes=votes,explanation=explanation)
-
     class GammaDynamicsQuartet:
         def __init__(self,intensity_threshold:float=.65,minimum_history:int=20,zero_tolerance:float=1e-12):
             self.intensity_threshold=intensity_threshold;self.minimum_history=minimum_history;self.zero_tolerance=zero_tolerance
@@ -81,7 +67,6 @@ class DecisionPipeline:
         self.regimes=RegimeClassifier(config); self.ranges=MicroRangeBreakout(); self.risk=RiskScorer(config)
         self.confidence=AlertConfidenceScorer(config.score_weights["confidence"]); self.thresholds=AdaptiveThresholdManager()
         self.profiles=AlertProfileSelector(market_timezone); self.signal=TradeSignalGenerator(); self.explanations=AlertExplanationEngine()
-        self.momentum_triad=NQMomentumTriad()
         self.gamma_dynamics=GammaDynamicsQuartet()
         self.sessions=IntradaySessionClassifier(config.session_model,market_timezone)
         self._explosions:dict[str,deque]=defaultdict(lambda:deque(maxlen=1000)); self._performance=PerformanceWindow(); self._events:list[datetime]=[]
@@ -195,11 +180,10 @@ class DecisionPipeline:
         micro=self.ranges.calculate(sample+[primary],dynamic.micro_range_minutes)
         alignment=self.mtf.alignment(bar.symbol); risk=self.risk.calculate(primary,sample)
         confidence=self.confidence.calculate(explosion,direction,pressure,momentum,alignment)
-        momentum_triad=self.momentum_triad.calculate(primary.greeks,bar.symbol)
         gamma_dynamics=self.gamma_dynamics.calculate(primary.greeks,[item.greeks for item in sample],bar.symbol)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,
-            timeframe_alignment=alignment,greeks=primary.greeks,momentum_triad=momentum_triad,gamma_dynamics=gamma_dynamics,
+            timeframe_alignment=alignment,greeks=primary.greeks,gamma_dynamics=gamma_dynamics,
             session_analysis=session_analysis,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
                 "contract_count":float(bar.contract_count),"open_interest_total":bar.open_interest,
                 "clock_session":session_analysis["clock_session"],

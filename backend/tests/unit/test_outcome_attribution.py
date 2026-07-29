@@ -11,25 +11,24 @@ def state(timestamp: datetime, price: float, direction: Direction = Direction.UP
     return SimpleNamespace(
         timestamp=timestamp, symbol="QQQ", greeks=greeks,
         options_bias_qualified=False, options_bias=Direction.NEUTRAL,
-        momentum_triad=SimpleNamespace(
-            aligned=True, decision=direction,
-            acceleration=.6 if direction == Direction.UP else -.6,
-            direction=.3 if direction == Direction.UP else -.3,
-            confirmation=.4 if direction == Direction.UP else -.4,
+        gamma_dynamics=SimpleNamespace(
+            qualified=True, decision=direction, intensity=.8, intensity_threshold=.65,
+            pressure=.7 if direction == Direction.UP else -.7,
+            inputs={"speed": .3, "gamma": .2, "zomma": .6, "color": .4},
+            model_dump=lambda **_: {},
         ),
-        gamma_dynamics=SimpleNamespace(qualified=False, decision=Direction.NEUTRAL),
         supporting_indicators={"price": price},
     )
 
 
-def test_long_momentum_tracks_one_minute_ohlc_and_fifty_point_target():
+def test_long_gamma_tracks_one_minute_ohlc_and_fifty_point_target():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
     created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "TWELVE_DATA", start)
     assert len(created) == 1
     signal_id = created[0]["id"]
-    assert created[0]["call_id"] == "2026072710300000002"
-    assert signal_id == "2026072710300000002-QQQ"
+    assert created[0]["call_id"] == "2026072710300000003"
+    assert signal_id == "2026072710300000003-QQQ"
 
     tracker.process(state(start + timedelta(seconds=5), 507), EngineMode.LIVE, 507, "TWELVE_DATA", start + timedelta(seconds=5))
     tracker.process(state(start + timedelta(seconds=10), 497), EngineMode.LIVE, 497, "TWELVE_DATA", start + timedelta(seconds=10))

@@ -15,9 +15,7 @@ def test_pipeline_is_deterministic(config):
             assert a.alert.model_dump(exclude={"id","engine_mode"})==b.alert.model_dump(exclude={"id","engine_mode"})
     final=results_one[-1].state
     assert final.greeks is not None
-    assert final.momentum_triad is not None
     assert final.gamma_dynamics is not None
-    assert set(final.momentum_triad.votes) == {"zomma", "speed", "delta"}
     assert {"delta","theta","vega","rho"}<=set(final.greeks.model_dump())
     assert all(f"greek_{name}" in final.supporting_indicators for name in ("delta","theta","vega","rho"))
     assert set(final.signal_checks)=={"explosion","direction","pressure_alignment","confidence","risk"}

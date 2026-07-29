@@ -6,15 +6,14 @@ import {
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["One-screen focus", "decision"], ["NQ momentum triad", "momentum-triad"], ["Gamma dynamics", "gamma-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
+  ["One-screen focus", "decision"], ["Gamma dynamics", "gamma-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
   ["Custom Greek graphs", "custom-greeks"], ["Live alerts", "live-alerts"],
 ];
-const DEFAULT_MODULE_ORDER=["momentum-triad","gamma-dynamics","forecast","score-modules","greek-orders","custom-greeks","live-alerts"];
+const DEFAULT_MODULE_ORDER=["gamma-dynamics","forecast","score-modules","greek-orders","custom-greeks","live-alerts"];
 const OVERVIEW_LABELS=Object.fromEntries(OVERVIEW_SECTIONS.map(([label,id])=>[id,label]));
 const OVERVIEW_NUMBERS=Object.fromEntries(OVERVIEW_SECTIONS.map(([,id],index)=>[id,String(index+1).padStart(2,"0")]));
 const OVERVIEW_CATEGORIES={
   decision:"DECISION",
-  "momentum-triad":"SIGNAL MODEL",
   "gamma-dynamics":"SIGNAL MODEL",
   forecast:"RESEARCH",
   "score-modules":"DIAGNOSTICS",
@@ -108,20 +107,6 @@ function deriveOptionsDecision(state) {
     exitRequired:number(indicators.signal_exit_required,3),
     minHoldSeconds:number(indicators.signal_min_hold_seconds,60),
     rawQualified:Boolean(indicators.signal_raw_qualified??qualified)};
-}
-
-function deriveMomentumTriad(state) {
-  const stored=state?.momentum_triad;
-  if(stored)return {...stored,available:true};
-  const values={zomma:greekValue(state,"zomma"),speed:greekValue(state,"speed"),delta:greekValue(state,"delta")};
-  const available=Object.values(values).every(Number.isFinite);
-  if(!available)return {available:false,aligned:false,decision:"NEUTRAL",...values,votes:{},explanation:"Waiting for Zomma, Speed, and Delta from the live options feed."};
-  const vote=value=>value>1e-12?1:value< -1e-12?-1:0;
-  const votes=Object.fromEntries(Object.entries(values).map(([name,value])=>[name,vote(value)]));
-  const alignedLong=Object.values(votes).every(value=>value===1),alignedShort=Object.values(votes).every(value=>value===-1);
-  return {available:true,aligned:alignedLong||alignedShort,decision:alignedLong?"UP":alignedShort?"DOWN":"NEUTRAL",
-    acceleration:values.zomma,direction:values.speed,confirmation:values.delta,votes,
-    explanation:alignedLong?"Zomma acceleration, Speed direction, and Delta confirmation are all positive.":alignedShort?"Zomma acceleration, Speed direction, and Delta confirmation are all negative.":"Zomma acceleration, Speed direction, and Delta confirmation are not aligned."};
 }
 
 const signedGreek=value=>!Number.isFinite(Number(value))?"--":Math.abs(Number(value))<.001?Number(value).toExponential(3):`${Number(value)>0?"+":""}${Number(value).toFixed(4)}`;
@@ -586,23 +571,6 @@ function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
   </section>;
 }
 
-function NQMomentumTriadModule({state,symbol,engine}) {
-  const triad=deriveMomentumTriad(state),tone=!triad.available||!triad.aligned?"wait":triad.decision==="UP"?"long":"short";
-  const label=triad.aligned?biasLabel(triad.decision):"WAIT";
-  const items=[
-    {key:"zomma",role:"ACCELERATION",value:triad.acceleration??triad.zomma},
-    {key:"speed",role:"DIRECTION",value:triad.direction??triad.speed},
-    {key:"delta",role:"CONFIRMATION",value:triad.confirmation??triad.delta},
-  ];
-  const voteText=vote=>vote===1?"POSITIVE":vote===-1?"NEGATIVE":"NEUTRAL";
-  return <section className={`momentum-triad momentum-triad-${tone}`} aria-live="polite">
-    <header className="triad-header"><div><span>NQ MOMENTUM TRIAD</span><h2>{label}{triad.aligned?" ALIGNMENT":""}</h2><small>{symbol} OPTIONS -&gt; NQ PROXY · independent of the primary pressure engine</small></div><div className={`triad-decision triad-${tone}`}><span>{engine.running?"LIVE DECISION":"ENGINE IDLE"}</span><b>{label}</b><small>{triad.aligned?"3 / 3 ALIGNED":"ALIGNMENT REQUIRED"}</small></div></header>
-    <div className="triad-logic"><b>Zomma = acceleration</b><i/> <b>Speed = direction</b><i/> <b>Delta = confirmation</b><strong>When all three signs align, the module identifies an NQ momentum candidate.</strong></div>
-    <div className="triad-components">{items.map(item=>{const vote=triad.votes?.[item.key]??0;return <article className={`triad-component vote-${vote>0?"up":vote<0?"down":"flat"}`} key={item.key}><div><span>{item.key.toUpperCase()}</span><small>{item.role}</small></div><b>{signedGreek(item.value)}</b><em>{voteText(vote)}</em></article>})}</div>
-    <footer><span>{triad.explanation}</span><small>{!triad.available?"No decision: one or more source values are missing.":"Sign alignment only · research signal, not a verified probability or trade execution instruction."}</small></footer>
-  </section>;
-}
-
 function GammaDynamicsModule({state,history,symbol,engine}){
   const quartet=deriveGammaDynamics(state,history),tone=!quartet.qualified?"wait":quartet.decision==="UP"?"long":"short",label=quartet.qualified?(quartet.decision==="UP"?"UPWARD PRESSURE":"DOWNWARD PRESSURE"):"WAIT";
   const metadata={zomma:["VOLATILITY INTENSITY","Gamma sensitivity to implied volatility"],color:["TIME INTENSITY","Gamma sensitivity to time"],speed:["SPOT PRESSURE","Gamma sensitivity to spot"],gamma:["CURVATURE BASE","Delta sensitivity to spot"]};
@@ -611,8 +579,8 @@ function GammaDynamicsModule({state,history,symbol,engine}){
   return <section className={`gamma-dynamics gamma-dynamics-${tone}`} aria-live="polite"><header><div><span>GAMMA DYNAMICS QUARTET</span><h2>{symbol} · {label}</h2><small>{engine.running?"● LIVE OPTIONS PRO":"○ ENGINE IDLE"} · relative to the latest {quartet.history_points??0} observations</small></div><div className="gamma-dynamics-score"><span>DYNAMICS INTENSITY</span><b>{pct(quartet.intensity)}</b><small>Ideal ≥ {pct(quartet.intensity_threshold??.65)}</small></div><div className="gamma-dynamics-score pressure"><span>CURVATURE PRESSURE</span><b>{number(quartet.pressure)>0?"+":""}{number(quartet.pressure).toFixed(2)}</b><small>Direction: Speed · Base: Gamma magnitude</small></div></header><div className="gamma-dynamics-ideals"><span className={intensityPassed?"passed":"waiting"}><b>{intensityPassed?"PASS":"WAIT"}</b> Intensity ≥ {pct(quartet.intensity_threshold??.65)}</span><span className={aligned?"passed":"waiting"}><b>{aligned?"PASS":"WAIT"}</b> Speed directional + Gamma active</span><span className={warmed?"passed":"waiting"}><b>{warmed?"PASS":"WAIT"}</b> Baseline ≥ 20 observations</span></div><div className="gamma-dynamics-grid">{["zomma","color","speed","gamma"].map(name=>{const value=quartet.inputs?.[name],rank=quartet.percentiles?.[name]??0;return <article key={name}><div><span>{name.toUpperCase()}</span><small>{metadata[name][0]}</small></div><b>{signedGreek(value)}</b><i><em style={{width:`${Math.max(2,rank*100)}%`}}/></i><p>{metadata[name][1]} · relative magnitude {pct(rank)}</p><strong>{ideals[name]}</strong></article>})}</div><footer><b>Interpretation:</b> {quartet.explanation}<small>Native contract Gamma is normally non-negative, so its magnitude is treated as the curvature base; Speed supplies the up/down state. This remains a research heuristic, not dealer inventory.</small></footer></section>;
 }
 
-function MomentumTriadChart({history=[],state,symbol,variant="triad"}){
-  const quartet=variant==="quartet",series=quartet?[["zomma","#06d6a0","VOL INTENSITY"],["color","#f4d35e","TIME INTENSITY"],["speed","#ef476f","SPOT PRESSURE"],["gamma","#4cc9f0","CURVATURE"]]:[["zomma","#06d6a0","ACCELERATION"],["speed","#ef476f","DIRECTION"],["delta","#ff5c8a","CONFIRMATION"]];
+function GammaDynamicsChart({history=[],state,symbol}){
+  const quartet=true,series=[["zomma","#06d6a0","VOL INTENSITY"],["color","#f4d35e","TIME INTENSITY"],["speed","#ef476f","SPOT PRESSURE"],["gamma","#4cc9f0","CURVATURE"]];
   const [intervalSeconds,setIntervalSeconds]=useState(5),[expanded,setExpanded]=useState(false),[zoom,setZoom]=useState(1),[cursor,setCursor]=useState(null);
   const drag=useRef(null),viewport=useGreekViewport(history,state,symbol,intervalSeconds,Math.max(12,Math.round((expanded?140:90)/zoom))),rows=viewport.visible;
   const dims={width:1200,height:expanded?760:500,left:138,right:30,top:20,bottom:58},plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom,laneHeight=plotHeight/series.length;
@@ -621,8 +589,8 @@ function MomentumTriadChart({history=[],state,symbol,variant="triad"}){
   const x=index=>dims.left+index*plotWidth/Math.max(1,rows.length-1),y=(value,name)=>{const index=series.findIndex(([key])=>key===name),range=ranges[name],top=dims.top+index*laneHeight+10,bottom=dims.top+(index+1)*laneHeight-10;return top+(range.maximum-value)*(bottom-top)/Math.max(range.maximum-range.minimum,1e-15)};
   const hovered=rows[cursor?.index??rows.length-1],zoomChart=(amount,anchorIndex=cursor?.index??rows.length-1)=>{const next=Math.max(1,Math.min(8,Math.round((zoom+amount)*2)/2));if(next===zoom)return;const fraction=rows.length>1?anchorIndex/(rows.length-1):1,globalIndex=viewport.rows.length-viewport.offset-rows.length+anchorIndex,nextCount=Math.max(12,Math.round((expanded?140:90)/next)),nextIndex=Math.round(fraction*Math.max(nextCount-1,0)),nextOffset=Math.max(0,Math.min(Math.max(0,viewport.rows.length-nextCount),viewport.rows.length-(globalIndex-nextIndex+nextCount)));setZoom(next);viewport.setOffset(nextOffset);setCursor(current=>current?{...current,index:nextIndex}:current)};
   const cursorAt=event=>chartCursor(event,dims,rows.length,1),onPointerMove=event=>{const next=cursorAt(event);setCursor(next);if(drag.current){const delta=event.clientX-drag.current.x;if(Math.abs(delta)>3)drag.current.moved=true;viewport.setOffset(Math.max(0,Math.min(viewport.maxOffset,drag.current.offset-Math.round(delta/7))))}},onPointerDown=event=>{drag.current={x:event.clientX,offset:viewport.offset,moved:false};event.currentTarget.setPointerCapture(event.pointerId)},onPointerUp=()=>{if(!expanded&&!drag.current?.moved)setExpanded(true);drag.current=null};
-  return <ChartShell expanded={expanded} setExpanded={setExpanded} className={`momentum-triad-chart ${quartet?"gamma-dynamics-chart":""}`}>
-    <div className="greek-chart-header"><div><span>{quartet?"GAMMA DYNAMICS HISTORY":"NQ MOMENTUM TRIAD HISTORY"}</span><h2>{symbol} · {quartet?"Zomma / Color / Speed / Gamma":"options proxy · value vs time"}</h2></div><div className="greek-header-actions"><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded,zoom,onZoom:zoomChart}}/></div></div>
+  return <ChartShell expanded={expanded} setExpanded={setExpanded} className="gamma-dynamics-history-chart gamma-dynamics-chart">
+    <div className="greek-chart-header"><div><span>GAMMA DYNAMICS HISTORY</span><h2>{symbol} · Zomma / Color / Speed / Gamma</h2></div><div className="greek-header-actions"><ChartTimeControls {...{intervalSeconds,setIntervalSeconds,isLive:viewport.isLive,setOffset:viewport.setOffset,expanded,setExpanded,zoom,onZoom:zoomChart}}/></div></div>
     <div className="greek-chart-legend">{series.map(([name,color,role])=><div key={name}><i style={{backgroundColor:color}}/><span>{name.toUpperCase()} · {role}</span><b>{formatValue(valueFor(rows.at(-1),name))}</b></div>)}</div>
     <div className="triad-chart-note">Each variable uses its own visible-range scale so small real values remain legible. Hover values stay unscaled.</div>
     <div className="greek-chart-stage" onWheel={event=>{event.preventDefault();const anchor=cursorAt(event);setCursor(anchor);if(event.shiftKey)viewport.move(event.deltaY>0?10:-10);else zoomChart(event.deltaY<0?.5:-.5,anchor.index)}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={()=>{drag.current=null}} onPointerLeave={()=>{drag.current=null;setCursor(null)}}>
@@ -639,6 +607,7 @@ function MomentumTriadChart({history=[],state,symbol,variant="triad"}){
 
 function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const current=deriveGammaDynamics(state,history);
+  const [copied,setCopied]=useState(false);
   const events=useMemo(()=>{
     const derived=deriveGammaDynamicsEvents(history,state,symbol);
     const persisted=calls.map(call=>{
@@ -655,17 +624,34 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
       .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[history,state,symbol,calls]);
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id)??calls.find(call=>call.direction===event.decision&&Math.abs(new Date(call.alerted_at)-new Date(event.timestamp))<=1000);
+  const visualState=call=>{
+    if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
+    const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);
+    if(outcome.closed)return outcome.grade==="success"?{key:"success",label:"SUCCESS"}:{key:"failed",label:"FAILED"};
+    const succeeding=call.direction==="UP"?price>=datum:price<=datum;
+    return succeeding?{key:"tracking-success",label:"TRACKING · SUCCEEDING"}:{key:"tracking-failing",label:"TRACKING · FAILING"};
+  };
+  const pointCell=(call,value,seconds,finished)=>{
+    if(!call||!Number.isFinite(Number(value)))return "—";
+    const delta=number(value)-number(call.entry_price),tone=delta>0?"up":delta<0?"down":"flat";
+    return <span className="gamma-price-cell"><b>{number(value).toFixed(4)}</b><small className={`point-delta ${tone}`}>({delta>=0?"+":""}{delta.toFixed(4)} pts){finished?` · ${duration(seconds)}`:""}</small></span>;
+  };
+  const copySummaries=async()=>{
+    const header=["CALL ID","STATUS","DIRECTION","ALERTED ET","DATUM","HIGH","HIGH POINTS","TIME TO HIGH","LOW","LOW POINTS","TIME TO LOW","CURRENT/FINAL"];
+    const lines=events.map(event=>{const call=linkedCall(event),view=visualState(call),finished=call&&callOutcome(call).closed,high=call?number(call.dynamic_high,call.highest_price):NaN,low=call?number(call.dynamic_low,call.lowest_price):NaN,datum=number(call?.entry_price,event.price);return [event.id,view.label,event.decision,`${logDate(event.timestamp)} ${logTime(event.timestamp)}`,datum.toFixed(4),Number.isFinite(high)?high.toFixed(4):"—",Number.isFinite(high)?(high-datum).toFixed(4):"—",finished?duration(call.seconds_to_high):"TRACKING",Number.isFinite(low)?low.toFixed(4):"—",Number.isFinite(low)?(low-datum).toFixed(4):"—",finished?duration(call.seconds_to_low):"TRACKING",number(call?.current_price??call?.final_price,NaN).toFixed(4)].join("\t")});
+    try{await navigator.clipboard.writeText([header.join("\t"),...lines].join("\n"));setCopied(true);window.setTimeout(()=>setCopied(false),1800)}catch{setCopied(false)}
+  };
   const gateItems=[
     ["BASELINE",number(current.history_points)>=20,`${number(current.history_points).toFixed(0)} / 20 observations`],
     ["INTENSITY",number(current.intensity)>=number(current.intensity_threshold,.65),`${pct(current.intensity)} / ${pct(current.intensity_threshold??.65)}`],
     ["SPEED",Math.abs(number(current.inputs?.speed))>1e-12,signedGreek(current.inputs?.speed)],
     ["GAMMA",Math.abs(number(current.inputs?.gamma))>1e-12,signedGreek(current.inputs?.gamma)],
   ];
-  return <article className="panel gamma-dynamics-log"><header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Persisted qualified calls + live transitions · 5 visible rows</h2></div><b>{events.length} EVENTS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC HIGH</th><th>DYNAMIC LOW</th><th>CURRENT QQQ</th><th>STATE</th><th>OUTCOME</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead><tbody>{events.map((event,index)=>{const call=linkedCall(event),expired=call&&callDeadlinePassed(call),snapshot=call?deadlineSnapshot(call):{},livePrice=expired?snapshot.price:(call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close),outcome=callOutcome(call);return <tr className={`outcome-${outcome.grade}`} key={`${event.timestamp}-${event.decision}-${index}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td>{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td>{call?number(expired?snapshot.high:call.dynamic_high,call.highest_price).toFixed(4):"—"}</td><td>{call?number(expired?snapshot.low:call.dynamic_low,call.lowest_price).toFixed(4):"—"}</td><td>{Number.isFinite(Number(livePrice))?number(livePrice).toFixed(4):"—"}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{expired?"EXPIRED":call?.status??(event.decision==="UP"?"UPWARD":"DOWNWARD")}</span></td><td><span className={`outcome-grade ${outcome.grade}`}>{outcome.grade==="partial"?callPartialLabel(call):outcome.grade.toUpperCase()}</span></td><td>{Number.isFinite(event.intensity)?pct(event.intensity):"—"}</td><td>{Number.isFinite(event.pressure)?`${event.pressure>0?"+":""}${event.pressure.toFixed(2)}`:"—"}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>})}</tbody></table>{!events.length&&<div className="gamma-log-empty"><b>NO QUALIFIED EVENT YET</b><p>{current.explanation}</p><div>{gateItems.map(([name,passed,detail])=><span className={passed?"passed":"waiting"} key={name}><b>{passed?"PASS":"WAIT"} · {name}</b><small>{detail}</small></span>)}</div><small>The log does not manufacture rows from unqualified states. A row is written when baseline, intensity, Speed direction, and active Gamma pass together.</small></div>}</div></article>;
+  return <article className="panel gamma-dynamics-log"><header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Every qualified call · observed minute high/low path</h2></div><div className="gamma-log-actions"><button type="button" className="copy-table" onClick={copySummaries} disabled={!events.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><b>{events.length} EVENTS</b></div></header><div className="gamma-log-scroll"><table><thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC / FINAL HIGH</th><th>DYNAMIC / FINAL LOW</th><th>CURRENT / FINAL</th><th>DIRECTION</th><th>CALL STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead><tbody>{events.map((event,index)=>{const call=linkedCall(event),expired=call&&callDeadlinePassed(call),snapshot=call?deadlineSnapshot(call):{},livePrice=expired?snapshot.price:(call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close),outcome=callOutcome(call),view=visualState(call),finished=outcome.closed,high=call?number(expired?snapshot.high:call.dynamic_high,call.highest_price):NaN,low=call?number(expired?snapshot.low:call.dynamic_low,call.lowest_price):NaN;return <Fragment key={`${event.timestamp}-${event.decision}-${index}`}><tr className={`gamma-call-${view.key}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td>{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td>{pointCell(call,high,call?.seconds_to_high,finished)}</td><td>{pointCell(call,low,call?.seconds_to_low,finished)}</td><td>{pointCell(call,livePrice,0,false)}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{event.decision==="UP"?"UPWARD":"DOWNWARD"}</span></td><td><span className={`gamma-call-state ${view.key}`}>{view.label}</span></td><td>{Number.isFinite(event.intensity)?pct(event.intensity):"—"}</td><td>{Number.isFinite(event.pressure)?`${event.pressure>0?"+":""}${event.pressure.toFixed(2)}`:"—"}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>{call&&<tr className={`gamma-call-chart-row gamma-call-${view.key}`}><td colSpan="16"><details><summary>GRAPH CALL {event.id} · MINUTE HIGH / MINUTE LOW</summary><FiftyPointPathChart call={call}/></details></td></tr>}</Fragment>})}</tbody></table>{!events.length&&<div className="gamma-log-empty"><b>NO QUALIFIED EVENT YET</b><p>{current.explanation}</p><div>{gateItems.map(([name,passed,detail])=><span className={passed?"passed":"waiting"} key={name}><b>{passed?"PASS":"WAIT"} · {name}</b><small>{detail}</small></span>)}</div><small>The log does not manufacture rows from unqualified states. A row is written when baseline, intensity, Speed direction, and active Gamma pass together.</small></div>}</div></article>;
 }
 
-const SYSTEM_OUTCOME_LABELS={PRIMARY_OPTIONS:"Primary Options Bias",MOMENTUM_TRIAD:"Momentum Triad",GAMMA_DYNAMICS:"Gamma Dynamics"};
-const SYSTEM_OUTCOME_STREAMS={PRIMARY_OPTIONS:1,MOMENTUM_TRIAD:2,GAMMA_DYNAMICS:3};
+const SYSTEM_OUTCOME_LABELS={PRIMARY_OPTIONS:"Primary Options Bias",GAMMA_DYNAMICS:"Gamma Dynamics"};
+const SYSTEM_OUTCOME_STREAMS={PRIMARY_OPTIONS:1,GAMMA_DYNAMICS:3};
 const visibleCallId=(call,system)=>/^\d{19}$/.test(String(call?.call_id??""))?String(call.call_id):numericEventId(call?.alerted_at,SYSTEM_OUTCOME_STREAMS[system]??0);
 const duration=value=>{const seconds=Math.max(0,number(value));if(seconds<60)return `${seconds.toFixed(1)}s`;const minutes=Math.floor(seconds/60),rest=(seconds-minutes*60).toFixed(1);return `${minutes}m ${rest}s`};
 const callDeadlinePassed=call=>{const deadline=new Date(call?.expires_at).getTime();return !call?.target_reached_at&&Number.isFinite(deadline)&&Date.now()>=deadline};
@@ -949,8 +935,7 @@ export default function Home() {
     <OverviewSectionHeading number="01" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
-    <DraggableOverviewModule id="momentum-triad" index={moduleOrder.indexOf("momentum-triad")} {...draggableProps}><OverviewDisclosure id="momentum-triad" title="NQ Momentum Triad" description="Zomma acceleration · Speed direction · Delta confirmation"><NQMomentumTriadModule state={state} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><MomentumTriadChart history={visualHistory} state={state} symbol={symbol}/></article><OutcomeAttributionMini system="MOMENTUM_TRIAD" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
-    <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics Quartet" description="Zomma/Color intensity · Speed/Gamma signed curvature pressure"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><MomentumTriadChart history={visualHistory} state={state} symbol={symbol} variant="quartet"/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
+    <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics Quartet" description="Zomma/Color intensity · Speed/Gamma signed curvature pressure"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="forecast" index={moduleOrder.indexOf("forecast")} {...draggableProps}><OverviewDisclosure id="forecast" title="Experimental Forecast" description="Research-only 5-minute / 30-point probability model"><FiveMinuteForecast history={visualHistory} state={state} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="score-modules" index={moduleOrder.indexOf("score-modules")} {...draggableProps}><OverviewDisclosure id="score-modules" title="Signal Scores" description="Explosion, Direction, Pressure, and score histories"><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div><div className="score-history-grid"><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="explosion"/></article><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="direction"/></article></div><OutcomeAttributionMini system="PRIMARY_OPTIONS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="greek-orders" index={moduleOrder.indexOf("greek-orders")} {...draggableProps}><OverviewDisclosure id="greek-orders" title="Greek Orders" description="First-, second-, and third-order streamed exposures"><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article></OverviewDisclosure></DraggableOverviewModule>

@@ -11,7 +11,6 @@ from axiom.domain.models import MarketState
 
 SYSTEM_GREEKS = {
     "PRIMARY_OPTIONS": ("gamma", "vanna", "charm", "speed", "zomma", "color", "ultima"),
-    "MOMENTUM_TRIAD": ("zomma", "speed", "delta"),
     "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma"),
 }
 
@@ -65,9 +64,6 @@ class OutcomeAttributionTracker:
         systems: list[tuple[str, Direction]] = []
         if state.options_bias_qualified and state.options_bias != Direction.NEUTRAL:
             systems.append(("PRIMARY_OPTIONS", state.options_bias))
-        triad = state.momentum_triad
-        if triad and triad.aligned and triad.decision != Direction.NEUTRAL:
-            systems.append(("MOMENTUM_TRIAD", triad.decision))
         gamma = state.gamma_dynamics
         if gamma and gamma.qualified and gamma.decision != Direction.NEUTRAL:
             systems.append(("GAMMA_DYNAMICS", gamma.decision))
@@ -123,7 +119,7 @@ class OutcomeAttributionTracker:
         )
 
     def _call_id(self,timestamp:datetime,system:str)->str:
-        stream={"PRIMARY_OPTIONS":1,"MOMENTUM_TRIAD":2,"GAMMA_DYNAMICS":3}[system]
+        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3}[system]
         eastern=timestamp.astimezone(self.eastern)
         milliseconds=eastern.microsecond//1000
         return f"{eastern:%Y%m%d%H%M%S}{milliseconds:03d}{stream:02d}"
@@ -180,13 +176,6 @@ class OutcomeAttributionTracker:
     def _decision_reasons(system: str, state: MarketState, direction: Direction) -> list[str]:
         side = "bullish" if direction == Direction.UP else "bearish"
         sign_word = "positive" if direction == Direction.UP else "negative"
-        if system == "MOMENTUM_TRIAD" and state.momentum_triad:
-            triad = state.momentum_triad
-            return [
-                f"Zomma {triad.acceleration:+.4g} is {sign_word}, indicating {side} Gamma acceleration.",
-                f"Speed {triad.direction:+.4g} is {sign_word}, aligning Gamma's spot sensitivity with the {side} call.",
-                f"Delta {triad.confirmation:+.4g} is {sign_word}, providing first-order {side} confirmation.",
-            ]
         if system == "GAMMA_DYNAMICS" and state.gamma_dynamics:
             gamma = state.gamma_dynamics
             inputs = gamma.inputs
@@ -334,7 +323,7 @@ class OutcomeAttributionTracker:
                 "system": system,
                 "mode": mode.value,
                 "symbol": symbol,
-                "proxy_for": "NQ" if system == "MOMENTUM_TRIAD" else None,
+                "proxy_for": None,
                 "direction": direction.value,
                 "alerted_at": now,
                 "expires_at": now + self.horizon,

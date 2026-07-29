@@ -177,7 +177,7 @@ class SqlAlchemyRepository:
                 changed=self._reconcile_expired_outcome(row,now) or changed
             if changed:await s.commit()
         systems={}
-        for system in ("PRIMARY_OPTIONS","MOMENTUM_TRIAD","GAMMA_DYNAMICS"):
+        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS"):
             items=[dict(row.payload) for row in rows if row.system==system]
             # Preserve every raw row in Postgres, but present only one newest
             # unresolved logical call for a repeated direction/datum pair.
