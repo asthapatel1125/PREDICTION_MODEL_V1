@@ -568,28 +568,31 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 
 /* Gamma call matrix: larger type, separated excursion fields, vivid row states. */
 .gamma-log-scroll table{min-width:2260px}
-.gamma-log-scroll th{font-size:5px;line-height:1.25}
-.gamma-log-scroll td{height:44px;font-size:6px;line-height:1.35}
-.gamma-log-scroll .call-id{font-size:5.5px}
-.gamma-log-scroll .direction-pill,.gamma-log-scroll .gamma-call-state{font-size:5px}
-.gamma-log-scroll .extreme-price{color:#fff;font-size:6.5px;font-weight:750}
-.gamma-log-scroll .extreme-time{color:#fff;font-size:5.5px;font-weight:700}
-.gamma-log-scroll .point-delta{display:inline-block;padding:3px 5px;border-radius:4px;font-size:5.5px;font-weight:800}
+.gamma-log-scroll th{font-size:10px;line-height:1.25}
+.gamma-log-scroll td{height:54px;font-size:12px;line-height:1.35}
+.gamma-log-scroll .call-id{font-size:11px}
+.gamma-log-scroll .direction-pill,.gamma-log-scroll .gamma-call-state{font-size:10px}
+.gamma-log-scroll .extreme-price{color:#fff;font-size:13px;font-weight:750}
+.gamma-log-scroll .extreme-time{color:#fff;font-size:11px;font-weight:700}
+.gamma-log-scroll .point-delta{display:inline-block;padding:4px 7px;border-radius:5px;font-size:11px;font-weight:800}
 .gamma-log-scroll .point-delta.up{border:1px solid #00d897;background:#004f3d;color:#7effd4}
 .gamma-log-scroll .point-delta.down{border:1px solid #ff4f6a;background:#681629;color:#ffd4dc}
 .gamma-log-scroll .point-delta.flat{border:1px solid #8ca4b8;background:#304354;color:#f1f7fb}
-.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) td{background:#087a59;color:#f2fff9;border-bottom-color:#31e0ac}
-.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) td{background:#a72b42;color:#fff5f7;border-bottom-color:#ff7187}
-.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td{background:#176daf;color:#f5fbff;border-bottom-color:#65bdff}
-.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td{background:#aa7b08;color:#fffbed;border-bottom-color:#ffd45b}
-.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row):hover td{background:#0a9069}
-.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row):hover td{background:#c03550}
-.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row):hover td{background:#1d82cf}
-.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row):hover td{background:#c5900c}
+.gamma-log-scroll tr:not(.gamma-call-chart-row) td{background:#172334;color:#dce8f2;border-bottom:3px solid transparent}
+.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) td{background:#172b2b;color:#a9ffe4;border-bottom-color:#4de0bd}
+.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) td{background:#2d1e2a;color:#ffb4c0;border-bottom-color:#ff4f82}
+.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td{background:#17283b;color:#b9ddff;border-bottom-color:#5aa8ff}
+.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td{background:#302a1d;color:#ffe49a;border-bottom-color:#f4c84f}
+.gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row):hover td{background:#1c3a35}
+.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row):hover td{background:#3d2433}
+.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row):hover td{background:#1c3550}
+.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row):hover td{background:#403621}
+.gamma-log-scroll tr:not(.gamma-call-chart-row) td:first-child{border-radius:0 0 0 10px}
+.gamma-log-scroll tr:not(.gamma-call-chart-row) td:last-child{border-radius:0 0 10px 0}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .call-id{border-color:#ffffff80;background:#06111a80;color:#fff}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .direction-pill{border:1px solid #ffffff75;background:#07111a99;color:#fff}
 .gamma-log-scroll tr:not(.gamma-call-chart-row) .gamma-call-state{border-color:#fff;background:#06111ab8;color:#fff;box-shadow:0 0 14px #fff5}
 @media(max-width:760px){
-  .gamma-log-scroll th{font-size:5px}
-  .gamma-log-scroll td{font-size:6px}
+  .gamma-log-scroll th{font-size:9px}
+  .gamma-log-scroll td{font-size:11px}
 }
