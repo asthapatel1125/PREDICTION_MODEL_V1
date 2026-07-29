@@ -609,6 +609,9 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-call-chart-row details>summary{background:#080808}
 .gamma-call-chart-row details>summary:hover{background:#101010}
 .gamma-log-empty{background:#000}
+.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td{background:#000;color:#a9d2f5;border-bottom-color:#5aa8ff}
+.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td{background:#000;color:#ead38d;border-bottom-color:#e7bb43}
+.gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row):hover td{background:#080808}
 @media(max-width:760px){
   .gamma-log-scroll th{font-size:9px}
   .gamma-log-scroll td{font-size:11px}
