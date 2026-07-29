@@ -623,7 +623,17 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     return [...new Map([...persisted,...derived].map(event=>[event.id,event])).values()]
       .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[history,state,symbol,calls]);
-  const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id)??calls.find(call=>call.direction===event.decision&&Math.abs(new Date(call.alerted_at)-new Date(event.timestamp))<=1000);
+  const fallbackCall=event=>{
+    const start=new Date(event.timestamp).getTime(),expires=start+40*60*1000,datum=number(event.price,NaN);
+    if(!Number.isFinite(start)||!Number.isFinite(datum))return null;
+    const samples=[...history,state].filter(Boolean).map(row=>({timestamp:row.timestamp,price:number(row?.supporting_indicators?.price,NaN)})).filter(row=>Number.isFinite(row.price)&&new Date(row.timestamp).getTime()>=start&&new Date(row.timestamp).getTime()<=expires).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+    if(!samples.length)samples.push({timestamp:event.timestamp,price:datum});
+    const bars=[...samples.reduce((map,sample)=>{const timestamp=new Date(sample.timestamp),key=new Date(timestamp.getFullYear(),timestamp.getMonth(),timestamp.getDate(),timestamp.getHours(),timestamp.getMinutes()).toISOString(),bar=map.get(key);if(bar){bar.high=Math.max(bar.high,sample.price);bar.low=Math.min(bar.low,sample.price);bar.close=sample.price;bar.samples+=1}else map.set(key,{timestamp:key,open:sample.price,high:sample.price,low:sample.price,close:sample.price,samples:1});return map},new Map()).values()];
+    const highest=Math.max(datum,...samples.map(sample=>sample.price)),lowest=Math.min(datum,...samples.map(sample=>sample.price)),highestRow=samples.find(sample=>sample.price===highest),lowestRow=samples.find(sample=>sample.price===lowest),last=samples.at(-1),expired=Date.now()>=expires;
+    const targetPoints=event.symbol==="QQQ"?1.235:50;
+    return {id:`fallback-${event.id}`,call_id:event.id,system:"GAMMA_DYNAMICS",symbol:event.symbol,direction:event.decision,alerted_at:event.timestamp,expires_at:new Date(expires).toISOString(),entry_price:datum,status:expired?"EXPIRED":"TRACKING",target_points:targetPoints,partial_target_points:targetPoints*.6,target_price:datum+(event.decision==="UP"?targetPoints:-targetPoints),dynamic_high:highest,dynamic_low:lowest,highest_price:highest,lowest_price:lowest,highest_at:highestRow?.timestamp??event.timestamp,lowest_at:lowestRow?.timestamp??event.timestamp,seconds_to_high:Math.max(0,(new Date(highestRow?.timestamp??event.timestamp)-start)/1000),seconds_to_low:Math.max(0,(new Date(lowestRow?.timestamp??event.timestamp)-start)/1000),current_price:last.price,current_price_at:last.timestamp,final_price:expired?last.price:null,minute_bars:bars};
+  };
+  const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id)??calls.find(call=>call.direction===event.decision&&Math.abs(new Date(call.alerted_at)-new Date(event.timestamp))<=1000)??fallbackCall(event);
   const visualState=call=>{
     if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
     const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);
