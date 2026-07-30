@@ -674,6 +674,14 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .risk-leg-row.flat td{background:#000!important;color:#d5c8d5!important;border-bottom:2px solid #a1749d!important}
 .leg-status{display:inline-block;padding:4px 7px;border:1px solid;border-radius:4px;font-weight:900;letter-spacing:.04em}
 .leg-status.profit{border-color:#44efad;color:#82f5c9}.leg-status.loss{border-color:#ff4f69;color:#ff91a1}.leg-status.flat{border-color:#a1749d;color:#d5c8d5}
+.gamma-family-dropdown-row>td{height:auto!important;padding:0 12px 10px!important;background:#000!important;border-bottom:1px solid #334b5c!important;box-shadow:none!important}
+.gamma-family-dropdown-row details{max-width:100%;border:1px solid #355b70;border-radius:6px;background:#000;overflow:hidden}
+.gamma-family-dropdown-row summary{padding:10px 12px;background:#050505;color:#8edfff;cursor:pointer;font:800 10px var(--font-mono);letter-spacing:.07em}
+.gamma-family-dropdown-row summary:hover{background:#0a0a0a;color:#fff}.gamma-family-dropdown-row details[open] summary{border-bottom:1px solid #355b70}
+.gamma-family-dropdown-row .risk-leg-table-wrap{max-width:100%;overflow:auto}
+.gamma-log-scroll .gamma-family-dropdown-row .risk-leg-table{width:100%;min-width:1580px;border-collapse:collapse}
+.gamma-log-scroll .gamma-family-dropdown-row .risk-leg-table th{position:static;height:34px;padding:8px 10px;background:#050505;color:#9edfff;font-size:8.5px}
+.gamma-log-scroll .gamma-family-dropdown-row .risk-leg-table td{height:44px;padding:8px 10px;background:#000;font-size:10px}
 @media(max-width:760px){.risk-management-log>.panel-head{align-items:flex-start;gap:12px}.risk-log-scroll td{font-size:10px}.gamma-family-legs{grid-template-columns:repeat(4,210px);overflow-x:auto}}
 .gamma-log-empty{background:#000}
 .gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td{background:#000;color:#a9d2f5;border-bottom-color:#5aa8ff}
