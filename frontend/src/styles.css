@@ -515,11 +515,15 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-log-controls select:focus,.gamma-log-controls input:focus{border-color:#64d9ff;outline:1px solid #64d9ff}
 .gamma-log-controls button{align-self:flex-end;color:#90dfff;cursor:pointer}.gamma-log-controls button:hover{border-color:#64d9ff;color:#fff}
 .gamma-log-scroll-shell{background:#000}
-.gamma-log-scroll-top{height:16px;overflow-x:auto;overflow-y:hidden;border-bottom:1px solid #263746;scrollbar-color:#4386a8 #071019}
-.gamma-log-scroll-top>div{height:1px}
-.gamma-log-scroll-row{display:grid;grid-template-columns:16px minmax(0,1fr)}
-.gamma-log-scroll-left{height:410px;overflow-y:auto;overflow-x:hidden;border-right:1px solid #263746;scrollbar-color:#4386a8 #071019}
-.gamma-log-scroll-left>div{width:1px}
+.gamma-log-scroll-top,.gamma-log-scroll-bottom{height:16px;margin:0 16px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#4386a8 #071019}
+.gamma-log-scroll-top{border-bottom:1px solid #263746}
+.gamma-log-scroll-bottom{border-top:1px solid #263746}
+.gamma-log-scroll-top>div,.gamma-log-scroll-bottom>div{height:1px}
+.gamma-log-scroll-row{display:grid;grid-template-columns:16px minmax(0,1fr) 16px}
+.gamma-log-scroll-left,.gamma-log-scroll-right{height:410px;overflow-y:auto;overflow-x:hidden;scrollbar-color:#4386a8 #071019}
+.gamma-log-scroll-left{border-right:1px solid #263746}
+.gamma-log-scroll-right{border-left:1px solid #263746}
+.gamma-log-scroll-left>div,.gamma-log-scroll-right>div{width:1px}
 .gamma-log-scroll{max-height:410px;background:#050b11;overflow:auto;scrollbar-width:none}
 .gamma-log-scroll::-webkit-scrollbar{display:none}
 .gamma-log-scroll table{min-width:1640px}

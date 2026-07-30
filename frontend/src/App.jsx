@@ -613,7 +613,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const [fromTime,setFromTime]=useState("");
   const [toTime,setToTime]=useState("");
   const [scrollSize,setScrollSize]=useState({width:0,height:0});
-  const topScrollRef=useRef(null),leftScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null);
+  const topScrollRef=useRef(null),bottomScrollRef=useRef(null),leftScrollRef=useRef(null),rightScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null);
   const events=useMemo(()=>{
     const derived=deriveGammaDynamicsEvents(history,state,symbol);
     const persisted=calls.map(call=>{
@@ -650,10 +650,12 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   },[visibleEvents.length]);
   const syncFromBody=event=>{
     if(topScrollRef.current&&topScrollRef.current.scrollLeft!==event.currentTarget.scrollLeft)topScrollRef.current.scrollLeft=event.currentTarget.scrollLeft;
+    if(bottomScrollRef.current&&bottomScrollRef.current.scrollLeft!==event.currentTarget.scrollLeft)bottomScrollRef.current.scrollLeft=event.currentTarget.scrollLeft;
     if(leftScrollRef.current&&leftScrollRef.current.scrollTop!==event.currentTarget.scrollTop)leftScrollRef.current.scrollTop=event.currentTarget.scrollTop;
+    if(rightScrollRef.current&&rightScrollRef.current.scrollTop!==event.currentTarget.scrollTop)rightScrollRef.current.scrollTop=event.currentTarget.scrollTop;
   };
-  const syncTop=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollLeft=event.currentTarget.scrollLeft};
-  const syncLeft=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollTop=event.currentTarget.scrollTop};
+  const syncHorizontal=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollLeft=event.currentTarget.scrollLeft};
+  const syncVertical=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollTop=event.currentTarget.scrollTop};
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id);
   const visualState=call=>{
     if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
@@ -688,9 +690,9 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
       <button type="button" onClick={()=>{setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
     </div>
     <div className="gamma-log-scroll-shell">
-      <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncTop}><div style={{width:scrollSize.width}}/></div>
+      <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncHorizontal}><div style={{width:scrollSize.width}}/></div>
       <div className="gamma-log-scroll-row">
-        <div className="gamma-log-scroll-left" ref={leftScrollRef} onScroll={syncLeft}><div style={{height:scrollSize.height}}/></div>
+        <div className="gamma-log-scroll-left" ref={leftScrollRef} onScroll={syncVertical}><div style={{height:scrollSize.height}}/></div>
         <div className="gamma-log-scroll" ref={bodyScrollRef} onScroll={syncFromBody}><table ref={tableRef}>
       <thead><tr><th>DIRECTION</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC / EXTREME HIGH</th><th>HIGH CHANGE</th><th>TIME TO HIGH</th><th>DYNAMIC / EXTREME LOW</th><th>LOW CHANGE</th><th>TIME TO LOW</th><th>CURRENT / FINAL</th><th>CURRENT / FINAL CHANGE</th><th>CALL STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th><th>EVENT ID</th></tr></thead>
       <tbody>{visibleEvents.map((event,index)=>{
@@ -702,7 +704,9 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
         </Fragment>
       })}</tbody>
     </table>{!visibleEvents.length&&<div className="gamma-log-empty"><b>{events.length?"NO EVENTS MATCH THIS RANGE":"NO QUALIFIED EVENT YET"}</b><p>{events.length?"Clear or widen the date/time filter.":current.explanation}</p>{!events.length&&<><div>{gateItems.map(([name,passed,detail])=><span className={passed?"passed":"waiting"} key={name}><b>{passed?"PASS":"WAIT"} · {name}</b><small>{detail}</small></span>)}</div><small>The log does not manufacture rows from unqualified states. A row is written when baseline, intensity, Speed direction, and active Gamma pass together.</small></>}</div>}</div>
+        <div className="gamma-log-scroll-right" ref={rightScrollRef} onScroll={syncVertical}><div style={{height:scrollSize.height}}/></div>
       </div>
+      <div className="gamma-log-scroll-bottom" ref={bottomScrollRef} onScroll={syncHorizontal}><div style={{width:scrollSize.width}}/></div>
     </div>
   </article>;
 }
