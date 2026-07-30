@@ -509,7 +509,19 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
   box-shadow:0 0 18px #4cc9f020;
 }
 .gamma-log-actions .copy-table:hover{border-color:#65dcff;background:#16445d;color:#fff}
-.gamma-log-scroll{max-height:410px;background:#050b11;scrollbar-color:#4386a8 #071019}
+.gamma-log-controls{display:flex;align-items:flex-end;gap:10px;padding:10px 14px;border-bottom:1px solid #263746;background:#030303;flex-wrap:wrap}
+.gamma-log-controls label{display:grid;gap:5px;color:#78cfff;font:700 9px var(--font-mono);letter-spacing:.08em}
+.gamma-log-controls select,.gamma-log-controls input,.gamma-log-controls button{height:32px;padding:0 9px;border:1px solid #31536a;border-radius:4px;background:#071019;color:#dcecf7;font:10px var(--font-mono);color-scheme:dark}
+.gamma-log-controls select:focus,.gamma-log-controls input:focus{border-color:#64d9ff;outline:1px solid #64d9ff}
+.gamma-log-controls button{align-self:flex-end;color:#90dfff;cursor:pointer}.gamma-log-controls button:hover{border-color:#64d9ff;color:#fff}
+.gamma-log-scroll-shell{background:#000}
+.gamma-log-scroll-top{height:16px;overflow-x:auto;overflow-y:hidden;border-bottom:1px solid #263746;scrollbar-color:#4386a8 #071019}
+.gamma-log-scroll-top>div{height:1px}
+.gamma-log-scroll-row{display:grid;grid-template-columns:16px minmax(0,1fr)}
+.gamma-log-scroll-left{height:410px;overflow-y:auto;overflow-x:hidden;border-right:1px solid #263746;scrollbar-color:#4386a8 #071019}
+.gamma-log-scroll-left>div{width:1px}
+.gamma-log-scroll{max-height:410px;background:#050b11;overflow:auto;scrollbar-width:none}
+.gamma-log-scroll::-webkit-scrollbar{display:none}
 .gamma-log-scroll table{min-width:1640px}
 .gamma-log-scroll th,.gamma-log-scroll td{height:58px;padding:11px 13px}
 .gamma-log-scroll th{
@@ -563,6 +575,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 @media(max-width:760px){
   .gamma-dynamics-log>.panel-head{align-items:flex-start;gap:12px}
   .gamma-log-actions{align-items:flex-end;flex-direction:column}
+  .gamma-log-controls{align-items:stretch}.gamma-log-controls label{min-width:calc(50% - 5px);flex:1}
   .gamma-log-scroll th,.gamma-log-scroll td{padding:10px;font-size:11px}
 }
 

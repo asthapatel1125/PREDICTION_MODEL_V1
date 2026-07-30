@@ -608,6 +608,12 @@ function GammaDynamicsChart({history=[],state,symbol}){
 function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const current=deriveGammaDynamics(state,history);
   const [copied,setCopied]=useState(false);
+  const [sortOrder,setSortOrder]=useState("newest");
+  const [filterDate,setFilterDate]=useState("");
+  const [fromTime,setFromTime]=useState("");
+  const [toTime,setToTime]=useState("");
+  const [scrollSize,setScrollSize]=useState({width:0,height:0});
+  const topScrollRef=useRef(null),leftScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null);
   const events=useMemo(()=>{
     const derived=deriveGammaDynamicsEvents(history,state,symbol);
     const persisted=calls.map(call=>{
@@ -623,6 +629,31 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     return [...new Map([...persisted,...derived].map(event=>[event.id,event])).values()]
       .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[history,state,symbol,calls]);
+  const visibleEvents=useMemo(()=>events.filter(event=>{
+    const eastern=easternFilterParts(event.timestamp);
+    if(filterDate&&eastern.date!==filterDate)return false;
+    const from=fromTime?(fromTime.length===5?`${fromTime}:00`:fromTime):"";
+    const to=toTime?(toTime.length===5?`${toTime}:59`:toTime):"";
+    if(from&&eastern.time<from)return false;
+    if(to&&eastern.time>to)return false;
+    return true;
+  }).sort((a,b)=>(sortOrder==="oldest"?1:-1)*(new Date(a.timestamp)-new Date(b.timestamp))),[events,filterDate,fromTime,toTime,sortOrder]);
+  useEffect(()=>{
+    const update=()=>{
+      const table=tableRef.current;
+      if(table)setScrollSize({width:table.scrollWidth,height:table.scrollHeight});
+    };
+    update();
+    const observer=new ResizeObserver(update);
+    if(tableRef.current)observer.observe(tableRef.current);
+    return()=>observer.disconnect();
+  },[visibleEvents.length]);
+  const syncFromBody=event=>{
+    if(topScrollRef.current&&topScrollRef.current.scrollLeft!==event.currentTarget.scrollLeft)topScrollRef.current.scrollLeft=event.currentTarget.scrollLeft;
+    if(leftScrollRef.current&&leftScrollRef.current.scrollTop!==event.currentTarget.scrollTop)leftScrollRef.current.scrollTop=event.currentTarget.scrollTop;
+  };
+  const syncTop=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollLeft=event.currentTarget.scrollLeft};
+  const syncLeft=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollTop=event.currentTarget.scrollTop};
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id);
   const visualState=call=>{
     if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
@@ -637,7 +668,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const copySummaries=async()=>{
     const headers=["Call ID","Status","Direction","Alerted (ET)","Datum","Extreme High","High Change","Time to High","Extreme Low","Low Change","Time to Low","Current / Final","Final Change"];
     const clean=value=>String(value??"—").replaceAll("|","/");
-    const rows=events.map(event=>{const call=linkedCall(event),view=visualState(call),finished=Boolean(call&&callOutcome(call).closed),high=call?number(call.highest_price,call.dynamic_high):NaN,low=call?number(call.lowest_price,call.dynamic_low):NaN,datum=number(call?.entry_price,event.price),currentPrice=number(call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close,NaN);return [event.id,view.label,event.decision,`${logDate(event.timestamp)} ${logTime(event.timestamp)}`,datum.toFixed(4),Number.isFinite(high)?high.toFixed(4):"—",Number.isFinite(high)?`${high-datum>=0?"+":""}${(high-datum).toFixed(4)} pts`:"—",finished?duration(call.seconds_to_high):"Tracking",Number.isFinite(low)?low.toFixed(4):"—",Number.isFinite(low)?`${low-datum>=0?"+":""}${(low-datum).toFixed(4)} pts`:"—",finished?duration(call.seconds_to_low):"Tracking",Number.isFinite(currentPrice)?currentPrice.toFixed(4):"—",Number.isFinite(currentPrice)?`${currentPrice-datum>=0?"+":""}${(currentPrice-datum).toFixed(4)} pts`:"—"].map(clean)});
+    const rows=visibleEvents.map(event=>{const call=linkedCall(event),view=visualState(call),finished=Boolean(call&&callOutcome(call).closed),high=call?number(call.highest_price,call.dynamic_high):NaN,low=call?number(call.lowest_price,call.dynamic_low):NaN,datum=number(call?.entry_price,event.price),currentPrice=number(call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close,NaN);return [event.id,view.label,event.decision,`${logDate(event.timestamp)} ${logTime(event.timestamp)}`,datum.toFixed(4),Number.isFinite(high)?high.toFixed(4):"—",Number.isFinite(high)?`${high-datum>=0?"+":""}${(high-datum).toFixed(4)} pts`:"—",finished?duration(call.seconds_to_high):"Tracking",Number.isFinite(low)?low.toFixed(4):"—",Number.isFinite(low)?`${low-datum>=0?"+":""}${(low-datum).toFixed(4)} pts`:"—",finished?duration(call.seconds_to_low):"Tracking",Number.isFinite(currentPrice)?currentPrice.toFixed(4):"—",Number.isFinite(currentPrice)?`${currentPrice-datum>=0?"+":""}${(currentPrice-datum).toFixed(4)} pts`:"—"].map(clean)});
     const widths=headers.map((header,column)=>Math.max(header.length,...rows.map(row=>row[column].length))),formatRow=row=>`| ${row.map((cell,column)=>cell.padEnd(widths[column])).join(" | ")} |`,divider=`|-${widths.map(width=>"-".repeat(width)).join("-|-")}-|`;
     try{await navigator.clipboard.writeText([`GAMMA DYNAMICS CALL SUMMARY · ${symbol} · EASTERN TIME`,"",formatRow(headers),divider,...rows.map(formatRow)].join("\n"));setCopied(true);window.setTimeout(()=>setCopied(false),1800)}catch{setCopied(false)}
   };
@@ -648,18 +679,31 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     ["GAMMA",Math.abs(number(current.inputs?.gamma))>1e-12,signedGreek(current.inputs?.gamma)],
   ];
   return <article className="panel gamma-dynamics-log">
-    <header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Every qualified call · observed minute high/low path</h2></div><div className="gamma-log-actions"><button type="button" className="copy-table" onClick={copySummaries} disabled={!events.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><b>{events.length} EVENTS</b></div></header>
-    <div className="gamma-log-scroll"><table>
-      <thead><tr><th>EVENT ID</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC / EXTREME HIGH</th><th>HIGH CHANGE</th><th>TIME TO HIGH</th><th>DYNAMIC / EXTREME LOW</th><th>LOW CHANGE</th><th>TIME TO LOW</th><th>CURRENT / FINAL</th><th>CURRENT / FINAL CHANGE</th><th>DIRECTION</th><th>CALL STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th></tr></thead>
-      <tbody>{events.map((event,index)=>{
+    <header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Every qualified call · observed minute high/low path</h2></div><div className="gamma-log-actions"><button type="button" className="copy-table" onClick={copySummaries} disabled={!visibleEvents.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><b>{visibleEvents.length}{visibleEvents.length!==events.length?` / ${events.length}`:""} EVENTS</b></div></header>
+    <div className="gamma-log-controls">
+      <label>SORT<select value={sortOrder} onChange={event=>setSortOrder(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+      <label>DATE<input type="date" value={filterDate} onChange={event=>setFilterDate(event.target.value)}/></label>
+      <label>FROM<input type="time" step="1" value={fromTime} onChange={event=>setFromTime(event.target.value)}/></label>
+      <label>TO<input type="time" step="1" value={toTime} onChange={event=>setToTime(event.target.value)}/></label>
+      <button type="button" onClick={()=>{setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
+    </div>
+    <div className="gamma-log-scroll-shell">
+      <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncTop}><div style={{width:scrollSize.width}}/></div>
+      <div className="gamma-log-scroll-row">
+        <div className="gamma-log-scroll-left" ref={leftScrollRef} onScroll={syncLeft}><div style={{height:scrollSize.height}}/></div>
+        <div className="gamma-log-scroll" ref={bodyScrollRef} onScroll={syncFromBody}><table ref={tableRef}>
+      <thead><tr><th>DIRECTION</th><th>DATE · EASTERN</th><th>TIME · MS</th><th>SOURCE</th><th>ALERT PRICE</th><th>DYNAMIC / EXTREME HIGH</th><th>HIGH CHANGE</th><th>TIME TO HIGH</th><th>DYNAMIC / EXTREME LOW</th><th>LOW CHANGE</th><th>TIME TO LOW</th><th>CURRENT / FINAL</th><th>CURRENT / FINAL CHANGE</th><th>CALL STATE</th><th>INTENSITY</th><th>PRESSURE</th><th>ZOMMA</th><th>COLOR</th><th>SPEED</th><th>GAMMA</th><th>EVENT ID</th></tr></thead>
+      <tbody>{visibleEvents.map((event,index)=>{
         const call=linkedCall(event),expired=call&&callDeadlinePassed(call),snapshot=call?deadlineSnapshot(call):{},livePrice=expired?snapshot.price:(call?.current_price??call?.final_price??call?.minute_bars?.at(-1)?.close),outcome=callOutcome(call),view=visualState(call),finished=outcome.closed;
         const high=call?number(call.highest_price,expired?snapshot.high:call.dynamic_high):NaN,low=call?number(call.lowest_price,expired?snapshot.low:call.dynamic_low):NaN;
         return <Fragment key={`${event.timestamp}-${event.decision}-${index}`}>
-          <tr className={`gamma-call-${view.key}`}><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td className="extreme-price">{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td className="extreme-price">{priceValue(call,high)}</td><td>{pointValue(call,high)}</td><td className="extreme-time">{extremeTime(call,call?.seconds_to_high,finished)}</td><td className="extreme-price">{priceValue(call,low)}</td><td>{pointValue(call,low)}</td><td className="extreme-time">{extremeTime(call,call?.seconds_to_low,finished)}</td><td className="extreme-price">{priceValue(call,livePrice)}</td><td>{pointValue(call,livePrice)}</td><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{event.decision==="UP"?"UPWARD":"DOWNWARD"}</span></td><td><span className={`gamma-call-state ${view.key}`}>{view.label}</span></td><td>{Number.isFinite(event.intensity)?pct(event.intensity):"—"}</td><td>{Number.isFinite(event.pressure)?`${event.pressure>0?"+":""}${event.pressure.toFixed(2)}`:"—"}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td></tr>
+          <tr className={`gamma-call-${view.key}`}><td><span className={`direction-pill ${event.decision.toLowerCase()}`}>{event.decision==="UP"?"UPWARD":"DOWNWARD"}</span></td><td>{logDate(event.timestamp)}</td><td>{logTime(event.timestamp)}</td><td>{event.symbol}</td><td className="extreme-price">{Number.isFinite(event.price)?event.price.toFixed(4):"—"}</td><td className="extreme-price">{priceValue(call,high)}</td><td>{pointValue(call,high)}</td><td className="extreme-time">{extremeTime(call,call?.seconds_to_high,finished)}</td><td className="extreme-price">{priceValue(call,low)}</td><td>{pointValue(call,low)}</td><td className="extreme-time">{extremeTime(call,call?.seconds_to_low,finished)}</td><td className="extreme-price">{priceValue(call,livePrice)}</td><td>{pointValue(call,livePrice)}</td><td><span className={`gamma-call-state ${view.key}`}>{view.label}</span></td><td>{Number.isFinite(event.intensity)?pct(event.intensity):"—"}</td><td>{Number.isFinite(event.pressure)?`${event.pressure>0?"+":""}${event.pressure.toFixed(2)}`:"—"}</td><td>{signedGreek(event.zomma)}</td><td>{signedGreek(event.color)}</td><td>{signedGreek(event.speed)}</td><td>{signedGreek(event.gamma)}</td><td><button type="button" className="call-id" onClick={()=>navigator.clipboard.writeText(event.id)} title="Copy event ID">{event.id}</button></td></tr>
           {call&&<tr className={`gamma-call-chart-row gamma-call-${view.key}`}><td colSpan="21"><details><summary>GRAPH CALL {event.id} · MINUTE HIGH / MINUTE LOW</summary><FiftyPointPathChart call={call}/></details></td></tr>}
         </Fragment>
       })}</tbody>
-    </table>{!events.length&&<div className="gamma-log-empty"><b>NO QUALIFIED EVENT YET</b><p>{current.explanation}</p><div>{gateItems.map(([name,passed,detail])=><span className={passed?"passed":"waiting"} key={name}><b>{passed?"PASS":"WAIT"} · {name}</b><small>{detail}</small></span>)}</div><small>The log does not manufacture rows from unqualified states. A row is written when baseline, intensity, Speed direction, and active Gamma pass together.</small></div>}</div>
+    </table>{!visibleEvents.length&&<div className="gamma-log-empty"><b>{events.length?"NO EVENTS MATCH THIS RANGE":"NO QUALIFIED EVENT YET"}</b><p>{events.length?"Clear or widen the date/time filter.":current.explanation}</p>{!events.length&&<><div>{gateItems.map(([name,passed,detail])=><span className={passed?"passed":"waiting"} key={name}><b>{passed?"PASS":"WAIT"} · {name}</b><small>{detail}</small></span>)}</div><small>The log does not manufacture rows from unqualified states. A row is written when baseline, intensity, Speed direction, and active Gamma pass together.</small></>}</div>}</div>
+      </div>
+    </div>
   </article>;
 }
 

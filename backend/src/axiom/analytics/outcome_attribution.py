@@ -106,6 +106,7 @@ class OutcomeAttributionTracker:
         partial_threshold = float(record.get("partial_target_points", float(record["target_points"]) * 0.6))
         record.update(
             status="EXPIRED",
+            lifecycle_state="COMPLETE",
             completion_reason="HORIZON_EXPIRED",
             outcome_grade="PARTIAL" if favorable >= partial_threshold else "FAILED",
             final_favorable_points=favorable,
@@ -127,6 +128,41 @@ class OutcomeAttributionTracker:
     @staticmethod
     def _minute_bucket(timestamp:datetime)->datetime:
         return timestamp.replace(second=0,microsecond=0)
+
+    @staticmethod
+    def _update_lifecycle(record:dict[str,Any],now:datetime)->None:
+        """Describe whether an active path is strengthening, stale, or reversing."""
+        if str(record.get("status","TRACKING")).upper()!="TRACKING":
+            record["lifecycle_state"]="COMPLETE"
+            return
+        entry=float(record["entry_price"])
+        current=float(record.get("current_price",entry))
+        sign=1 if record["direction"]==Direction.UP.value else -1
+        current_favorable=sign*(current-entry)
+        maximum=max(0.0,float(record.get("favorable_points",0.0)))
+        retention=max(0.0,min(1.0,current_favorable/maximum)) if maximum>0 else 0.0
+        last_extreme=record.get("last_favorable_extreme_at",record["alerted_at"])
+        minutes_since=max(0.0,(now-last_extreme).total_seconds()/60)
+        confirm_points=float(record.get(
+            "confirmation_points",
+            record.get("partial_target_points",record.get("target_points",1.0)),
+        ))
+        record.update(
+            current_favorable_points=current_favorable,
+            favorable_retained_pct=retention,
+            minutes_since_favorable_extreme=minutes_since,
+        )
+        if maximum>=confirm_points and retention<0.5:
+            lifecycle="REVERSING"
+        elif maximum>=confirm_points and minutes_since>=5:
+            lifecycle="STALLED"
+        elif maximum>=confirm_points and minutes_since<1:
+            lifecycle="EXTENDING"
+        elif maximum>=confirm_points:
+            lifecycle="CONFIRMING"
+        else:
+            lifecycle="DETECTED"
+        record["lifecycle_state"]=lifecycle
 
     def _update_minute_path(self,record:dict[str,Any],price:float,now:datetime,
         scores:dict[str,float])->None:
@@ -226,6 +262,7 @@ class OutcomeAttributionTracker:
                     or record.get("target_reached_price") or record["entry_price"])
                 record.update(
                     status="COMPLETE",completion_reason="TARGET_REACHED",
+                    lifecycle_state="COMPLETE",
                     outcome_grade="SUCCESS",final_favorable_points=max(
                         float(record["target_points"]),float(record.get("favorable_points",0.0))),
                     final_price=final_price,final_price_at=now,
@@ -246,15 +283,21 @@ class OutcomeAttributionTracker:
                 record["qqq_price"] = price
             elif symbol == "NQ":
                 record["nq_price"] = price
-            if price > record["highest_price"]:
+            new_high=price > record["highest_price"]
+            new_low=price < record["lowest_price"]
+            if new_high:
                 record["highest_price"] = price
                 record["highest_at"] = now
                 record["greek_scores_at_high"] = scores
-            if price < record["lowest_price"]:
+            if new_low:
                 record["lowest_price"] = price
                 record["lowest_at"] = now
                 record["greek_scores_at_low"] = scores
             sign = 1 if record["direction"] == Direction.UP.value else -1
+            new_favorable_extreme=new_high if sign>0 else new_low
+            if new_favorable_extreme:
+                record["last_favorable_extreme_at"]=now
+                record["favorable_extreme_count"]=int(record.get("favorable_extreme_count",0))+1
             record["favorable_points"] = (
                 record["highest_price"] - record["entry_price"]
                 if sign > 0 else record["entry_price"] - record["lowest_price"]
@@ -274,6 +317,7 @@ class OutcomeAttributionTracker:
             record["price_source_timestamp"] = price_source_timestamp
             record["dynamic_high"] = record["highest_price"]
             record["dynamic_low"] = record["lowest_price"]
+            self._update_lifecycle(record,now)
             if record.get("target_reached_at") is None and now >= record["expires_at"]:
                 self._expire(record)
                 del self._active[signal_id]
