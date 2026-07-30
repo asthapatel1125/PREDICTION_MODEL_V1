@@ -20,7 +20,7 @@ class OutcomeAttributionTracker:
 
     def __init__(
         self,
-        horizon_minutes: int = 40,
+        horizon_minutes: int = 60,
         cooldown_seconds: int = 300,
         qqq_points_per_50_nq: float = 1.235,
     ):
@@ -163,6 +163,58 @@ class OutcomeAttributionTracker:
         else:
             lifecycle="DETECTED"
         record["lifecycle_state"]=lifecycle
+
+    @staticmethod
+    def _update_risk_family(record:dict[str,Any],price:float,now:datetime)->None:
+        """Activate equal-weight child legs at the configured adverse levels."""
+        legs=record.get("family_legs")
+        if not legs:
+            return
+        parent=float(record["entry_price"])
+        is_long=record["direction"]==Direction.UP.value
+        adverse=max(0.0,parent-price if is_long else price-parent)
+        thresholds=[float(value) for value in record.get("family_trigger_levels",[0.0,4.0,6.0,8.0])]
+        active_thresholds={float(leg["trigger_adverse_points"]) for leg in legs}
+        for leg_number,threshold in enumerate(thresholds[1:],start=2):
+            if adverse<threshold or threshold in active_thresholds:
+                continue
+            datum=parent-threshold if is_long else parent+threshold
+            legs.append({
+                "call_id":f"{record['call_id']}.1.{leg_number}",
+                "leg_number":leg_number,
+                "role":"CHILD",
+                "trigger_adverse_points":threshold,
+                "datum":datum,
+                "observed_trigger_price":price,
+                "activated_at":now,
+            })
+            active_thresholds.add(threshold)
+        datums=[float(leg["datum"]) for leg in legs]
+        average=sum(datums)/len(datums)
+        leg_pl=[
+            (price-datum if is_long else datum-price)
+            for datum in datums
+        ]
+        for leg,value in zip(legs,leg_pl):
+            leg["current_pl_points"]=value
+        average_pl=sum(leg_pl)/len(leg_pl)
+        next_trigger=next((value for value in thresholds[1:] if value not in active_thresholds),None)
+        if average_pl>0:
+            outcome="PROFIT"
+        elif average_pl<0:
+            outcome="LOSS"
+        else:
+            outcome="BREAK_EVEN"
+        record.update(
+            family_active_legs=len(legs),
+            family_average_datum=average,
+            family_total_pl_points=sum(leg_pl),
+            family_average_pl_points=average_pl,
+            family_outcome_state=outcome,
+            family_stage=f"{len(legs)} OF {len(thresholds)} LEGS",
+            family_next_trigger_points=next_trigger,
+            family_last_updated_at=now,
+        )
 
     def _update_minute_path(self,record:dict[str,Any],price:float,now:datetime,
         scores:dict[str,float])->None:
@@ -317,6 +369,7 @@ class OutcomeAttributionTracker:
             record["price_source_timestamp"] = price_source_timestamp
             record["dynamic_high"] = record["highest_price"]
             record["dynamic_low"] = record["lowest_price"]
+            self._update_risk_family(record,price,now)
             self._update_lifecycle(record,now)
             if record.get("target_reached_at") is None and now >= record["expires_at"]:
                 self._expire(record)
@@ -432,6 +485,27 @@ class OutcomeAttributionTracker:
                 "price_source_timestamp": price_source_timestamp,
                 "nq_price": price if symbol == "NQ" else None,
                 "qqq_price": price if symbol == "QQQ" else None,
+                "family_id":call_id,
+                "family_parent_call_id":f"{call_id}.1",
+                "family_trigger_levels":[0.0,4.0,6.0,8.0],
+                "family_legs":[{
+                    "call_id":f"{call_id}.1",
+                    "leg_number":1,
+                    "role":"PARENT",
+                    "trigger_adverse_points":0.0,
+                    "datum":price,
+                    "observed_trigger_price":price,
+                    "activated_at":now,
+                    "current_pl_points":0.0,
+                }],
+                "family_active_legs":1,
+                "family_average_datum":price,
+                "family_total_pl_points":0.0,
+                "family_average_pl_points":0.0,
+                "family_outcome_state":"BREAK_EVEN",
+                "family_stage":"1 OF 4 LEGS",
+                "family_next_trigger_points":4.0,
+                "family_last_updated_at":now,
             }
             self._active[signal_id] = record
             self._last_signal[key] = now

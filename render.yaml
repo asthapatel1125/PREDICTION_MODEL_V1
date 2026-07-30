@@ -20,7 +20,7 @@ services:
       - key: AXIOM_OUTCOME_PRICE_POLL_SECONDS
         value: "60"
       - key: AXIOM_OUTCOME_HORIZON_MINUTES
-        value: "40"
+        value: "60"
       - key: AXIOM_OUTCOME_SIGNAL_COOLDOWN_SECONDS
         value: "300"
       - key: AXIOM_OUTCOME_QQQ_POINTS_PER_50_NQ

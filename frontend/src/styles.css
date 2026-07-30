@@ -584,7 +584,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 }
 
 /* Gamma call matrix: larger type, separated excursion fields, vivid row states. */
-.gamma-log-scroll table{min-width:2260px}
+.gamma-log-scroll table{min-width:2940px}
 .gamma-log-scroll th{height:38px;font-size:9px;line-height:1.2}
 .gamma-log-scroll td{height:48px;font-size:10.5px;line-height:1.3}
 .gamma-log-scroll .call-id{font-size:10px}
@@ -625,6 +625,20 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-call-chart-row details{background:#000}
 .gamma-call-chart-row details>summary{background:#080808}
 .gamma-call-chart-row details>summary:hover{background:#101010}
+.gamma-family-state,.family-pl{display:inline-block;padding:4px 7px;border:1px solid;border-radius:4px;font-weight:800}
+.gamma-family-state.profit,.family-pl.profit{border-color:#31d49c;color:#61efbd}
+.gamma-family-state.loss,.family-pl.loss{border-color:#ff5f79;color:#ff8798}
+.gamma-family-state.flat,.family-pl.flat{border-color:#7b91a3;color:#c7d5df}
+.family-legs-count{color:#ffcf54!important;font-weight:850}
+.family-next{color:#ff9bdb!important;font-weight:800}
+.gamma-family-legs{display:grid;grid-template-columns:repeat(4,minmax(210px,1fr));gap:8px;padding:11px;background:#000}
+.gamma-family-leg{display:grid;gap:5px;padding:10px;border:1px solid;border-radius:6px;background:#050505}
+.gamma-family-leg span,.gamma-family-leg small{font:700 9px var(--font-mono);letter-spacing:.06em}
+.gamma-family-leg button{padding:4px 6px;border:0;background:transparent;text-align:left;color:#91ddff;font:10px var(--font-mono);cursor:pointer}
+.gamma-family-leg b,.gamma-family-leg strong{font:800 11px var(--font-mono)}
+.gamma-family-leg.profit{border-color:#31d49c;color:#61efbd}
+.gamma-family-leg.loss{border-color:#ff5f79;color:#ff8798}
+.gamma-family-leg.flat{border-color:#7b91a3;color:#c7d5df}
 .gamma-log-empty{background:#000}
 .gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row) td{background:#000;color:#a9d2f5;border-bottom-color:#5aa8ff}
 .gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td{background:#000;color:#ead38d;border-bottom-color:#e7bb43}
