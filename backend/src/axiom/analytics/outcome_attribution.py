@@ -12,6 +12,7 @@ from axiom.domain.models import MarketState
 SYSTEM_GREEKS = {
     "PRIMARY_OPTIONS": ("gamma", "vanna", "charm", "speed", "zomma", "color", "ultima"),
     "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma"),
+    "ZONE_INTELLIGENCE": ("ultima", "zomma", "gamma", "speed", "color", "delta"),
 }
 
 
@@ -67,6 +68,9 @@ class OutcomeAttributionTracker:
         gamma = state.gamma_dynamics
         if gamma and gamma.qualified and gamma.decision != Direction.NEUTRAL:
             systems.append(("GAMMA_DYNAMICS", gamma.decision))
+        zone = state.zone_intelligence
+        if zone and zone.qualified and zone.direction != Direction.NEUTRAL:
+            systems.append(("ZONE_INTELLIGENCE", zone.direction))
         return systems
 
     def _relative_scores(self, symbol: str, system: str, state: MarketState, direction: Direction) -> dict[str, float]:
@@ -120,7 +124,7 @@ class OutcomeAttributionTracker:
         )
 
     def _call_id(self,timestamp:datetime,system:str)->str:
-        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3}[system]
+        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3,"ZONE_INTELLIGENCE":4}[system]
         eastern=timestamp.astimezone(self.eastern)
         milliseconds=eastern.microsecond//1000
         return f"{eastern:%Y%m%d%H%M%S}{milliseconds:03d}{stream:02d}"
@@ -272,6 +276,15 @@ class OutcomeAttributionTracker:
                 f"Zomma/Color relative intensity is {gamma.intensity:.1%}, above the {gamma.intensity_threshold:.1%} qualification threshold.",
                 f"Signed curvature pressure is {gamma.pressure:+.2f}, confirming the {side} Gamma-dynamics state.",
             ]
+        if system == "ZONE_INTELLIGENCE" and state.zone_intelligence:
+            zone=state.zone_intelligence
+            passed=sum(zone.rule_checks.get(zone.zone,{}).values())
+            total=len(zone.rule_checks.get(zone.zone,{}))
+            return [
+                f"{zone.zone.replace('_',' ').title()} matched {passed}/{total} numerical gates for a {zone.score:.1%} zone score.",
+                f"Normalized Delta {zone.normalized.get('delta',0):+.3f} and Speed {zone.normalized.get('speed',0):+.3f} produce the {side} call.",
+                f"Rolling normalization uses clipped three-sigma z-scores; confidence is {zone.confidence:.1%}.",
+            ]
         return [
             f"Explosion {state.explosion.value:.2f} passed its {state.active_thresholds.get('explosion_min', 0):.2f} energy threshold.",
             f"Direction {state.direction.value:+.0f}/3 and signed pressure {state.pressure.value:+.2f} align {side}.",
@@ -412,6 +425,11 @@ class OutcomeAttributionTracker:
             # systems that fire during the same millisecond.
             signal_id = f"{call_id}-{symbol}"
             target_spec=self._target_spec(symbol)
+            if system=="ZONE_INTELLIGENCE":
+                target_spec={**target_spec,"target_points":1.25,"target_basis":"ZONE_1_25_POINT_REACH",
+                    "target_conversion_method":"DIRECT_ZONE_INSTRUMENT_POINTS",
+                    "target_conversion_quality":"OBSERVED_INSTRUMENT_SCALE",
+                    "target_label":"1.25-POINT REACH"}
             target_points=float(target_spec["target_points"])
             target_price=price+target_points if direction==Direction.UP else price-target_points
             record = {
@@ -479,6 +497,10 @@ class OutcomeAttributionTracker:
                 "gamma_dynamics_at_signal": (
                     state.gamma_dynamics.model_dump(mode="json")
                     if system == "GAMMA_DYNAMICS" and state.gamma_dynamics else None
+                ),
+                "zone_intelligence_at_signal": (
+                    state.zone_intelligence.model_dump(mode="json")
+                    if system == "ZONE_INTELLIGENCE" and state.zone_intelligence else None
                 ),
                 "price_source": price_source,
                 "price_observed_at": price_observed_at,

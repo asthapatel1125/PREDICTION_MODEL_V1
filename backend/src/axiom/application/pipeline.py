@@ -21,6 +21,7 @@ from axiom.analytics.session_classifier import IntradaySessionClassifier
 from axiom.analytics.signal import TradeSignalGenerator
 from axiom.analytics.thresholds import AdaptiveThresholdManager, PerformanceWindow
 from axiom.analytics.timeframes import MultiTimeframeEngine
+from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
 from axiom.config.schema import StrategyConfig
 from axiom.domain.enums import Direction, EngineMode
 from axiom.domain.models import Alert, GammaDynamics, Greeks, MarketBar, MarketState, PipelineResult, ScoreResult
@@ -68,6 +69,7 @@ class DecisionPipeline:
         self.confidence=AlertConfidenceScorer(config.score_weights["confidence"]); self.thresholds=AdaptiveThresholdManager()
         self.profiles=AlertProfileSelector(market_timezone); self.signal=TradeSignalGenerator(); self.explanations=AlertExplanationEngine()
         self.gamma_dynamics=GammaDynamicsQuartet()
+        self.zone_intelligence=ZoneIntelligenceEngine(market_timezone=market_timezone)
         self.sessions=IntradaySessionClassifier(config.session_model,market_timezone)
         self._explosions:dict[str,deque]=defaultdict(lambda:deque(maxlen=1000)); self._performance=PerformanceWindow(); self._events:list[datetime]=[]
         self._signal_episodes:dict[str,dict]=defaultdict(lambda:{
@@ -181,9 +183,10 @@ class DecisionPipeline:
         alignment=self.mtf.alignment(bar.symbol); risk=self.risk.calculate(primary,sample)
         confidence=self.confidence.calculate(explosion,direction,pressure,momentum,alignment)
         gamma_dynamics=self.gamma_dynamics.calculate(primary.greeks,[item.greeks for item in sample],bar.symbol)
+        zone_intelligence=self.zone_intelligence.calculate(primary.greeks,[item.greeks for item in sample],bar.timestamp,bar.symbol)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,
-            timeframe_alignment=alignment,greeks=primary.greeks,gamma_dynamics=gamma_dynamics,
+            timeframe_alignment=alignment,greeks=primary.greeks,gamma_dynamics=gamma_dynamics,zone_intelligence=zone_intelligence,
             session_analysis=session_analysis,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
                 "contract_count":float(bar.contract_count),"open_interest_total":bar.open_interest,
                 "clock_session":session_analysis["clock_session"],

@@ -36,6 +36,14 @@ class LiveAlertRow(Base):
 
 class MarketStateRow(Base):
     __tablename__="market_states";id:Mapped[int]=mapped_column(primary_key=True);timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True);symbol:Mapped[str]=mapped_column(String(16),index=True);regime:Mapped[str]=mapped_column(String(40),index=True);profile:Mapped[str]=mapped_column(String(40));payload:Mapped[dict[str,Any]]=mapped_column(JSON)
+    zone_name:Mapped[str|None]=mapped_column(String(40),index=True,nullable=True)
+    zone_score:Mapped[float|None]=mapped_column(Float,index=True,nullable=True)
+    zone_confidence:Mapped[float|None]=mapped_column(Float,nullable=True)
+    zone_qualified:Mapped[bool|None]=mapped_column(nullable=True,index=True)
+    zone_direction:Mapped[str|None]=mapped_column(String(8),nullable=True,index=True)
+    zone_normalized_greeks:Mapped[dict[str,Any]|None]=mapped_column(JSON,nullable=True)
+    zone_greek_bands:Mapped[dict[str,Any]|None]=mapped_column(JSON,nullable=True)
+    zone_rule_checks:Mapped[dict[str,Any]|None]=mapped_column(JSON,nullable=True)
     __table_args__=(UniqueConstraint("timestamp","symbol",name="uq_state_time_symbol"),)
 
 
@@ -87,7 +95,12 @@ class SqlAlchemyRepository:
 
     async def save_state(self,state:MarketState)->None:
         async with self.sessions() as s:
-            s.add(MarketStateRow(timestamp=state.timestamp,symbol=state.symbol,regime=state.regime.value,profile=state.profile.value,payload=state.model_dump(mode="json")))
+            zone=state.zone_intelligence
+            s.add(MarketStateRow(timestamp=state.timestamp,symbol=state.symbol,regime=state.regime.value,profile=state.profile.value,payload=state.model_dump(mode="json"),
+                zone_name=zone.zone if zone else None,zone_score=zone.score if zone else None,
+                zone_confidence=zone.confidence if zone else None,zone_qualified=zone.qualified if zone else None,
+                zone_direction=zone.direction.value if zone else None,zone_normalized_greeks=zone.normalized if zone else None,
+                zone_greek_bands=zone.bands if zone else None,zone_rule_checks=zone.rule_checks if zone else None))
             for score in (state.explosion,state.direction,state.pressure,state.dealer_hedging,state.momentum,state.confidence,state.risk):
                 s.add(MetricRow(timestamp=state.timestamp,symbol=state.symbol,name=score.name,value=score.value,timeframe_seconds=60,dimensions={"confidence":score.confidence}))
             await s.commit()
@@ -177,7 +190,7 @@ class SqlAlchemyRepository:
                 changed=self._reconcile_expired_outcome(row,now) or changed
             if changed:await s.commit()
         systems={}
-        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS"):
+        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS","ZONE_INTELLIGENCE"):
             items=[dict(row.payload) for row in rows if row.system==system]
             # Every database row has a stable primary-key/call ID. Never hide
             # a live call merely because another call shares its direction or
@@ -302,5 +315,23 @@ async def create_database(url:str)->tuple[async_sessionmaker[AsyncSession],SqlAl
     if ":6543/" in url:
         kwargs.update(poolclass=NullPool,connect_args={"statement_cache_size":0})
     engine=create_async_engine(url,**kwargs)
-    async with engine.begin() as connection:await connection.run_sync(Base.metadata.create_all)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+        # create_all does not evolve existing Supabase tables. These additive,
+        # nullable columns keep old rows readable while making zone signals queryable.
+        for ddl in (
+            "alter table market_states add column if not exists zone_name varchar(40)",
+            "alter table market_states add column if not exists zone_score double precision",
+            "alter table market_states add column if not exists zone_confidence double precision",
+            "alter table market_states add column if not exists zone_qualified boolean",
+            "alter table market_states add column if not exists zone_direction varchar(8)",
+            "alter table market_states add column if not exists zone_normalized_greeks json",
+            "alter table market_states add column if not exists zone_greek_bands json",
+            "alter table market_states add column if not exists zone_rule_checks json",
+            "create index if not exists ix_market_states_zone_name on market_states (zone_name)",
+            "create index if not exists ix_market_states_zone_score on market_states (zone_score)",
+            "create index if not exists ix_market_states_zone_qualified on market_states (zone_qualified)",
+            "create index if not exists ix_market_states_zone_direction on market_states (zone_direction)",
+        ):
+            await connection.execute(text(ddl))
     factory=async_sessionmaker(engine,expire_on_commit=False);return factory,SqlAlchemyRepository(factory)

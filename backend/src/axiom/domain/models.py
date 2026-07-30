@@ -88,6 +88,26 @@ class GammaDynamics(FrozenModel):
     explanation: str
 
 
+class ZoneIntelligence(FrozenModel):
+    """Rolling-normalized six-Greek intraday zone classification."""
+    zone: str
+    active_windows: list[str]
+    qualified: bool = False
+    direction: Direction = Direction.NEUTRAL
+    source_symbol: str
+    score: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=1)
+    history_points: int = Field(ge=0)
+    normalized: dict[str, float]
+    bands: dict[str, str]
+    rule_checks: dict[str, dict[str, bool]]
+    zone_scores: dict[str, float]
+    delta_change: float = 0.0
+    gamma_change: float = 0.0
+    delta_sign_flipped: bool = False
+    explanation: str
+
+
 class MarketState(FrozenModel):
     timestamp: datetime
     symbol: str
@@ -106,6 +126,7 @@ class MarketState(FrozenModel):
     # rows written by older deployments can still be read.
     greeks: Greeks | None = None
     gamma_dynamics: GammaDynamics | None = None
+    zone_intelligence: ZoneIntelligence | None = None
     session_analysis: dict[str, Any] = Field(default_factory=dict)
     supporting_indicators: dict[str, float | str | bool]
     signal_checks: dict[str, bool] = Field(default_factory=dict)
