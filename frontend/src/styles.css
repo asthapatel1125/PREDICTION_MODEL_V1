@@ -731,9 +731,12 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 }
 #six-greek-dynamics.overview-disclosure>summary{border-color:rgba(181,108,255,.5)}
 #six-greek-dynamics.overview-disclosure[open]>.overview-disclosure-body{box-shadow:inset 0 0 0 1px rgba(181,108,255,.09)}
-.delta-dynamics-chart .greek-chart-stage,.delta-dynamics-chart .greek-chart-stage svg{min-height:820px}
+.delta-dynamics-chart .greek-chart-stage,.delta-dynamics-chart .greek-chart-stage svg{min-height:610px}
 .delta-dynamics-chart .chart-coordinate-tooltip{left:auto!important;right:18px;top:18px!important;transform:none!important;max-width:245px}
 .delta-dynamics-chart .triad-lane-name{font-size:13px}
 .delta-dynamics-chart .triad-lane-role{font-size:9px}
 .delta-dynamics-log .gamma-log-controls{position:relative;z-index:2}
-@media(max-width:760px){.delta-dynamics-chart .greek-chart-stage,.delta-dynamics-chart .greek-chart-stage svg{min-height:680px}.delta-dynamics-chart .chart-coordinate-tooltip{right:8px;top:8px!important}}
+@media(max-width:760px){.delta-dynamics-chart .greek-chart-stage,.delta-dynamics-chart .greek-chart-stage svg{min-height:560px}.delta-dynamics-chart .chart-coordinate-tooltip{right:8px;top:8px!important}}
+
+.six-greek-dynamics .gamma-dynamics-grid article>b{font-size:24px;line-height:1.15;letter-spacing:.02em}
+.six-greek-dynamics .gamma-dynamics-score>b{font-size:26px}
