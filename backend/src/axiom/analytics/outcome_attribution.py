@@ -201,6 +201,11 @@ class OutcomeAttributionTracker:
         ]
         for leg,value in zip(legs,leg_pl):
             leg["current_pl_points"]=value
+            leg["status"]=(
+                "SUCCEEDED" if value>0
+                else "FAILED" if value<0
+                else "FLAT"
+            )
         average_pl=sum(leg_pl)/len(leg_pl)
         next_trigger=next((value for value in thresholds[1:] if value not in active_thresholds),None)
         if average_pl>0:
@@ -535,6 +540,7 @@ class OutcomeAttributionTracker:
                     "observed_trigger_price":price,
                     "activated_at":now,
                     "current_pl_points":0.0,
+                    "status":"FLAT",
                 }],
                 "family_active_legs":1,
                 "family_average_datum":price,

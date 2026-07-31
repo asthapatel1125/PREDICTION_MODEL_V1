@@ -141,6 +141,10 @@ def test_long_risk_family_activates_zero_four_six_eight_once():
     assert len(record["family_legs"]) == 4
     assert record["family_average_pl_points"] == 1.5
     assert record["family_outcome_state"] == "PROFIT"
+    assert [leg["current_pl_points"] for leg in record["family_legs"]] == [-3, 1, 3, 5]
+    assert [leg["status"] for leg in record["family_legs"]] == [
+        "FAILED", "SUCCEEDED", "SUCCEEDED", "SUCCEEDED",
+    ]
     assert record["expires_at"] == start + timedelta(minutes=60)
 
 

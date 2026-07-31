@@ -782,7 +782,9 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     const highBar=bars.reduce((best,bar)=>!best||number(bar.high)>number(best.high)?bar:best,null);
     const lowBar=bars.reduce((best,bar)=>!best||number(bar.low)<number(best.low)?bar:best,null);
     const high=highBar?number(highBar.high):Math.max(datum,price),low=lowBar?number(lowBar.low):Math.min(datum,price);
-    const pl=call.direction==="UP"?price-datum:datum-price,status=pl>0?"SUCCEEDED":pl<0?"FAILED":"FLAT";
+    const calculatedPl=call.direction==="UP"?price-datum:datum-price;
+    const pl=Number.isFinite(Number(leg.current_pl_points))?number(leg.current_pl_points):calculatedPl;
+    const status=leg.status??(pl>0?"SUCCEEDED":pl<0?"FAILED":"FLAT");
     return {datum,price,high,low,pl,status,tone:pl>0?"profit":pl<0?"loss":"flat",timeHigh:highBar?duration(Math.max(0,(new Date(highBar.timestamp)-activated)/1000)):"0.0s",timeLow:lowBar?duration(Math.max(0,(new Date(lowBar.timestamp)-activated)/1000)):"0.0s"};
   };
   const copySummaries=async()=>{
@@ -857,7 +859,9 @@ function RiskManagementEventLog({calls=[],symbol}){
     const highBar=bars.reduce((best,bar)=>!best||number(bar.high)>number(best.high)?bar:best,null);
     const lowBar=bars.reduce((best,bar)=>!best||number(bar.low)<number(best.low)?bar:best,null);
     const high=highBar?number(highBar.high):Math.max(datum,price),low=lowBar?number(lowBar.low):Math.min(datum,price);
-    const pl=call.direction==="UP"?price-datum:datum-price,status=pl>0?"SUCCEEDED":pl<0?"FAILED":"FLAT";
+    const calculatedPl=call.direction==="UP"?price-datum:datum-price;
+    const pl=Number.isFinite(Number(leg.current_pl_points))?number(leg.current_pl_points):calculatedPl;
+    const status=leg.status??(pl>0?"SUCCEEDED":pl<0?"FAILED":"FLAT");
     return {datum,price,high,low,pl,status,tone:pl>0?"profit":pl<0?"loss":"flat",timeHigh:highBar?duration(Math.max(0,(new Date(highBar.timestamp)-activated)/1000)):"0.0s",timeLow:lowBar?duration(Math.max(0,(new Date(lowBar.timestamp)-activated)/1000)):"0.0s"};
   };
   const copy=async()=>{
