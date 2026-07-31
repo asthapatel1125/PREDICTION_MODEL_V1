@@ -316,6 +316,13 @@ class OutcomeAttributionTracker:
                 updates.append(dict(record))
                 continue
             scores = self._relative_scores(symbol, record["system"], state, Direction(record["direction"]))
+            greek_values = ({name:float(getattr(state.greeks,name)) for name in SYSTEM_GREEKS[record["system"]]} if state.greeks else {})
+            greek_highs = dict(record.get("greek_values_highest") or record.get("greek_values_at_signal") or greek_values)
+            greek_lows = dict(record.get("greek_values_lowest") or record.get("greek_values_at_signal") or greek_values)
+            for name,value in greek_values.items():
+                greek_highs[name]=max(float(greek_highs.get(name,value)),value)
+                greek_lows[name]=min(float(greek_lows.get(name,value)),value)
+            record.update(greek_values_current=greek_values,greek_values_highest=greek_highs,greek_values_lowest=greek_lows)
             self._update_minute_path(record,price,now,scores)
             target_minute=self._minute_bucket(record["target_reached_at"]) if record.get("target_reached_at") else None
             if target_minute is not None and self._minute_bucket(now)>target_minute:
@@ -492,6 +499,15 @@ class OutcomeAttributionTracker:
                 "greek_scores_at_high": scores,
                 "greek_scores_at_low": scores,
                 "greek_values_at_signal": {
+                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
+                } if state.greeks else {},
+                "greek_values_current": {
+                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
+                } if state.greeks else {},
+                "greek_values_highest": {
+                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
+                } if state.greeks else {},
+                "greek_values_lowest": {
                     name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
                 } if state.greeks else {},
                 "gamma_dynamics_at_signal": (

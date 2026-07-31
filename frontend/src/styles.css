@@ -740,3 +740,6 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 
 .six-greek-dynamics .gamma-dynamics-grid article>b{font-size:24px;line-height:1.15;letter-spacing:.02em}
 .six-greek-dynamics .gamma-dynamics-score>b{font-size:26px}
+
+.delta-dynamics-log .greek-extreme-high{color:#6ee7b7;font-weight:700}
+.delta-dynamics-log .greek-extreme-low{color:#ff8292;font-weight:700}
