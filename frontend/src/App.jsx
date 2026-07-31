@@ -242,14 +242,16 @@ function aggregateGreekRows(history, state, symbol, intervalSeconds) {
   if(state?.symbol===symbol){const index=source.findIndex(row=>row.timestamp===state.timestamp);if(index>=0)source[index]=state;else source.push(state)}
   const unique=[...new Map(source.filter(row=>row.timestamp).map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const buckets=new Map();
-  unique.forEach(row=>{
+  unique.forEach((row,rowIndex)=>{
     const bucketMs=Math.floor(new Date(row.timestamp).getTime()/(intervalSeconds*1000))*intervalSeconds*1000;
     if(!Number.isFinite(bucketMs))return;
     const bucket=buckets.get(bucketMs)??{timestamp:new Date(bucketMs).toISOString(),symbol,sums:{},counts:{}};
     ALL_GREEKS.forEach(([name])=>{const value=greekValue(row,name);if(Number.isFinite(value)){bucket.sums[name]=(bucket.sums[name]??0)+value;bucket.counts[name]=(bucket.counts[name]??0)+1}});
+    const normalized=row?.zone_intelligence?.normalized??deriveSixGreekDynamics(row,unique.slice(Math.max(0,rowIndex-100),rowIndex)).scaled??{};
+    SIX_GREEKS.forEach(name=>{const value=optionalNumber(normalized[name]);if(Number.isFinite(value)){const key=`normalized_${name}`;bucket.sums[key]=(bucket.sums[key]??0)+value;bucket.counts[key]=(bucket.counts[key]??0)+1}});
     buckets.set(bucketMs,bucket);
   });
-  return [...buckets.values()].map(bucket=>({timestamp:bucket.timestamp,symbol,supporting_indicators:Object.fromEntries(ALL_GREEKS.map(([name])=>[`greek_${name}`,bucket.counts[name]?bucket.sums[name]/bucket.counts[name]:null]))}));
+  return [...buckets.values()].map(bucket=>({timestamp:bucket.timestamp,symbol,supporting_indicators:Object.fromEntries(ALL_GREEKS.map(([name])=>[`greek_${name}`,bucket.counts[name]?bucket.sums[name]/bucket.counts[name]:null])),zone_intelligence:{normalized:Object.fromEntries(SIX_GREEKS.map(name=>{const key=`normalized_${name}`;return [name,bucket.counts[key]?bucket.sums[key]/bucket.counts[key]:null]}))}}));
 }
 
 function useGreekViewport(history,state,symbol,intervalSeconds,visibleCount=96){
@@ -269,7 +271,7 @@ function useScoreViewport(history,state,symbol,intervalSeconds,visibleCount=96){
     if(state?.symbol===symbol){const index=source.findIndex(row=>row.timestamp===state.timestamp);if(index>=0)source[index]=state;else source.push(state)}
     const unique=[...new Map(source.filter(row=>row.timestamp).map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
     const buckets=new Map();
-    unique.forEach(row=>{const bucket=Math.floor(new Date(row.timestamp).getTime()/(intervalSeconds*1000))*intervalSeconds*1000;if(Number.isFinite(bucket))buckets.set(bucket,row)});
+    unique.forEach((row,rowIndex)=>{const bucket=Math.floor(new Date(row.timestamp).getTime()/(intervalSeconds*1000))*intervalSeconds*1000;if(Number.isFinite(bucket))buckets.set(bucket,row)});
     return [...buckets.entries()].map(([bucket,row])=>({...row,timestamp:new Date(bucket).toISOString()}));
   },[history,state,symbol,intervalSeconds]);
   useEffect(()=>setOffset(0),[symbol,intervalSeconds]);
@@ -691,7 +693,7 @@ function GammaDynamicsChart({history=[],state,symbol,deltaMode=false}){
   const [intervalSeconds,setIntervalSeconds]=useState(5),[expanded,setExpanded]=useState(false),[zoom,setZoom]=useState(1),[cursor,setCursor]=useState(null);
   const drag=useRef(null),viewport=useGreekViewport(history,state,symbol,intervalSeconds,Math.max(12,Math.round((expanded?140:90)/zoom))),rows=viewport.visible;
   const dims={width:1200,height:expanded?(deltaMode?820:760):(deltaMode?610:500),left:deltaMode?190:138,right:30,top:20,bottom:58},plotWidth=dims.width-dims.left-dims.right,plotHeight=dims.height-dims.top-dims.bottom,laneHeight=plotHeight/series.length;
-  const valueFor=(row,name)=>deltaMode?optionalNumber(row?.zone_intelligence?.normalized?.[name]??deriveSixGreekDynamics(row,[]).scaled?.[name]):greekValue(row,name),formatValue=value=>signedGreek(value),formatTime=chartTime;
+  const valueFor=(row,name)=>deltaMode?optionalNumber(row?.zone_intelligence?.normalized?.[name]??greekValue(row,name)):greekValue(row,name),formatValue=value=>signedGreek(value),formatTime=chartTime;
   const ranges=Object.fromEntries(series.map(([name])=>{const values=rows.map(row=>valueFor(row,name)).filter(Number.isFinite),minimum=values.length?Math.min(...values):0,maximum=values.length?Math.max(...values):0,center=(minimum+maximum)/2,raw=maximum-minimum,padding=Math.max(raw*.14,Math.abs(center)*.002,1e-12);return [name,{minimum:minimum-padding,maximum:maximum+padding}]}));
   const x=index=>dims.left+index*plotWidth/Math.max(1,rows.length-1),y=(value,name)=>{const index=series.findIndex(([key])=>key===name),range=ranges[name],top=dims.top+index*laneHeight+10,bottom=dims.top+(index+1)*laneHeight-10;return top+(range.maximum-value)*(bottom-top)/Math.max(range.maximum-range.minimum,1e-15)};
   const hovered=rows[cursor?.index??rows.length-1],zoomChart=(amount,anchorIndex=cursor?.index??rows.length-1)=>{const next=Math.max(1,Math.min(8,Math.round((zoom+amount)*2)/2));if(next===zoom)return;const fraction=rows.length>1?anchorIndex/(rows.length-1):1,globalIndex=viewport.rows.length-viewport.offset-rows.length+anchorIndex,nextCount=Math.max(12,Math.round((expanded?140:90)/next)),nextIndex=Math.round(fraction*Math.max(nextCount-1,0)),nextOffset=Math.max(0,Math.min(Math.max(0,viewport.rows.length-nextCount),viewport.rows.length-(globalIndex-nextIndex+nextCount)));setZoom(next);viewport.setOffset(nextOffset);setCursor(current=>current?{...current,index:nextIndex}:current)};
