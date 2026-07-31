@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -40,16 +40,19 @@ class OutcomeAttributionTracker:
     def _direction_sign(direction: Direction) -> int:
         return 1 if direction == Direction.UP else -1
 
-    def _target_spec(self, symbol: str) -> dict[str, Any]:
+    def _target_spec(self, symbol: str, timestamp: datetime) -> dict[str, Any]:
         """Describe the target without pretending that QQQ and NQ share a point scale."""
         if symbol == "QQQ":
+            eastern=timestamp.astimezone(self.eastern)
+            regular_hours=eastern.weekday()<5 and time(9,30)<=eastern.time()<time(16,0)
+            target_points=1.25 if regular_hours else .25
             return {
-                "target_points": self.qqq_points_per_50_nq,
-                "target_basis": "NQ_50_POINT_EQUIVALENT",
+                "target_points": target_points,
+                "target_basis": "NYSE_RTH_1_25_ELSE_0_25",
                 "target_nq_points": 50.0,
-                "target_conversion_method": "CONFIGURED_QQQ_PROXY",
-                "target_conversion_quality": "ESTIMATED_NO_LIVE_NQ",
-                "target_label": "50 NQ-POINT EQUIVALENT",
+                "target_conversion_method": "NYSE_SESSION_POINT_TARGET",
+                "target_conversion_quality": "OBSERVED_INSTRUMENT_SCALE",
+                "target_label": "1.25-POINT RTH REACH" if regular_hours else "0.25-POINT EXTENDED-HOURS REACH",
             }
         return {
             "target_points": 50.0,
@@ -436,8 +439,8 @@ class OutcomeAttributionTracker:
             # contract. The two-digit stream inside call_id already separates
             # systems that fire during the same millisecond.
             signal_id = f"{call_id}-{symbol}"
-            target_spec=self._target_spec(symbol)
-            if system=="DELTA_DYNAMICS":
+            target_spec=self._target_spec(symbol,now)
+            if system=="DELTA_DYNAMICS" and symbol!="QQQ":
                 target_spec={**target_spec,"target_points":1.25,"target_basis":"ZONE_1_25_POINT_REACH",
                     "target_conversion_method":"DIRECT_ZONE_INSTRUMENT_POINTS",
                     "target_conversion_quality":"OBSERVED_INSTRUMENT_SCALE",

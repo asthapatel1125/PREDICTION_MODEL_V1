@@ -21,6 +21,14 @@ def state(timestamp: datetime, price: float, direction: Direction = Direction.UP
     )
 
 
+def test_qqq_target_uses_nyse_regular_hours():
+    tracker = OutcomeAttributionTracker()
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 13, 29, tzinfo=timezone.utc))["target_points"] == .25
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 13, 30, tzinfo=timezone.utc))["target_points"] == 1.25
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 19, 59, tzinfo=timezone.utc))["target_points"] == 1.25
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 20, 0, tzinfo=timezone.utc))["target_points"] == .25
+
+
 def test_long_gamma_tracks_one_minute_ohlc_and_fifty_point_target():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
