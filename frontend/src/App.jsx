@@ -822,6 +822,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const syncVertical=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollTop=event.currentTarget.scrollTop};
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id);
   const visualState=gammaLogVisualState;
+  const scoreBoard=useMemo(()=>visibleEvents.reduce((scores,event)=>{const key=visualState(linkedCall(event)).key;if(key==="failed")scores.failed+=1;else if(key==="success"||key==="child-rescued")scores.succeeded+=1;else if(key==="tracking-success")scores.trackingSucceeded+=1;else scores.trackingFailed+=1;return scores},{failed:0,succeeded:0,trackingFailed:0,trackingSucceeded:0}),[visibleEvents,calls]);
   const toggleCallState=value=>setCallStateFilters(selected=>selected.includes(value)?selected.filter(item=>item!==value):[...selected,value]);
   const priceValue=(call,value)=>!call||!Number.isFinite(Number(value))?"—":number(value).toFixed(4);
   const pointValue=(call,value)=>{if(!call||!Number.isFinite(Number(value)))return <span className="point-delta flat">—</span>;const delta=number(value)-number(call.entry_price),tone=delta>0?"up":delta<0?"down":"flat";return <span className={`point-delta ${tone}`}>{delta>=0?"+":""}{delta.toFixed(4)} pts</span>};
@@ -860,6 +861,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
       <CompactEventTimeFilter label="TO" value={toTime} onChange={setToTime}/>
       <button type="button" onClick={()=>{setCallStateFilters(GAMMA_CALL_STATES.map(([value])=>value));setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
     </div>
+    <div className="gamma-event-scoreboard"><article className="failed"><span>FAILED</span><b>{scoreBoard.failed}</b><small>Completed calls</small></article><article className="succeeded"><span>SUCCEEDED</span><b>{scoreBoard.succeeded}</b><small>Includes child rescue</small></article><article className="tracking-failed"><span>TRACKING · FAILING</span><b>{scoreBoard.trackingFailed}</b><small>Direction currently adverse</small></article><article className="tracking-succeeded"><span>TRACKING · SUCCEEDING</span><b>{scoreBoard.trackingSucceeded}</b><small>Direction currently favorable</small></article></div>
     <div className="gamma-log-scroll-shell">
       <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncHorizontal}><div style={{width:scrollSize.width}}/></div>
       <div className="gamma-log-scroll-row">
