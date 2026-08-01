@@ -731,6 +731,19 @@ function GammaDynamicsChart({history=[],state,symbol,deltaMode=false}){
   </ChartShell>;
 }
 
+function gammaLogVisualState(call){
+  if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
+  const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);
+  const legs=call.family_legs??[],parent=legs.find(leg=>leg.role==="PARENT")??legs[0];
+  const legPl=leg=>{const stored=Number(leg?.current_pl_points);if(leg?.current_pl_points!=null&&Number.isFinite(stored))return stored;const legDatum=number(leg?.datum,datum),legPrice=leg?.final_price!=null?number(leg.final_price):price;return call.direction==="UP"?legPrice-legDatum:legDatum-legPrice};
+  const parentPl=parent?legPl(parent):call.direction==="UP"?price-datum:datum-price,children=legs.filter(leg=>leg.role==="CHILD"),calculatedTotal=legs.reduce((sum,leg)=>sum+legPl(leg),0),storedTotal=Number(call.family_total_pl_points),familyTotal=call.family_total_pl_points!=null&&Number.isFinite(storedTotal)?storedTotal:calculatedTotal;
+  const childRescued=outcome.closed&&parentPl<=0&&familyTotal>0&&children.some(leg=>legPl(leg)>0);
+  if(childRescued)return {key:"child-rescued",label:"SUCCESS · CHILD RESCUE"};
+  if(outcome.closed)return outcome.grade==="success"?{key:"success",label:"SUCCESS"}:{key:"failed",label:"FAILED"};
+  const succeeding=call.direction==="UP"?price>=datum:price<=datum;
+  return succeeding?{key:"tracking-success",label:"TRACKING · SUCCEEDING"}:{key:"tracking-failing",label:"TRACKING · FAILING"};
+}
+
 function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const current=deriveGammaDynamics(state,history);
   const [copied,setCopied]=useState(false);
@@ -738,6 +751,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const [filterDate,setFilterDate]=useState("");
   const [fromTime,setFromTime]=useState("");
   const [toTime,setToTime]=useState("");
+  const [callStateFilter,setCallStateFilter]=useState("ALL");
   const [scrollSize,setScrollSize]=useState({width:0,height:0});
   const topScrollRef=useRef(null),bottomScrollRef=useRef(null),leftScrollRef=useRef(null),rightScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null);
   const events=useMemo(()=>{
@@ -758,8 +772,14 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const visibleEvents=useMemo(()=>events.filter(event=>{
     const eastern=easternFilterParts(event.timestamp);
     if(filterDate&&eastern.date!==filterDate)return false;
-    return timeRangeMatches(eastern.time,fromTime,toTime);
-  }).sort((a,b)=>(sortOrder==="oldest"?1:-1)*(new Date(a.timestamp)-new Date(b.timestamp))),[events,filterDate,fromTime,toTime,sortOrder]);
+    if(!timeRangeMatches(eastern.time,fromTime,toTime))return false;
+    if(callStateFilter==="ALL")return true;
+    const call=calls.find(item=>visibleCallId(item,"GAMMA_DYNAMICS")===event.id),key=gammaLogVisualState(call).key;
+    if(callStateFilter==="SUCCESS")return key==="success"||key==="child-rescued";
+    if(callStateFilter==="CHILD_RESCUED")return key==="child-rescued";
+    if(callStateFilter==="TRACKING")return key.startsWith("tracking-");
+    return key==="failed";
+  }).sort((a,b)=>(sortOrder==="oldest"?1:-1)*(new Date(a.timestamp)-new Date(b.timestamp))),[events,calls,filterDate,fromTime,toTime,callStateFilter,sortOrder]);
   useEffect(()=>{
     const update=()=>{
       const table=tableRef.current;
@@ -779,18 +799,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const syncHorizontal=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollLeft=event.currentTarget.scrollLeft};
   const syncVertical=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollTop=event.currentTarget.scrollTop};
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id);
-  const visualState=call=>{
-    if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
-    const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);
-    const legs=call.family_legs??[],parent=legs.find(leg=>leg.role==="PARENT")??legs[0];
-    const legPl=leg=>{const stored=Number(leg?.current_pl_points);if(leg?.current_pl_points!=null&&Number.isFinite(stored))return stored;const legDatum=number(leg?.datum,datum),legPrice=leg?.final_price!=null?number(leg.final_price):price;return call.direction==="UP"?legPrice-legDatum:legDatum-legPrice};
-    const parentPl=parent?legPl(parent):call.direction==="UP"?price-datum:datum-price,children=legs.filter(leg=>leg.role==="CHILD"),calculatedTotal=legs.reduce((sum,leg)=>sum+legPl(leg),0),storedTotal=Number(call.family_total_pl_points),familyTotal=call.family_total_pl_points!=null&&Number.isFinite(storedTotal)?storedTotal:calculatedTotal;
-    const childRescued=outcome.closed&&parentPl<=0&&familyTotal>0&&children.some(leg=>legPl(leg)>0);
-    if(childRescued)return {key:"child-rescued",label:"SUCCESS · CHILD RESCUE"};
-    if(outcome.closed)return outcome.grade==="success"?{key:"success",label:"SUCCESS"}:{key:"failed",label:"FAILED"};
-    const succeeding=call.direction==="UP"?price>=datum:price<=datum;
-    return succeeding?{key:"tracking-success",label:"TRACKING · SUCCEEDING"}:{key:"tracking-failing",label:"TRACKING · FAILING"};
-  };
+  const visualState=gammaLogVisualState;
   const priceValue=(call,value)=>!call||!Number.isFinite(Number(value))?"—":number(value).toFixed(4);
   const pointValue=(call,value)=>{if(!call||!Number.isFinite(Number(value)))return <span className="point-delta flat">—</span>;const delta=number(value)-number(call.entry_price),tone=delta>0?"up":delta<0?"down":"flat";return <span className={`point-delta ${tone}`}>{delta>=0?"+":""}{delta.toFixed(4)} pts</span>};
   const extremeTime=(call,seconds,finished)=>!call?"—":finished?duration(seconds):"TRACKING";
@@ -822,10 +831,11 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     <header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Every qualified call · observed minute high/low path</h2></div><div className="gamma-log-actions"><button type="button" className="copy-table" onClick={copySummaries} disabled={!visibleEvents.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><b>{visibleEvents.length}{visibleEvents.length!==events.length?` / ${events.length}`:""} EVENTS</b></div></header>
     <div className="gamma-log-controls">
       <label>SORT<select value={sortOrder} onChange={event=>setSortOrder(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+      <label>CALL STATE<select value={callStateFilter} onChange={event=>setCallStateFilter(event.target.value)}><option value="ALL">All calls</option><option value="SUCCESS">All successes</option><option value="CHILD_RESCUED">Child rescue</option><option value="FAILED">Failed</option><option value="TRACKING">Tracking</option></select></label>
       <label>DATE<input type="date" value={filterDate} onChange={event=>setFilterDate(event.target.value)}/></label>
       <label>FROM<input type="time" step="60" value={fromTime} onChange={event=>setFromTime(event.target.value)}/></label>
       <label>TO<input type="time" step="60" value={toTime} onChange={event=>setToTime(event.target.value)}/></label>
-      <button type="button" onClick={()=>{setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
+      <button type="button" onClick={()=>{setCallStateFilter("ALL");setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
     </div>
     <div className="gamma-log-scroll-shell">
       <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncHorizontal}><div style={{width:scrollSize.width}}/></div>
