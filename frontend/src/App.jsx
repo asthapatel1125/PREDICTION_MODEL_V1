@@ -143,6 +143,7 @@ function deriveGammaDynamicsEvents(history,state,symbol){
 
 const SIX_GREEKS=["ultima","zomma","gamma","speed","color","delta"];
 const GAMMA_DYNAMICS_GREEKS=["zomma","color","speed","gamma"];
+const GAMMA_CALL_STATES=[["SUCCESS","Success"],["CHILD_RESCUED","Child rescue"],["FAILED","Failed"],["TRACKING","Tracking"]];
 const referenceStrike=(record,datum=NaN)=>{
   const direct=optionalNumber(record?.strike_price??record?.strike??record?.option_strike??record?.supporting_indicators?.strike_price??record?.supporting_indicators?.strike);
   return Number.isFinite(direct)?{value:direct,estimated:false}:Number.isFinite(Number(datum))?{value:Math.round(Number(datum)),estimated:true}:{value:NaN,estimated:true};
@@ -751,7 +752,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const [filterDate,setFilterDate]=useState("");
   const [fromTime,setFromTime]=useState("");
   const [toTime,setToTime]=useState("");
-  const [callStateFilter,setCallStateFilter]=useState("ALL");
+  const [callStateFilters,setCallStateFilters]=useState(()=>GAMMA_CALL_STATES.map(([value])=>value));
   const [scrollSize,setScrollSize]=useState({width:0,height:0});
   const topScrollRef=useRef(null),bottomScrollRef=useRef(null),leftScrollRef=useRef(null),rightScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null);
   const events=useMemo(()=>{
@@ -773,13 +774,10 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     const eastern=easternFilterParts(event.timestamp);
     if(filterDate&&eastern.date!==filterDate)return false;
     if(!timeRangeMatches(eastern.time,fromTime,toTime))return false;
-    if(callStateFilter==="ALL")return true;
     const call=calls.find(item=>visibleCallId(item,"GAMMA_DYNAMICS")===event.id),key=gammaLogVisualState(call).key;
-    if(callStateFilter==="SUCCESS")return key==="success"||key==="child-rescued";
-    if(callStateFilter==="CHILD_RESCUED")return key==="child-rescued";
-    if(callStateFilter==="TRACKING")return key.startsWith("tracking-");
-    return key==="failed";
-  }).sort((a,b)=>(sortOrder==="oldest"?1:-1)*(new Date(a.timestamp)-new Date(b.timestamp))),[events,calls,filterDate,fromTime,toTime,callStateFilter,sortOrder]);
+    const stateKey=key==="child-rescued"?"CHILD_RESCUED":key==="success"?"SUCCESS":key==="failed"?"FAILED":"TRACKING";
+    return callStateFilters.includes(stateKey);
+  }).sort((a,b)=>(sortOrder==="oldest"?1:-1)*(new Date(a.timestamp)-new Date(b.timestamp))),[events,calls,filterDate,fromTime,toTime,callStateFilters,sortOrder]);
   useEffect(()=>{
     const update=()=>{
       const table=tableRef.current;
@@ -800,6 +798,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const syncVertical=event=>{if(bodyScrollRef.current)bodyScrollRef.current.scrollTop=event.currentTarget.scrollTop};
   const linkedCall=event=>calls.find(call=>visibleCallId(call,"GAMMA_DYNAMICS")===event.id);
   const visualState=gammaLogVisualState;
+  const toggleCallState=value=>setCallStateFilters(selected=>selected.includes(value)?selected.filter(item=>item!==value):[...selected,value]);
   const priceValue=(call,value)=>!call||!Number.isFinite(Number(value))?"—":number(value).toFixed(4);
   const pointValue=(call,value)=>{if(!call||!Number.isFinite(Number(value)))return <span className="point-delta flat">—</span>;const delta=number(value)-number(call.entry_price),tone=delta>0?"up":delta<0?"down":"flat";return <span className={`point-delta ${tone}`}>{delta>=0?"+":""}{delta.toFixed(4)} pts</span>};
   const extremeTime=(call,seconds,finished)=>!call?"—":finished?duration(seconds):"TRACKING";
@@ -831,11 +830,11 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     <header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Every qualified call · observed minute high/low path</h2></div><div className="gamma-log-actions"><button type="button" className="copy-table" onClick={copySummaries} disabled={!visibleEvents.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><b>{visibleEvents.length}{visibleEvents.length!==events.length?` / ${events.length}`:""} EVENTS</b></div></header>
     <div className="gamma-log-controls">
       <label>SORT<select value={sortOrder} onChange={event=>setSortOrder(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
-      <label>CALL STATE<select value={callStateFilter} onChange={event=>setCallStateFilter(event.target.value)}><option value="ALL">All calls</option><option value="SUCCESS">All successes</option><option value="CHILD_RESCUED">Child rescue</option><option value="FAILED">Failed</option><option value="TRACKING">Tracking</option></select></label>
+      <div className="gamma-state-filter"><span>CALL STATE</span><details><summary>{callStateFilters.length===GAMMA_CALL_STATES.length?"All states":callStateFilters.length?`${callStateFilters.length} selected`:"None selected"}</summary><div className="gamma-state-menu"><div><button type="button" onClick={()=>setCallStateFilters(GAMMA_CALL_STATES.map(([value])=>value))}>SELECT ALL</button><button type="button" onClick={()=>setCallStateFilters([])}>CLEAR</button></div>{GAMMA_CALL_STATES.map(([value,label])=><label key={value}><input type="checkbox" checked={callStateFilters.includes(value)} onChange={()=>toggleCallState(value)}/><span>{label}</span></label>)}</div></details></div>
       <label>DATE<input type="date" value={filterDate} onChange={event=>setFilterDate(event.target.value)}/></label>
       <label>FROM<input type="time" step="60" value={fromTime} onChange={event=>setFromTime(event.target.value)}/></label>
       <label>TO<input type="time" step="60" value={toTime} onChange={event=>setToTime(event.target.value)}/></label>
-      <button type="button" onClick={()=>{setCallStateFilter("ALL");setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
+      <button type="button" onClick={()=>{setCallStateFilters(GAMMA_CALL_STATES.map(([value])=>value));setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
     </div>
     <div className="gamma-log-scroll-shell">
       <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncHorizontal}><div style={{width:scrollSize.width}}/></div>
