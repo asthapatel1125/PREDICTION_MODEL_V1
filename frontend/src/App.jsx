@@ -782,6 +782,11 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const visualState=call=>{
     if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
     const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);
+    const legs=call.family_legs??[],parent=legs.find(leg=>leg.role==="PARENT")??legs[0];
+    const legPl=leg=>{const stored=Number(leg?.current_pl_points);if(leg?.current_pl_points!=null&&Number.isFinite(stored))return stored;const legDatum=number(leg?.datum,datum),legPrice=leg?.final_price!=null?number(leg.final_price):price;return call.direction==="UP"?legPrice-legDatum:legDatum-legPrice};
+    const parentPl=parent?legPl(parent):call.direction==="UP"?price-datum:datum-price,children=legs.filter(leg=>leg.role==="CHILD"),calculatedTotal=legs.reduce((sum,leg)=>sum+legPl(leg),0),storedTotal=Number(call.family_total_pl_points),familyTotal=call.family_total_pl_points!=null&&Number.isFinite(storedTotal)?storedTotal:calculatedTotal;
+    const childRescued=outcome.closed&&parentPl<=0&&familyTotal>0&&children.some(leg=>legPl(leg)>0);
+    if(childRescued)return {key:"child-rescued",label:"SUCCESS · CHILD RESCUE"};
     if(outcome.closed)return outcome.grade==="success"?{key:"success",label:"SUCCESS"}:{key:"failed",label:"FAILED"};
     const succeeding=call.direction==="UP"?price>=datum:price<=datum;
     return succeeding?{key:"tracking-success",label:"TRACKING · SUCCEEDING"}:{key:"tracking-failing",label:"TRACKING · FAILING"};

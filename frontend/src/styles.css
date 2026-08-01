@@ -710,6 +710,10 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row) td{background:#000;color:#ead38d;border-bottom-color:#e7bb43}
 .gamma-log-scroll tr.gamma-call-tracking-success:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-tracking-failing:not(.gamma-call-chart-row):hover td{background:#080808}
 .gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row) td{background:#000;color:#baffdf;border-bottom:2px solid #44efad;box-shadow:inset 0 -5px 8px -8px #44efad}
+.gamma-log-scroll tr.gamma-call-child-rescued:not(.gamma-call-chart-row) td{background:#000;color:#ead8ff;border-bottom:2px solid #c493ff;box-shadow:inset 0 -5px 8px -8px #c493ff}
+.gamma-log-scroll tr.gamma-call-child-rescued:not(.gamma-call-chart-row) td:first-child{box-shadow:inset 4px 0 #c493ff,inset 0 -5px 8px -8px #c493ff}
+.gamma-log-scroll tr.gamma-call-child-rescued:not(.gamma-call-chart-row):hover td{background:#0b0710}
+.gamma-call-state.child-rescued{border-color:#c493ff;color:#ead8ff}
 .gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row) td{background:#000;color:#ffb5c0;border-bottom:2px solid #ff4f69;box-shadow:inset 0 -5px 8px -8px #ff4f69}
 .gamma-log-scroll tr.gamma-call-success:not(.gamma-call-chart-row):hover td,.gamma-log-scroll tr.gamma-call-failed:not(.gamma-call-chart-row):hover td{background:#050505}
 .risk-family-row.profit td{background:#000;color:#baffdf;border-bottom:2px solid #44efad;box-shadow:inset 0 -5px 8px -8px #44efad}
