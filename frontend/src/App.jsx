@@ -754,7 +754,14 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
   const [toTime,setToTime]=useState("");
   const [callStateFilters,setCallStateFilters]=useState(()=>GAMMA_CALL_STATES.map(([value])=>value));
   const [scrollSize,setScrollSize]=useState({width:0,height:0});
-  const topScrollRef=useRef(null),bottomScrollRef=useRef(null),leftScrollRef=useRef(null),rightScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null);
+  const topScrollRef=useRef(null),bottomScrollRef=useRef(null),leftScrollRef=useRef(null),rightScrollRef=useRef(null),bodyScrollRef=useRef(null),tableRef=useRef(null),stateFilterRef=useRef(null);
+  useEffect(()=>{
+    const closeOnOutside=event=>{const menu=stateFilterRef.current;if(menu?.open&&!menu.contains(event.target))menu.removeAttribute("open")};
+    const closeOnEscape=event=>{if(event.key==="Escape")stateFilterRef.current?.removeAttribute("open")};
+    document.addEventListener("pointerdown",closeOnOutside);
+    document.addEventListener("keydown",closeOnEscape);
+    return()=>{document.removeEventListener("pointerdown",closeOnOutside);document.removeEventListener("keydown",closeOnEscape)};
+  },[]);
   const events=useMemo(()=>{
     const derived=deriveGammaDynamicsEvents(history,state,symbol);
     const persisted=calls.map(call=>{
@@ -830,7 +837,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[]}){
     <header className="panel-head"><div><span>GAMMA DYNAMICS EVENT LOG</span><h2>Every qualified call · observed minute high/low path</h2></div><div className="gamma-log-actions"><button type="button" className="copy-table" onClick={copySummaries} disabled={!visibleEvents.length}>{copied?"✓ COPIED":"COPY SUMMARIES"}</button><b>{visibleEvents.length}{visibleEvents.length!==events.length?` / ${events.length}`:""} EVENTS</b></div></header>
     <div className="gamma-log-controls">
       <label>SORT<select value={sortOrder} onChange={event=>setSortOrder(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
-      <div className="gamma-state-filter"><span>CALL STATE</span><details><summary>{callStateFilters.length===GAMMA_CALL_STATES.length?"All states":callStateFilters.length?`${callStateFilters.length} selected`:"None selected"}</summary><div className="gamma-state-menu"><div><button type="button" onClick={()=>setCallStateFilters(GAMMA_CALL_STATES.map(([value])=>value))}>SELECT ALL</button><button type="button" onClick={()=>setCallStateFilters([])}>CLEAR</button></div>{GAMMA_CALL_STATES.map(([value,label])=><label key={value}><input type="checkbox" checked={callStateFilters.includes(value)} onChange={()=>toggleCallState(value)}/><span>{label}</span></label>)}</div></details></div>
+      <div className="gamma-state-filter"><span>CALL STATE</span><details ref={stateFilterRef}><summary>{callStateFilters.length===GAMMA_CALL_STATES.length?"All states":callStateFilters.length?`${callStateFilters.length} selected`:"None selected"}</summary><div className="gamma-state-menu"><div><button type="button" onClick={()=>setCallStateFilters(GAMMA_CALL_STATES.map(([value])=>value))}>SELECT ALL</button><button type="button" onClick={()=>setCallStateFilters([])}>CLEAR</button></div>{GAMMA_CALL_STATES.map(([value,label])=><label key={value}><input type="checkbox" checked={callStateFilters.includes(value)} onChange={()=>toggleCallState(value)}/><span>{label}</span></label>)}</div></details></div>
       <label>DATE<input type="date" value={filterDate} onChange={event=>setFilterDate(event.target.value)}/></label>
       <label>FROM<input type="time" step="60" value={fromTime} onChange={event=>setFromTime(event.target.value)}/></label>
       <label>TO<input type="time" step="60" value={toTime} onChange={event=>setToTime(event.target.value)}/></label>
