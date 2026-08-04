@@ -126,10 +126,10 @@ class GammaDynamicsQuartet(GammaDynamicsSix):
             "gamma": .5 * percentiles["gamma"],
         }
         ideal_ranges = {
-            "zomma":"combines with Color for intensity >= 0.65",
-            "color":"combines with Zomma for intensity >= 0.65",
+            "zomma":"magnitude percentile >= 0.65",
+            "color":"magnitude percentile >= 0.65",
             "speed":"non-zero and signed with the call direction",
-            "gamma":"non-zero curvature base; magnitude strengthens pressure",
+            "gamma":"non-zero curvature base; magnitude percentile >= 0.50",
         }
         if not warmed:
             explanation=f"Building a relative baseline: {len(samples)}/{self.minimum_history} observations."
