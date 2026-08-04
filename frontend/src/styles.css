@@ -786,3 +786,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-actual-grid article{min-height:96px;padding:6px 8px}.gamma-actual-grid article>div span{font-size:11px}.gamma-actual-grid article>div small{font-size:8px}.gamma-actual-grid article>b{margin:5px 0 4px;font-size:18px;line-height:1}.gamma-actual-grid article>b>small:not(.ideal-distance){font-size:8px}.gamma-actual-grid .ideal-distance{margin-left:0;padding:2px 5px;font-size:8px;white-space:nowrap}.gamma-actual-grid p{margin-top:4px;font-size:10px;line-height:1.2}
 .gamma-ideal-values-grid{grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible;padding-bottom:0;margin-top:5px}.gamma-ideal-values-grid.gamma-four-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.gamma-ideal-values-grid article{min-height:68px;padding:6px 8px}.gamma-ideal-values-grid article>span{font-size:9px}.gamma-ideal-values-grid article>div{display:grid;grid-template-columns:1fr;gap:1px;margin:3px 0}.gamma-ideal-values-grid article>div b{margin:0;font-size:16px}.gamma-ideal-values-grid article>div b small{display:inline;margin-left:3px;font-size:8px}.gamma-ideal-values-grid article>div strong{color:#c8ff72;font:700 12px var(--font-mono)}.gamma-ideal-values-grid article>small{font-size:9px;line-height:1.2}
 @media(max-width:650px){.gamma-dynamics-grid.gamma-actual-grid.gamma-four-grid,.gamma-ideal-values-grid,.gamma-ideal-values-grid.gamma-four-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Compact the leading direction column in all Gamma 1.0, Delta, and Gamma 2.0 event logs. */
+.gamma-dynamics-log>.gamma-log-scroll>table>thead>tr>th:first-child,
+.gamma-dynamics-log>.gamma-log-scroll>table>tbody>tr:not(.gamma-family-dropdown-row)>td:first-child{
+  width:108px;
+  min-width:108px;
+  max-width:108px;
+  padding-left:10px;
+  padding-right:8px;
+}
