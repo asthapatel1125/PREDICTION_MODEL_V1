@@ -11,7 +11,7 @@ from axiom.domain.models import MarketState
 
 SYSTEM_GREEKS = {
     "PRIMARY_OPTIONS": ("gamma", "vanna", "charm", "speed", "zomma", "color", "ultima"),
-    "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma"),
+    "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma", "ultima", "vomma"),
     "DELTA_DYNAMICS": ("ultima", "zomma", "gamma", "speed", "color", "delta"),
 }
 
@@ -40,10 +40,21 @@ class OutcomeAttributionTracker:
     def _direction_sign(direction: Direction) -> int:
         return 1 if direction == Direction.UP else -1
 
-    def _target_spec(self, symbol: str, timestamp: datetime) -> dict[str, Any]:
+    def _target_spec(self, symbol: str, timestamp: datetime, system: str | None = None) -> dict[str, Any]:
         """Describe the target without pretending that QQQ and NQ share a point scale."""
         if symbol == "QQQ":
             eastern=timestamp.astimezone(self.eastern)
+            if system == "GAMMA_DYNAMICS":
+                morning=eastern.weekday()<5 and time(9,30)<=eastern.time()<time(12,0)
+                target_points=1.25 if morning else .75
+                return {
+                    "target_points":target_points,
+                    "target_basis":"GAMMA_NYSE_OPEN_TO_NOON_1_25_ELSE_0_75",
+                    "target_nq_points":None,
+                    "target_conversion_method":"GAMMA_SESSION_POINT_TARGET",
+                    "target_conversion_quality":"OBSERVED_INSTRUMENT_SCALE",
+                    "target_label":"1.25-POINT OPEN-TO-NOON REACH" if morning else "0.75-POINT OFF-HOURS REACH",
+                }
             regular_hours=eastern.weekday()<5 and time(9,30)<=eastern.time()<time(16,0)
             target_points=1.25 if regular_hours else .25
             return {
@@ -92,7 +103,16 @@ class OutcomeAttributionTracker:
                 if samples else 0.5
             )
             sign = 1 if value > 0 else -1 if value < 0 else 0
-            scores[name] = direction_sign * sign * percentile
+            # Gamma Dynamics uses Speed as its signed price-direction term.
+            # The other terms are curvature/context magnitudes because their
+            # raw signs are not directionally interpretable without a complete
+            # strike/moneyness and IV-change surface.
+            scores[name] = (
+                direction_sign * sign * percentile
+                if system == "GAMMA_DYNAMICS" and name == "speed"
+                else percentile if system == "GAMMA_DYNAMICS"
+                else direction_sign * sign * percentile
+            )
         return scores
 
     @staticmethod
@@ -100,6 +120,16 @@ class OutcomeAttributionTracker:
         if not scores:
             return None, None
         return max(scores, key=scores.get), min(scores, key=scores.get)
+
+    @staticmethod
+    def _rankings(scores: dict[str, float]) -> dict[str, list[str]]:
+        """Place six deterministic Greek scores into five ordered audit bands."""
+        ordered=[name for name,_ in sorted(scores.items(),key=lambda item:(-float(item[1]),item[0]))]
+        if not ordered:
+            return {name:[] for name in ("strongest","strong","normal","weak","weakest")}
+        # Six inputs map to five labels; the two middle inputs share NORMAL.
+        slots={"strongest":ordered[:1],"strong":ordered[1:2],"normal":ordered[2:4],"weak":ordered[4:5],"weakest":ordered[5:6]}
+        return slots
 
     def _expire(self, record: dict[str, Any]) -> None:
         """Close an untouched path using its last real observation."""
@@ -124,6 +154,9 @@ class OutcomeAttributionTracker:
             target_shortfall_points=shortfall,
             strongest_greek_current=strongest,
             weakest_greek_current=weakest,
+            greek_scores_at_failure=dict(scores),
+            greek_rankings_at_failure=self._rankings(scores),
+            greek_values_at_failure=dict(record.get("greek_values_current", {})),
         )
 
     def _call_id(self,timestamp:datetime,system:str)->str:
@@ -270,6 +303,8 @@ class OutcomeAttributionTracker:
             weakest_greek_at_target=weakest,
             decay_greek_at_target=decay,
             greek_scores_at_target=scores,
+            greek_rankings_at_target=self._rankings(scores),
+            greek_values_at_target=dict(record.get("greek_values_current", {})),
         )
 
     @staticmethod
@@ -281,8 +316,8 @@ class OutcomeAttributionTracker:
             inputs = gamma.inputs
             return [
                 f"Speed {inputs.get('speed', 0):+.4g} supplies the {side} direction while Gamma magnitude {abs(inputs.get('gamma', 0)):.4g} supplies the active curvature base.",
-                f"Zomma/Color relative intensity is {gamma.intensity:.1%}, above the {gamma.intensity_threshold:.1%} qualification threshold.",
-                f"Signed curvature pressure is {gamma.pressure:+.2f}, confirming the {side} Gamma-dynamics state.",
+                f"Zomma/Color/Ultima/Vomma normalized intensity is {gamma.intensity:.1%}, against the {gamma.intensity_threshold:.1%} qualification threshold.",
+                f"Signed six-Greek curvature pressure is {gamma.pressure:+.2f}, confirming the {side} Gamma-dynamics state.",
             ]
         if system == "DELTA_DYNAMICS" and state.zone_intelligence:
             zone=state.zone_intelligence
@@ -439,7 +474,7 @@ class OutcomeAttributionTracker:
             # contract. The two-digit stream inside call_id already separates
             # systems that fire during the same millisecond.
             signal_id = f"{call_id}-{symbol}"
-            target_spec=self._target_spec(symbol,now)
+            target_spec=self._target_spec(symbol,now,system)
             if system=="DELTA_DYNAMICS" and symbol!="QQQ":
                 target_spec={**target_spec,"target_points":1.25,"target_basis":"ZONE_1_25_POINT_REACH",
                     "target_conversion_method":"DIRECT_ZONE_INSTRUMENT_POINTS",
@@ -479,6 +514,11 @@ class OutcomeAttributionTracker:
                 "weakest_greek_at_target":None,
                 "decay_greek_at_target":None,
                 "greek_scores_at_target":{},
+                "greek_scores_at_failure":{},
+                "greek_rankings_at_target":{},
+                "greek_rankings_at_failure":{},
+                "greek_values_at_target":{},
+                "greek_values_at_failure":{},
                 "minute_bars":[{
                     "timestamp":self._minute_bucket(now),
                     "open":price,"high":price,"low":price,"close":price,"samples":1,
@@ -503,6 +543,7 @@ class OutcomeAttributionTracker:
                 "decay_greek": weakest,
                 "decision_reasons": self._decision_reasons(system, state, direction),
                 "greek_scores_at_signal": scores,
+                "greek_rankings_at_signal": self._rankings(scores),
                 "greek_scores_current": scores,
                 "greek_scores_at_high": scores,
                 "greek_scores_at_low": scores,

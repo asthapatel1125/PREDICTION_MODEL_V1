@@ -29,7 +29,15 @@ def test_qqq_target_uses_nyse_regular_hours():
     assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 20, 0, tzinfo=timezone.utc))["target_points"] == .25
 
 
-def test_long_gamma_tracks_one_minute_ohlc_and_fifty_point_target():
+def test_gamma_qqq_target_uses_open_to_noon_then_point_seventy_five():
+    tracker = OutcomeAttributionTracker()
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 13, 29, tzinfo=timezone.utc), "GAMMA_DYNAMICS")["target_points"] == .75
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 13, 30, tzinfo=timezone.utc), "GAMMA_DYNAMICS")["target_points"] == 1.25
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 15, 59, tzinfo=timezone.utc), "GAMMA_DYNAMICS")["target_points"] == 1.25
+    assert tracker._target_spec("QQQ", datetime(2026, 7, 27, 16, 0, tzinfo=timezone.utc), "GAMMA_DYNAMICS")["target_points"] == .75
+
+
+def test_long_gamma_tracks_one_minute_ohlc_and_session_target():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
     created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "TWELVE_DATA", start)
@@ -38,23 +46,26 @@ def test_long_gamma_tracks_one_minute_ohlc_and_fifty_point_target():
     assert created[0]["call_id"] == "2026072710300000003"
     assert signal_id == "2026072710300000003-QQQ"
 
-    tracker.process(state(start + timedelta(seconds=5), 507), EngineMode.LIVE, 507, "TWELVE_DATA", start + timedelta(seconds=5))
-    tracker.process(state(start + timedelta(seconds=10), 497), EngineMode.LIVE, 497, "TWELVE_DATA", start + timedelta(seconds=10))
+    tracker.process(state(start + timedelta(seconds=5), 500.7), EngineMode.LIVE, 500.7, "TWELVE_DATA", start + timedelta(seconds=5))
+    tracker.process(state(start + timedelta(seconds=10), 499.7), EngineMode.LIVE, 499.7, "TWELVE_DATA", start + timedelta(seconds=10))
     target_time = start + timedelta(minutes=2,seconds=5)
-    updates = tracker.process(state(target_time, 550), EngineMode.LIVE, 550, "TWELVE_DATA", target_time)
+    updates = tracker.process(state(target_time, 501.25), EngineMode.LIVE, 501.25, "TWELVE_DATA", target_time)
     record = next(item for item in updates if item["id"] == signal_id)
 
-    assert record["favorable_points"] == 50
-    assert record["adverse_points"] == -3
-    assert record["target_reached_price"] == 550
+    assert record["favorable_points"] == 1.25
+    assert round(record["adverse_points"], 2) == -.3
+    assert record["target_reached_price"] == 501.25
     assert record["seconds_to_target"] == 125
     assert record["target_touch_type"] == "OPEN"
     assert record["minute_bars"][0] == {
         "timestamp": start.replace(second=0,microsecond=0),
-        "open":500,"high":507,"low":497,"close":497,"samples":3,
+        "open":500,"high":500.7,"low":499.7,"close":499.7,"samples":3,
     }
     assert record["strongest_greek_at_target"]
     assert record["weakest_greek_at_target"]
+    assert sum(len(names) for names in record["greek_rankings_at_signal"].values()) == 6
+    assert sum(len(names) for names in record["greek_rankings_at_target"].values()) == 6
+    assert {"ultima", "vomma"}.issubset(record["greek_values_at_signal"])
 
 
 def test_short_target_is_recorded_as_intraminute_low():
@@ -62,11 +73,11 @@ def test_short_target_is_recorded_as_intraminute_low():
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
     created = tracker.process(state(start, 500,Direction.DOWN), EngineMode.LIVE, 500, "THETADATA", start)
     signal_id = created[0]["id"]
-    updates = tracker.process(state(start + timedelta(seconds=5), 450,Direction.DOWN), EngineMode.LIVE, 450, "THETADATA", start + timedelta(seconds=5))
+    updates = tracker.process(state(start + timedelta(seconds=5), 498.75,Direction.DOWN), EngineMode.LIVE, 498.75, "THETADATA", start + timedelta(seconds=5))
     record = next(item for item in updates if item["id"] == signal_id)
-    assert record["target_reached_price"] == 450
+    assert record["target_reached_price"] == 498.75
     assert record["target_touch_type"] == "LOW"
-    assert record["minute_bars"][0]["low"] == 450
+    assert record["minute_bars"][0]["low"] == 498.75
 
 
 def test_flicker_does_not_open_duplicate_same_direction_call():
@@ -92,17 +103,18 @@ def test_unreached_call_expires_at_horizon_with_last_observed_values():
     created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
     signal_id = created[0]["id"]
     last_time = start + timedelta(minutes=29, seconds=55)
-    tracker.process(state(last_time, 512), EngineMode.LIVE, 512, "THETADATA", last_time)
+    tracker.process(state(last_time, 500.8), EngineMode.LIVE, 500.8, "THETADATA", last_time)
     updates = tracker.process(
         state(start + timedelta(minutes=30, seconds=5), 560),
         EngineMode.LIVE, 560, "THETADATA", start + timedelta(minutes=30, seconds=5),
     )
     record = next(item for item in updates if item["id"] == signal_id)
     assert record["status"] == "EXPIRED"
-    assert record["final_price"] == 512
-    assert record["highest_price"] == 512
+    assert record["final_price"] == 500.8
+    assert record["highest_price"] == 500.8
     assert record["target_reached_at"] is None
-    assert record["target_shortfall_points"] == 38
+    assert round(record["target_shortfall_points"], 2) == .45
+    assert sum(len(names) for names in record["greek_rankings_at_failure"].values()) == 6
     assert signal_id not in tracker._active
 
 
@@ -112,11 +124,11 @@ def test_target_touch_exactly_at_expiry_counts():
     created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
     signal_id = created[0]["id"]
     expiry = start + timedelta(minutes=30)
-    updates = tracker.process(state(expiry, 550), EngineMode.LIVE, 550, "THETADATA", expiry)
+    updates = tracker.process(state(expiry, 501.25), EngineMode.LIVE, 501.25, "THETADATA", expiry)
     record = next(item for item in updates if item["id"] == signal_id)
     assert record["status"] == "TARGET_REACHED"
     assert record["target_reached_at"] == expiry
-    assert record["target_reached_price"] == 550
+    assert record["target_reached_price"] == 501.25
 
 
 def test_long_risk_family_activates_zero_four_six_eight_once():

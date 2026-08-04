@@ -39,10 +39,17 @@ except ModuleNotFoundError:
             samples=[abs(float(value)) for value in values]
             if not samples:return 0.0
             target=abs(float(current));return min(1.0,max(0.0,(sum(value<target for value in samples)+.5*sum(value==target for value in samples))/len(samples)))
+        @staticmethod
+        def _scaled(current:float,values:Sequence[float])->float:
+            samples=np.asarray([float(value) for value in values],dtype=float)
+            if not len(samples) or float(samples.std())<=1e-12:return 0.0
+            return float(np.clip((float(current)-float(samples.mean()))/float(samples.std()),-3,3)/3)
         def calculate(self,greeks:Greeks,history:Sequence[Greeks],source_symbol:str)->GammaDynamics:
-            inputs={name:float(getattr(greeks,name)) for name in ("zomma","speed","color","gamma")}
+            inputs={name:float(getattr(greeks,name)) for name in ("zomma","color","speed","gamma","ultima","vomma")}
             percentiles={name:self._percentile(value,[getattr(item,name) for item in history]) for name,value in inputs.items()}
-            intensity=(percentiles["zomma"]+percentiles["color"])/2;pressure_magnitude=(percentiles["speed"]+percentiles["gamma"])/2
+            normalized={name:self._scaled(value,[getattr(item,name) for item in history]) for name,value in inputs.items()}
+            intensity=.30*percentiles["zomma"]+.25*percentiles["color"]+.25*percentiles["ultima"]+.20*percentiles["vomma"]
+            pressure_magnitude=.45*percentiles["speed"]+.30*percentiles["gamma"]+.15*percentiles["zomma"]+.10*percentiles["vomma"]
             gamma_active=abs(inputs["gamma"])>self.zero_tolerance
             up=inputs["speed"]>self.zero_tolerance and gamma_active
             down=inputs["speed"]< -self.zero_tolerance and gamma_active
@@ -51,11 +58,11 @@ except ModuleNotFoundError:
             pressure=pressure_magnitude if up else -pressure_magnitude if down else 0.0
             explanation=(f"Building a relative baseline: {len(history)}/{self.minimum_history} observations." if not warmed else
                 "Gamma or Speed is effectively zero, so signed curvature pressure is not confirmed." if not (up or down) else
-                "Gamma and Speed align, but Zomma/Color intensity is below its rolling threshold." if intensity<self.intensity_threshold else
-                f"Speed indicates {'upward' if up else 'downward'} curvature change while active Gamma supplies the curvature base and Zomma/Color show elevated sensitivity.")
+                "Gamma and Speed align, but six-Greek intensity is below its rolling threshold." if intensity<self.intensity_threshold else
+                f"Speed indicates {'upward' if up else 'downward'} curvature change while the six-Greek curvature context is elevated.")
             return GammaDynamics(decision=decision,qualified=qualified,source_symbol=source_symbol,intensity=intensity,
                 pressure=pressure,history_points=len(history),intensity_threshold=self.intensity_threshold,
-                inputs=inputs,percentiles=percentiles,explanation=explanation)
+                inputs=inputs,percentiles=percentiles,normalized=normalized,explanation=explanation)
 
 
 class DecisionPipeline:

@@ -159,6 +159,12 @@ class SqlAlchemyRepository:
         favorable=max(0.0,float(payload.get("favorable_points",0.0)))
         target_points=float(payload.get("target_points",abs(target-entry)))
         partial_threshold=float(payload.get("partial_target_points",target_points*0.6))
+        failure_scores=dict(payload.get("greek_scores_current") or {})
+        ordered=[name for name,_ in sorted(failure_scores.items(),key=lambda item:(-float(item[1]),item[0]))]
+        failure_rankings={
+            "strongest":ordered[:1],"strong":ordered[1:2],"normal":ordered[2:4],
+            "weak":ordered[4:5],"weakest":ordered[5:6],
+        }
         payload.update(
             status="EXPIRED",completion_reason="HORIZON_EXPIRED",
             outcome_grade="PARTIAL" if favorable>=partial_threshold else "FAILED",
@@ -172,6 +178,9 @@ class SqlAlchemyRepository:
             dynamic_low=float(payload.get("dynamic_low",payload.get("lowest_price",row.lowest_price))),
             strongest_greek_current=payload.get("strongest_greek_current",payload.get("strongest_greek")),
             weakest_greek_current=payload.get("weakest_greek_current",payload.get("weakest_greek")),
+            greek_scores_at_failure=failure_scores,
+            greek_rankings_at_failure=failure_rankings,
+            greek_values_at_failure=dict(payload.get("greek_values_current") or {}),
         )
         row.status="EXPIRED"
         row.payload=payload

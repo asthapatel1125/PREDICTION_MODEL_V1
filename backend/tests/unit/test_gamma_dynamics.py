@@ -8,10 +8,14 @@ def history(count=30):
 
 
 def test_gamma_dynamics_qualifies_upward_relative_pressure():
-    result = GammaDynamicsQuartet().calculate(Greeks(gamma=.08, speed=.02, zomma=.2, color=.3), history(), "QQQ")
+    result = GammaDynamicsQuartet().calculate(Greeks(gamma=.08, speed=.02, zomma=.2, color=.3, ultima=.08, vomma=.09), history(), "QQQ")
     assert result.qualified is True
     assert result.decision is Direction.UP
     assert result.pressure > 0
+    assert set(result.inputs) == {"zomma", "color", "speed", "gamma", "ultima", "vomma"}
+    assert set(result.normalized) == set(result.inputs)
+    assert result.ideal_ranges["ultima"]
+    assert result.ideal_ranges["vomma"]
 
 
 def test_gamma_dynamics_qualifies_downward_relative_pressure():

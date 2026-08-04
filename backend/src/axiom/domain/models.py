@@ -75,7 +75,7 @@ class MicroRange(FrozenModel):
 
 
 class GammaDynamics(FrozenModel):
-    """Relative Gamma/Speed pressure with Zomma/Color intensity context."""
+    """Normalized six-Greek Gamma dynamics with volatility-curvature context."""
     decision: Direction = Direction.NEUTRAL
     qualified: bool = False
     source_symbol: str
@@ -85,6 +85,9 @@ class GammaDynamics(FrozenModel):
     intensity_threshold: float = Field(ge=0, le=1)
     inputs: dict[str, float]
     percentiles: dict[str, float]
+    normalized: dict[str, float] = Field(default_factory=dict)
+    contributions: dict[str, float] = Field(default_factory=dict)
+    ideal_ranges: dict[str, str] = Field(default_factory=dict)
     explanation: str
 
 
