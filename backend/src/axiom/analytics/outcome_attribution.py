@@ -96,6 +96,15 @@ class OutcomeAttributionTracker:
         if greeks is None:
             return {}
         direction_sign = self._direction_sign(direction)
+        if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
+            model = getattr(state,"gamma_dynamics_v2",None) if system == "GAMMA_DYNAMICS_V2" else state.gamma_dynamics
+            if model:
+                return {
+                    name: (
+                        direction_sign * (1 if float(getattr(greeks,name)) > 0 else -1 if float(getattr(greeks,name)) < 0 else 0) * abs(float(model.normalized.get(name,0)))
+                        if name == "speed" else abs(float(model.normalized.get(name,0)))
+                    ) for name in SYSTEM_GREEKS[system]
+                }
         scores: dict[str, float] = {}
         for name in SYSTEM_GREEKS[system]:
             value = float(getattr(greeks, name))

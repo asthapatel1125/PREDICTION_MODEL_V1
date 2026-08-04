@@ -60,9 +60,9 @@ class GammaDynamicsSix:
         # direction or moneyness surface, the signs of Vomma/Ultima/Zomma/Color
         # are not a reliable price-direction signal. Speed remains directional.
         intensity_weights = {"zomma": .30, "color": .25, "ultima": .25, "vomma": .20}
-        intensity = sum(percentiles[name] * weight for name, weight in intensity_weights.items())
+        intensity = sum(abs(normalized[name]) * weight for name, weight in intensity_weights.items())
         pressure_weights = {"speed": .45, "gamma": .30, "zomma": .15, "vomma": .10}
-        pressure_magnitude = sum(percentiles[name] * weight for name, weight in pressure_weights.items())
+        pressure_magnitude = sum(abs(normalized[name]) * weight for name, weight in pressure_weights.items())
         gamma_active = abs(inputs["gamma"]) > self.zero_tolerance
         aligned_up = inputs["speed"] > self.zero_tolerance and gamma_active
         aligned_down = inputs["speed"] < -self.zero_tolerance and gamma_active
@@ -71,27 +71,27 @@ class GammaDynamicsSix:
         qualified = warmed and intensity >= self.intensity_threshold and (aligned_up or aligned_down)
         decision = Direction.UP if qualified and aligned_up else Direction.DOWN if qualified and aligned_down else Direction.NEUTRAL
         contributions = {
-            "speed": pressure_weights["speed"] * percentiles["speed"] * (1 if aligned_up else -1 if aligned_down else 0),
-            "gamma": pressure_weights["gamma"] * percentiles["gamma"],
-            "zomma": intensity_weights["zomma"] * percentiles["zomma"],
-            "color": intensity_weights["color"] * percentiles["color"],
-            "ultima": intensity_weights["ultima"] * percentiles["ultima"],
-            "vomma": intensity_weights["vomma"] * percentiles["vomma"],
+            "speed": pressure_weights["speed"] * abs(normalized["speed"]) * (1 if aligned_up else -1 if aligned_down else 0),
+            "gamma": pressure_weights["gamma"] * abs(normalized["gamma"]),
+            "zomma": intensity_weights["zomma"] * abs(normalized["zomma"]),
+            "color": intensity_weights["color"] * abs(normalized["color"]),
+            "ultima": intensity_weights["ultima"] * abs(normalized["ultima"]),
+            "vomma": intensity_weights["vomma"] * abs(normalized["vomma"]),
         }
         ideal_ranges = {
-            "zomma": "magnitude percentile >= 0.65; elevated IV-to-Gamma sensitivity",
-            "color": "magnitude percentile >= 0.65; elevated time-to-Gamma sensitivity",
-            "speed": "non-zero and signed with the call direction",
-            "gamma": "non-zero curvature base; magnitude percentile >= 0.50 preferred",
-            "ultima": "magnitude percentile >= 0.65; elevated volatility-instability context",
-            "vomma": "magnitude percentile >= 0.65; elevated volatility-convexity context",
+            "zomma": "|normalized| >= 0.30; elevated IV-to-Gamma sensitivity",
+            "color": "|normalized| >= 0.30; elevated time-to-Gamma sensitivity",
+            "speed": "|normalized| >= 0.30 and signed with the call direction",
+            "gamma": "|normalized| >= 0.30; active curvature base",
+            "ultima": "|normalized| >= 0.30; elevated volatility-instability context",
+            "vomma": "|normalized| >= 0.30; elevated volatility-convexity context",
         }
         if not warmed:
             explanation = f"Building a relative baseline: {len(samples)}/{self.minimum_history} observations."
         elif not gamma_active or abs(inputs["speed"]) <= self.zero_tolerance:
             explanation = "Gamma or Speed is effectively zero, so signed curvature pressure is not confirmed."
         elif intensity < self.intensity_threshold:
-            explanation = "Gamma and Speed align, but normalized Zomma/Color/Ultima/Vomma intensity is below its rolling threshold."
+            explanation = "Gamma and Speed align, but weighted |normalized| Zomma/Color/Ultima/Vomma intensity is below 0.65."
         else:
             direction = "upward" if aligned_up else "downward"
             explanation = f"Speed indicates {direction} curvature change, Gamma supplies the active curvature base, and Zomma/Color/Ultima/Vomma confirm elevated volatility-time sensitivity."
@@ -111,8 +111,8 @@ class GammaDynamicsQuartet(GammaDynamicsSix):
         samples = list(history)
         percentiles = {name: self._absolute_percentile(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
         normalized = {name: self._scaled(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
-        intensity = (percentiles["zomma"] + percentiles["color"]) / 2
-        pressure_magnitude = (percentiles["speed"] + percentiles["gamma"]) / 2
+        intensity = (abs(normalized["zomma"]) + abs(normalized["color"])) / 2
+        pressure_magnitude = (abs(normalized["speed"]) + abs(normalized["gamma"])) / 2
         gamma_active = abs(inputs["gamma"]) > self.zero_tolerance
         aligned_up = inputs["speed"] > self.zero_tolerance and gamma_active
         aligned_down = inputs["speed"] < -self.zero_tolerance and gamma_active
@@ -121,22 +121,22 @@ class GammaDynamicsQuartet(GammaDynamicsSix):
         qualified = warmed and intensity >= self.intensity_threshold and (aligned_up or aligned_down)
         decision = Direction.UP if qualified and aligned_up else Direction.DOWN if qualified and aligned_down else Direction.NEUTRAL
         contributions = {
-            "zomma": .5 * percentiles["zomma"], "color": .5 * percentiles["color"],
-            "speed": .5 * percentiles["speed"] * (1 if aligned_up else -1 if aligned_down else 0),
-            "gamma": .5 * percentiles["gamma"],
+            "zomma": .5 * abs(normalized["zomma"]), "color": .5 * abs(normalized["color"]),
+            "speed": .5 * abs(normalized["speed"]) * (1 if aligned_up else -1 if aligned_down else 0),
+            "gamma": .5 * abs(normalized["gamma"]),
         }
         ideal_ranges = {
-            "zomma":"magnitude percentile >= 0.65",
-            "color":"magnitude percentile >= 0.65",
-            "speed":"non-zero and signed with the call direction",
-            "gamma":"non-zero curvature base; magnitude percentile >= 0.50",
+            "zomma":"|normalized| >= 0.30",
+            "color":"|normalized| >= 0.30",
+            "speed":"|normalized| >= 0.30 and signed with the call direction",
+            "gamma":"|normalized| >= 0.30; active curvature base",
         }
         if not warmed:
             explanation=f"Building a relative baseline: {len(samples)}/{self.minimum_history} observations."
         elif not gamma_active or abs(inputs["speed"])<=self.zero_tolerance:
             explanation="Gamma or Speed is effectively zero, so signed curvature pressure is not confirmed."
         elif intensity<self.intensity_threshold:
-            explanation="Gamma and Speed align, but Zomma/Color intensity is below its rolling threshold."
+            explanation="Gamma and Speed align, but average |normalized| Zomma/Color intensity is below 0.65."
         else:
             explanation=f"Speed indicates {'upward' if aligned_up else 'downward'} curvature change while Gamma supplies the base and Zomma/Color confirm intensity."
         return GammaDynamics(
