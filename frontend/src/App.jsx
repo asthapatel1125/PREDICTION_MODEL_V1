@@ -807,10 +807,9 @@ function gammaLogVisualState(call){
   const legs=call.family_legs??[],parent=legs.find(leg=>leg.role==="PARENT")??legs[0];
   const legPl=leg=>{const stored=Number(leg?.current_pl_points);if(leg?.current_pl_points!=null&&Number.isFinite(stored))return stored;const legDatum=number(leg?.datum,datum),legPrice=leg?.final_price!=null?number(leg.final_price):price;return call.direction==="UP"?legPrice-legDatum:legDatum-legPrice};
   const parentPl=parent?legPl(parent):call.direction==="UP"?price-datum:datum-price,children=legs.filter(leg=>leg.role==="CHILD"),calculatedTotal=legs.reduce((sum,leg)=>sum+legPl(leg),0),storedTotal=Number(call.family_total_pl_points),familyTotal=call.family_total_pl_points!=null&&Number.isFinite(storedTotal)?storedTotal:calculatedTotal;
-  if(String(call.status).toUpperCase()==="INTERRUPTED")return {key:"failed",label:`INTERRUPTED · ${familyTotal>0?"SUCCEEDING":"FAILING"}`};
   const childRescued=outcome.closed&&parentPl<=0&&familyTotal>0&&children.some(leg=>legPl(leg)>0);
   if(childRescued)return {key:"child-rescued",label:"SUCCESS · CHILD RESCUE"};
-  if(outcome.closed)return outcome.grade==="success"?{key:"success",label:"SUCCESS"}:{key:"failed",label:"FAILED"};
+  if(outcome.closed)return outcome.grade==="success"?{key:"success",label:outcome.basis==="directional"?"SUCCESS · DIRECTIONAL":"SUCCESS"}:{key:"failed",label:"FAILED"};
   const succeeding=call.direction==="UP"?price>=datum:price<=datum;
   return succeeding?{key:"tracking-success",label:"TRACKING · SUCCEEDING"}:{key:"tracking-failing",label:"TRACKING · FAILING"};
 }
@@ -1022,10 +1021,10 @@ const callOutcome=call=>{
   if(!call)return {grade:"tracking",favorable:0,closed:false};
   const snapshot=deadlineSnapshot(call),datum=number(call.entry_price),favorable=call.direction==="UP"?Math.max(0,number(snapshot.high,datum)-datum):Math.max(0,datum-number(snapshot.low,datum));
   const closed=Boolean(call.target_reached_at)||["COMPLETE","EXPIRED","INTERRUPTED"].includes(String(call.status).toUpperCase())||callDeadlinePassed(call);
-  const stored=String(call.outcome_grade??"").toLowerCase();
+  const stored=String(call.outcome_grade??"").toLowerCase(),finalPrice=number(snapshot.price,datum),directionalSuccess=closed&&(call.direction==="UP"?finalPrice>datum:finalPrice<datum);
   const partialThreshold=number(call.partial_target_points,callTargetPoints(call)*.6);
-  const grade=!closed?"tracking":stored==="success"||call.target_reached_at?"success":stored==="partial"||favorable>=partialThreshold?"partial":"failed";
-  return {grade,favorable,closed};
+  const grade=!closed?"tracking":stored==="success"||call.target_reached_at||directionalSuccess?"success":stored==="partial"||favorable>=partialThreshold?"partial":"failed",basis=call.target_reached_at||call.success_basis==="TARGET"?"target":directionalSuccess||call.success_basis==="DIRECTIONAL_FINAL"?"directional":null;
+  return {grade,favorable,closed,basis,directionalSuccess};
 };
 const easternFilterParts=value=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return {date:"",time:""};const parts=Object.fromEntries(easternIdFormatter.formatToParts(date).filter(part=>part.type!=="literal").map(part=>[part.type,part.value]));return {date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}:${parts.second}`}};
 const marketHourLabel=value=>{

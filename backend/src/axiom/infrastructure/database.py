@@ -159,6 +159,8 @@ class SqlAlchemyRepository:
         favorable=max(0.0,float(payload.get("favorable_points",0.0)))
         target_points=float(payload.get("target_points",abs(target-entry)))
         partial_threshold=float(payload.get("partial_target_points",target_points*0.6))
+        directional_success=row.system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} and (
+            final_price>entry if row.direction=="UP" else final_price<entry)
         failure_scores=dict(payload.get("greek_scores_current") or {})
         ordered=[name for name,_ in sorted(failure_scores.items(),key=lambda item:(-float(item[1]),item[0]))]
         failure_rankings={
@@ -167,7 +169,8 @@ class SqlAlchemyRepository:
         }
         payload.update(
             status="EXPIRED",completion_reason="HORIZON_EXPIRED",
-            outcome_grade="PARTIAL" if favorable>=partial_threshold else "FAILED",
+            outcome_grade="SUCCESS" if directional_success else "PARTIAL" if favorable>=partial_threshold else "FAILED",
+            success_basis="DIRECTIONAL_FINAL" if directional_success else None,
             final_favorable_points=favorable,
             expired_at=expires_at.isoformat(),final_price=final_price,
             final_price_at=payload.get("current_price_at",expires_at.isoformat()),
@@ -201,13 +204,16 @@ class SqlAlchemyRepository:
         if (now-last_observed).total_seconds()<=stale_seconds:return False
         alerted_at=row.alerted_at if row.alerted_at.tzinfo else row.alerted_at.replace(tzinfo=timezone.utc)
         final_price=float(payload.get("current_price",payload.get("entry_price",row.entry_price)))
+        entry=float(payload.get("entry_price",row.entry_price))
+        directional_success=final_price>entry if row.direction=="UP" else final_price<entry
         favorable=max(0.0,float(payload.get("favorable_points",0.0)))
         partial_threshold=float(payload.get("partial_target_points",float(payload.get("target_points",0.0))*.6))
         scores=dict(payload.get("greek_scores_current") or {})
         ordered=[name for name,_ in sorted(scores.items(),key=lambda item:(-float(item[1]),item[0]))]
         payload.update(
             status="INTERRUPTED",lifecycle_state="COMPLETE",completion_reason="STREAM_STALE",
-            outcome_grade="PARTIAL" if favorable>=partial_threshold else "FAILED",
+            outcome_grade="SUCCESS" if directional_success else "PARTIAL" if favorable>=partial_threshold else "FAILED",
+            success_basis="DIRECTIONAL_FINAL" if directional_success else None,
             final_favorable_points=favorable,final_price=final_price,final_price_at=last_observed.isoformat(),
             seconds_observed=max(0.0,(last_observed-alerted_at).total_seconds()),
             greek_scores_at_failure=scores,

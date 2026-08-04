@@ -155,11 +155,15 @@ class OutcomeAttributionTracker:
         shortfall = max(0.0, target-final_price if is_long else final_price-target)
         favorable = max(0.0, float(record.get("favorable_points", 0.0)))
         partial_threshold = float(record.get("partial_target_points", float(record["target_points"]) * 0.6))
+        directional_success = record.get("system") in {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2"} and (
+            final_price > float(record["entry_price"]) if is_long else final_price < float(record["entry_price"])
+        )
         record.update(
             status="EXPIRED",
             lifecycle_state="COMPLETE",
             completion_reason="HORIZON_EXPIRED",
-            outcome_grade="PARTIAL" if favorable >= partial_threshold else "FAILED",
+            outcome_grade="SUCCESS" if directional_success else "PARTIAL" if favorable >= partial_threshold else "FAILED",
+            success_basis="DIRECTIONAL_FINAL" if directional_success else None,
             final_favorable_points=favorable,
             expired_at=record["expires_at"],
             final_price=final_price,
@@ -187,11 +191,14 @@ class OutcomeAttributionTracker:
             favorable = max(0.0, float(record.get("favorable_points", 0.0)))
             partial_threshold = float(record.get("partial_target_points", float(record["target_points"]) * .6))
             reached = record.get("target_reached_at") is not None
+            is_long = record["direction"] == Direction.UP.value
+            directional_success = final_price > float(record["entry_price"]) if is_long else final_price < float(record["entry_price"])
             record.update(
                 status="COMPLETE" if reached else "INTERRUPTED",
                 lifecycle_state="COMPLETE",
                 completion_reason=reason,
-                outcome_grade="SUCCESS" if reached else "PARTIAL" if favorable >= partial_threshold else "FAILED",
+                outcome_grade="SUCCESS" if reached or directional_success else "PARTIAL" if favorable >= partial_threshold else "FAILED",
+                success_basis="TARGET" if reached else "DIRECTIONAL_FINAL" if directional_success else None,
                 final_favorable_points=favorable,
                 final_price=final_price,
                 final_price_at=final_at,
@@ -457,7 +464,7 @@ class OutcomeAttributionTracker:
                 record.update(
                     status="COMPLETE",completion_reason="TARGET_REACHED",
                     lifecycle_state="COMPLETE",
-                    outcome_grade="SUCCESS",final_favorable_points=max(
+                    outcome_grade="SUCCESS",success_basis="TARGET",final_favorable_points=max(
                         float(record["target_points"]),float(record.get("favorable_points",0.0))),
                     final_price=final_price,final_price_at=now,
                     current_price=final_price,current_price_at=now,

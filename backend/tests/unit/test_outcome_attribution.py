@@ -113,6 +113,8 @@ def test_unreached_call_expires_at_horizon_with_last_observed_values():
     assert record["final_price"] == 500.8
     assert record["highest_price"] == 500.8
     assert record["target_reached_at"] is None
+    assert record["outcome_grade"] == "SUCCESS"
+    assert record["success_basis"] == "DIRECTIONAL_FINAL"
     assert round(record["target_shortfall_points"], 2) == .45
     assert sum(len(names) for names in record["greek_rankings_at_failure"].values()) == 4
     assert signal_id not in tracker._active
@@ -132,7 +134,22 @@ def test_stream_interruption_closes_gamma_call_at_last_observed_state():
     assert record["final_price"] == 500.4
     assert record["final_price_at"] == last_time
     assert record["seconds_observed"] == 25
+    assert record["outcome_grade"] == "SUCCESS"
+    assert record["success_basis"] == "DIRECTIONAL_FINAL"
     assert signal_id not in tracker._active
+
+
+def test_short_gamma_finishing_below_datum_is_directional_success_without_target():
+    tracker = OutcomeAttributionTracker(horizon_minutes=30)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    tracker.process(state(start, 500, Direction.DOWN), EngineMode.LIVE, 500, "THETADATA", start)
+    last_time = start + timedelta(seconds=25)
+    tracker.process(state(last_time, 499.8, Direction.DOWN), EngineMode.LIVE, 499.8, "THETADATA", last_time)
+    [record] = tracker.finalize_active("STREAM_INTERRUPTED", start + timedelta(minutes=2))
+    assert record["target_reached_at"] is None
+    assert record["final_price"] == 499.8
+    assert record["outcome_grade"] == "SUCCESS"
+    assert record["success_basis"] == "DIRECTIONAL_FINAL"
 
 
 def test_target_touch_exactly_at_expiry_counts():
