@@ -86,7 +86,7 @@ class OutcomeAttributionTracker:
         gamma_v2 = getattr(state,"gamma_dynamics_v2",None)
         if gamma_v2 and gamma_v2.qualified and gamma_v2.decision != Direction.NEUTRAL:
             systems.append(("GAMMA_DYNAMICS_V2", gamma_v2.decision))
-        zone = state.zone_intelligence
+        zone = getattr(state,"zone_intelligence",None)
         if zone and zone.qualified and zone.direction != Direction.NEUTRAL:
             systems.append(("DELTA_DYNAMICS", zone.direction))
         return systems
@@ -99,10 +99,11 @@ class OutcomeAttributionTracker:
         if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
             model = getattr(state,"gamma_dynamics_v2",None) if system == "GAMMA_DYNAMICS_V2" else state.gamma_dynamics
             if model:
+                normalized=getattr(model,"normalized",{})
                 return {
                     name: (
-                        direction_sign * (1 if float(getattr(greeks,name)) > 0 else -1 if float(getattr(greeks,name)) < 0 else 0) * abs(float(model.normalized.get(name,0)))
-                        if name == "speed" else abs(float(model.normalized.get(name,0)))
+                        direction_sign * (1 if float(getattr(greeks,name)) > 0 else -1 if float(getattr(greeks,name)) < 0 else 0) * abs(float(normalized.get(name,0)))
+                        if name == "speed" else abs(float(normalized.get(name,0)))
                     ) for name in SYSTEM_GREEKS[system]
                 }
         scores: dict[str, float] = {}
@@ -171,6 +172,42 @@ class OutcomeAttributionTracker:
             greek_rankings_at_failure=self._rankings(scores),
             greek_values_at_failure=dict(record.get("greek_values_current", {})),
         )
+
+    def finalize_active(self, reason: str, ended_at: datetime | None = None) -> list[dict[str, Any]]:
+        """Close live calls at their last real tick when their stream ends."""
+        updates: list[dict[str, Any]] = []
+        for signal_id, record in list(self._active.items()):
+            if record.get("system") not in {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2"}:
+                continue
+            last_observed = record.get("current_price_at") or record.get("price_observed_at") or record["alerted_at"]
+            final_at = min(ended_at, last_observed) if ended_at and last_observed else (ended_at or last_observed)
+            scores = dict(record.get("greek_scores_current") or {})
+            strongest, weakest = self._leaders(scores)
+            final_price = float(record.get("current_price", record["entry_price"]))
+            favorable = max(0.0, float(record.get("favorable_points", 0.0)))
+            partial_threshold = float(record.get("partial_target_points", float(record["target_points"]) * .6))
+            reached = record.get("target_reached_at") is not None
+            record.update(
+                status="COMPLETE" if reached else "INTERRUPTED",
+                lifecycle_state="COMPLETE",
+                completion_reason=reason,
+                outcome_grade="SUCCESS" if reached else "PARTIAL" if favorable >= partial_threshold else "FAILED",
+                final_favorable_points=favorable,
+                final_price=final_price,
+                final_price_at=final_at,
+                current_price=final_price,
+                seconds_observed=max(0.0, (final_at-record["alerted_at"]).total_seconds()),
+                strongest_greek_current=strongest,
+                weakest_greek_current=weakest,
+                greek_scores_at_failure={} if reached else scores,
+                greek_rankings_at_failure={} if reached else self._rankings(scores),
+                greek_values_at_failure={} if reached else dict(record.get("greek_values_current", {})),
+            )
+            updates.append(dict(record))
+            del self._active[signal_id]
+        if updates:
+            self._episode_direction.clear()
+        return updates
 
     def _call_id(self,timestamp:datetime,system:str)->str:
         stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3,"DELTA_DYNAMICS":4,"GAMMA_DYNAMICS_V2":5}[system]
@@ -432,6 +469,7 @@ class OutcomeAttributionTracker:
             record.update(
                 current_price=price,
                 current_price_at=now,
+                seconds_observed=max(0.0,(now-record["alerted_at"]).total_seconds()),
                 greek_scores_current=scores,
                 strongest_greek_current=strongest_current,
                 weakest_greek_current=weakest_current,

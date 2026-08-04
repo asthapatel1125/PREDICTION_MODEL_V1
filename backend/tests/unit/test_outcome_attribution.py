@@ -63,9 +63,9 @@ def test_long_gamma_tracks_one_minute_ohlc_and_session_target():
     }
     assert record["strongest_greek_at_target"]
     assert record["weakest_greek_at_target"]
-    assert sum(len(names) for names in record["greek_rankings_at_signal"].values()) == 6
-    assert sum(len(names) for names in record["greek_rankings_at_target"].values()) == 6
-    assert {"ultima", "vomma"}.issubset(record["greek_values_at_signal"])
+    assert sum(len(names) for names in record["greek_rankings_at_signal"].values()) == 4
+    assert sum(len(names) for names in record["greek_rankings_at_target"].values()) == 4
+    assert set(record["greek_values_at_signal"]) == {"zomma", "color", "speed", "gamma"}
 
 
 def test_short_target_is_recorded_as_intraminute_low():
@@ -114,7 +114,24 @@ def test_unreached_call_expires_at_horizon_with_last_observed_values():
     assert record["highest_price"] == 500.8
     assert record["target_reached_at"] is None
     assert round(record["target_shortfall_points"], 2) == .45
-    assert sum(len(names) for names in record["greek_rankings_at_failure"].values()) == 6
+    assert sum(len(names) for names in record["greek_rankings_at_failure"].values()) == 4
+    assert signal_id not in tracker._active
+
+
+def test_stream_interruption_closes_gamma_call_at_last_observed_state():
+    tracker = OutcomeAttributionTracker(horizon_minutes=30)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
+    signal_id = created[0]["id"]
+    last_time = start + timedelta(seconds=25)
+    tracker.process(state(last_time, 500.4), EngineMode.LIVE, 500.4, "THETADATA", last_time)
+    [record] = tracker.finalize_active("STREAM_INTERRUPTED", start + timedelta(minutes=2))
+    assert record["id"] == signal_id
+    assert record["status"] == "INTERRUPTED"
+    assert record["completion_reason"] == "STREAM_INTERRUPTED"
+    assert record["final_price"] == 500.4
+    assert record["final_price_at"] == last_time
+    assert record["seconds_observed"] == 25
     assert signal_id not in tracker._active
 
 

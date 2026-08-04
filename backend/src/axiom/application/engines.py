@@ -20,6 +20,7 @@ except ModuleNotFoundError:
         """No-op compatibility layer until optional attribution files are deployed."""
         def __init__(self,horizon_minutes:int=30,cooldown_seconds:int=300):pass
         def process(self,*args,**kwargs)->list[dict]:return []
+        def finalize_active(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
@@ -76,6 +77,12 @@ class _EngineRunner:
         return result
 
     def stop(self)->None:self._stop.set()
+
+    async def finalize_attribution(self,reason:str)->None:
+        records=self.attribution.finalize_active(reason,datetime.now(timezone.utc))
+        for record in records:
+            if hasattr(self.repository,"save_system_outcome"):await self.repository.save_system_outcome(record)
+            await self.publisher.publish("system_outcome",_event_json(record))
 
 
 class TrainingEngine(_EngineRunner):
@@ -152,15 +159,18 @@ class LiveEngine(_EngineRunner):
                         self.alerts_generated+=int(result.alert is not None);self.last_update=bar.timestamp;self.last_error=None
                         self.average_latency_ms+=(result.processing_latency_ms-self.average_latency_ms)/self.bars_processed
                         await self.publisher.publish("engine_status",self.status());backoff=1.0
+                    if not self._stop.is_set():await self.finalize_attribution("STREAM_INTERRUPTED")
                     backoff=1.0
                 except asyncio.CancelledError: raise
                 except Exception as exc:
                     self.last_error=str(exc);self.retries+=1
+                    await self.finalize_attribution("ENGINE_ERROR")
                     event={"level":"ERROR","component":"live_engine","message":str(exc),"retry_seconds":backoff,"timestamp":datetime.now(timezone.utc).isoformat()}
                     if hasattr(self.repository,"save_system_event"):await self.repository.save_system_event(event)
                     await self.publisher.publish("system_event",event);await self.publisher.publish("engine_status",self.status())
                     await asyncio.sleep(backoff);backoff=min(backoff*2,30)
         finally:
+            await self.finalize_attribution("ENGINE_STOPPED" if self._stop.is_set() else "STREAM_INTERRUPTED")
             self.running=False;await self.publisher.publish("engine_status",self.status())
 
     def stop(self)->None:

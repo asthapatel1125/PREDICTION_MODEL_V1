@@ -146,7 +146,7 @@ class SqlAlchemyRepository:
         alerted_at=row.alerted_at if row.alerted_at.tzinfo else row.alerted_at.replace(tzinfo=timezone.utc)
         payload=dict(row.payload)
         stored_status=str(payload.get("status") or row.status or "TRACKING").upper()
-        if stored_status in {"EXPIRED","COMPLETE"} or payload.get("target_reached_at") is not None or expires_at>now:
+        if stored_status in {"EXPIRED","COMPLETE","INTERRUPTED"} or payload.get("target_reached_at") is not None or expires_at>now:
             return False
         bars=payload.get("minute_bars") or []
         final_price=float(payload.get("current_price")
@@ -186,6 +186,37 @@ class SqlAlchemyRepository:
         row.payload=payload
         return True
 
+    @staticmethod
+    def _reconcile_interrupted_gamma_outcome(row:SystemOutcomeRow,now:datetime,stale_seconds:int=90)->bool:
+        """Stop Gamma calls whose persisted stream has stopped advancing."""
+        if row.system not in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
+            return False
+        payload=dict(row.payload)
+        if str(payload.get("status") or row.status or "TRACKING").upper()!="TRACKING":
+            return False
+        raw_last=payload.get("current_price_at") or payload.get("price_observed_at") or payload.get("alerted_at")
+        if not raw_last:return False
+        last_observed=datetime.fromisoformat(str(raw_last).replace("Z","+00:00")) if not isinstance(raw_last,datetime) else raw_last
+        if last_observed.tzinfo is None:last_observed=last_observed.replace(tzinfo=timezone.utc)
+        if (now-last_observed).total_seconds()<=stale_seconds:return False
+        alerted_at=row.alerted_at if row.alerted_at.tzinfo else row.alerted_at.replace(tzinfo=timezone.utc)
+        final_price=float(payload.get("current_price",payload.get("entry_price",row.entry_price)))
+        favorable=max(0.0,float(payload.get("favorable_points",0.0)))
+        partial_threshold=float(payload.get("partial_target_points",float(payload.get("target_points",0.0))*.6))
+        scores=dict(payload.get("greek_scores_current") or {})
+        ordered=[name for name,_ in sorted(scores.items(),key=lambda item:(-float(item[1]),item[0]))]
+        payload.update(
+            status="INTERRUPTED",lifecycle_state="COMPLETE",completion_reason="STREAM_STALE",
+            outcome_grade="PARTIAL" if favorable>=partial_threshold else "FAILED",
+            final_favorable_points=favorable,final_price=final_price,final_price_at=last_observed.isoformat(),
+            seconds_observed=max(0.0,(last_observed-alerted_at).total_seconds()),
+            greek_scores_at_failure=scores,
+            greek_rankings_at_failure={"strongest":ordered[:1],"strong":ordered[1:2],"normal":ordered[2:4],"weak":ordered[4:5],"weakest":ordered[5:6]},
+            greek_values_at_failure=dict(payload.get("greek_values_current") or {}),
+        )
+        row.status="INTERRUPTED";row.payload=payload
+        return True
+
     async def outcome_attribution(self,symbol:str,per_group:int=3)->dict[str,Any]:
         async with self.sessions() as s:
             rows=(await s.execute(select(SystemOutcomeRow).where(SystemOutcomeRow.symbol==symbol.upper())
@@ -197,6 +228,7 @@ class SqlAlchemyRepository:
                 # changed row and can leave the rest of an old deployment's
                 # overdue calls marked TRACKING.
                 changed=self._reconcile_expired_outcome(row,now) or changed
+                changed=self._reconcile_interrupted_gamma_outcome(row,now) or changed
             if changed:await s.commit()
         systems={}
         for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","DELTA_DYNAMICS"):
