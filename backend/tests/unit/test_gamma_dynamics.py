@@ -40,3 +40,10 @@ def test_gamma_dynamics_waits_when_gamma_and_speed_disagree():
 def test_gamma_dynamics_waits_during_warmup():
     result = GammaDynamicsQuartet().calculate(Greeks(gamma=.08, speed=.02, zomma=.2, color=.3), history(5), "QQQ")
     assert result.qualified is False
+
+
+def test_normalization_preserves_real_sub_picounit_greek_variation():
+    samples = [Greeks(gamma=.02 + index * 1e-14, speed=.001, zomma=.14, color=-.71) for index in range(20)]
+    current = Greeks(gamma=.02 + 30e-14, speed=.001, zomma=.14, color=-.71)
+    result = GammaDynamicsQuartet().calculate(current, samples, "QQQ")
+    assert result.normalized["gamma"] > 0
