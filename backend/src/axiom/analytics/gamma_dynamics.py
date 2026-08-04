@@ -42,7 +42,12 @@ class GammaDynamicsSix:
         mean = sum(samples) / len(samples)
         variance = sum((value - mean) ** 2 for value in samples) / len(samples)
         standard_deviation = sqrt(variance)
-        if standard_deviation <= self.zero_tolerance:
+        # Greek units span many orders of magnitude. An absolute 1e-12 floor
+        # incorrectly flattened real variation in small higher-order Greeks.
+        # Only treat dispersion at machine precision relative to the series
+        # level as constant; otherwise apply the requested z-score formula.
+        numerical_floor = max(abs(mean) * 1e-15, 1e-18)
+        if standard_deviation <= numerical_floor:
             return 0.0
         return max(-3.0, min(3.0, (float(current) - mean) / standard_deviation)) / 3.0
 
