@@ -802,7 +802,7 @@ function GammaDynamicsChart({history=[],state,symbol,deltaMode=false,gammaVersio
 }
 
 function gammaLogVisualState(call){
-  if(!call)return {key:"tracking-failing",label:"TRACKING · FAILING"};
+  if(!call)return {key:"tracking-failing",label:"FAILING"};
   const outcome=callOutcome(call),datum=number(call.entry_price),price=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,datum);
   const legs=call.family_legs??[],parent=legs.find(leg=>leg.role==="PARENT")??legs[0];
   const legPl=leg=>{const stored=Number(leg?.current_pl_points);if(leg?.current_pl_points!=null&&Number.isFinite(stored))return stored;const legDatum=number(leg?.datum,datum),legPrice=leg?.final_price!=null?number(leg.final_price):price;return call.direction==="UP"?legPrice-legDatum:legDatum-legPrice};
@@ -811,7 +811,7 @@ function gammaLogVisualState(call){
   if(childRescued)return {key:"child-rescued",label:"SUCCESS · CHILD RESCUE"};
   if(outcome.closed)return outcome.grade==="success"?{key:"success",label:outcome.basis==="directional"?"SUCCESS · DIRECTIONAL":"SUCCESS"}:{key:"failed",label:"FAILED"};
   const succeeding=call.direction==="UP"?price>=datum:price<=datum;
-  return succeeding?{key:"tracking-success",label:"TRACKING · SUCCEEDING"}:{key:"tracking-failing",label:"TRACKING · FAILING"};
+  return succeeding?{key:"tracking-success",label:"SUCCEEDING"}:{key:"tracking-failing",label:"FAILING"};
 }
 
 function GammaDynamicsLog({history,state,symbol,calls=[],version=1}){
@@ -915,7 +915,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[],version=1}){
       <CompactEventTimeFilter label="TO" value={toTime} onChange={setToTime}/>
       <button type="button" onClick={()=>{setCallStateFilters(GAMMA_CALL_STATES.map(([value])=>value));setFilterDate("");setFromTime("");setToTime("");}}>CLEAR FILTER</button>
     </div>
-    <div className="gamma-event-scoreboard"><article className="failed"><span>FAILED</span><b>{scoreBoard.failed}</b><small>Completed calls</small></article><article className="succeeded"><span>SUCCEEDED</span><b>{scoreBoard.succeeded}</b><small>Includes child rescue</small></article><article className="tracking-failed"><span>TRACKING · FAILING</span><b>{scoreBoard.trackingFailed}</b><small>Direction currently adverse</small></article><article className="tracking-succeeded"><span>TRACKING · SUCCEEDING</span><b>{scoreBoard.trackingSucceeded}</b><small>Direction currently favorable</small></article></div>
+    <div className="gamma-event-scoreboard"><article className="failed"><span>FAILED</span><b>{scoreBoard.failed}</b><small>Completed calls</small></article><article className="succeeded"><span>SUCCEEDED</span><b>{scoreBoard.succeeded}</b><small>Includes child rescue</small></article><article className="tracking-failed"><span>FAILING</span><b>{scoreBoard.trackingFailed}</b><small>Direction currently adverse</small></article><article className="tracking-succeeded"><span>SUCCEEDING</span><b>{scoreBoard.trackingSucceeded}</b><small>Direction currently favorable</small></article></div>
     <div className="gamma-log-scroll-shell">
       <div className="gamma-log-scroll-top" ref={topScrollRef} onScroll={syncHorizontal}><div style={{width:scrollSize.width}}/></div>
       <div className="gamma-log-scroll-row">
