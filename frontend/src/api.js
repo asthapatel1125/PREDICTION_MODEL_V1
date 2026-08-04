@@ -15,7 +15,7 @@ export function toDashboardAlert(alert) {
     id: alert.id,
     displayId: alert.display_id ?? null,
     timestamp: alert.timestamp,
-    time: new Date(alert.timestamp).toLocaleTimeString("en-US", { timeZone:"America/New_York", hour12: true, hour:"2-digit", minute:"2-digit", second:"2-digit", fractionalSecondDigits:3, timeZoneName:"short" }),
+    time: `${new Date(alert.timestamp).toLocaleTimeString("en-US", { timeZone:"America/New_York", hour12: true, hour:"2-digit", minute:"2-digit", second:"2-digit", fractionalSecondDigits:3 })} EST`,
     symbol: alert.symbol,
     direction: alert.direction,
     channel: alert.engine_mode,
