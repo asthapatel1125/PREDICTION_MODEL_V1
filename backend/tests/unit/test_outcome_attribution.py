@@ -131,7 +131,7 @@ def test_target_touch_exactly_at_expiry_counts():
     assert record["target_reached_price"] == 501.25
 
 
-def test_long_risk_family_activates_zero_four_six_eight_once():
+def test_long_gamma_family_activates_zero_two_four_six_eight_once():
     tracker = OutcomeAttributionTracker(horizon_minutes=60)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
     created = tracker.process(state(start, 500), EngineMode.LIVE, 500, "THETADATA", start)
@@ -142,28 +142,30 @@ def test_long_risk_family_activates_zero_four_six_eight_once():
         EngineMode.LIVE, 492, "THETADATA", start + timedelta(minutes=1),
     )
     record = next(item for item in updates if item["id"] == signal_id)
-    assert [leg["datum"] for leg in record["family_legs"]] == [500, 496, 494, 492]
+    assert [leg["datum"] for leg in record["family_legs"]] == [500, 498, 496, 494, 492]
     assert [leg["call_id"] for leg in record["family_legs"]] == [
         f"{record['call_id']}.1",
         f"{record['call_id']}.1.2",
         f"{record['call_id']}.1.3",
         f"{record['call_id']}.1.4",
+        f"{record['call_id']}.1.5",
     ]
-    assert record["family_average_datum"] == 495.5
-    assert record["family_average_pl_points"] == -3.5
+    assert record["family_average_datum"] == 496
+    assert record["family_average_pl_points"] == -4
     assert record["family_next_trigger_points"] is None
+    assert all(record["family_gamma_rechecks"][str(level)]["qualified"] for level in (4,6,8))
 
     updates = tracker.process(
         state(start + timedelta(minutes=2), 497),
         EngineMode.LIVE, 497, "THETADATA", start + timedelta(minutes=2),
     )
     record = next(item for item in updates if item["id"] == signal_id)
-    assert len(record["family_legs"]) == 4
-    assert record["family_average_pl_points"] == 1.5
+    assert len(record["family_legs"]) == 5
+    assert record["family_average_pl_points"] == 1
     assert record["family_outcome_state"] == "PROFIT"
-    assert [leg["current_pl_points"] for leg in record["family_legs"]] == [-3, 1, 3, 5]
+    assert [leg["current_pl_points"] for leg in record["family_legs"]] == [-3, -1, 1, 3, 5]
     assert [leg["status"] for leg in record["family_legs"]] == [
-        "FAILED", "SUCCEEDED", "SUCCEEDED", "SUCCEEDED",
+        "FAILED", "FAILED", "SUCCEEDED", "SUCCEEDED", "SUCCEEDED",
     ]
     assert record["expires_at"] == start + timedelta(minutes=60)
 
@@ -180,15 +182,37 @@ def test_short_risk_family_mirrors_adverse_triggers():
         EngineMode.LIVE, 508, "THETADATA", start + timedelta(minutes=1),
     )
     record = next(item for item in updates if item["id"] == signal_id)
-    assert [leg["datum"] for leg in record["family_legs"]] == [500, 504, 506, 508]
-    assert record["family_average_datum"] == 504.5
-    assert record["family_average_pl_points"] == -3.5
+    assert [leg["datum"] for leg in record["family_legs"]] == [500, 502, 504, 506, 508]
+    assert record["family_average_datum"] == 504
+    assert record["family_average_pl_points"] == -4
 
     updates = tracker.process(
         state(start + timedelta(minutes=2), 503, Direction.DOWN),
         EngineMode.LIVE, 503, "THETADATA", start + timedelta(minutes=2),
     )
     record = next(item for item in updates if item["id"] == signal_id)
-    assert len(record["family_legs"]) == 4
-    assert record["family_average_pl_points"] == 1.5
+    assert len(record["family_legs"]) == 5
+    assert record["family_average_pl_points"] == 1
     assert record["family_outcome_state"] == "PROFIT"
+
+
+def test_gamma_deeper_children_wait_for_matching_live_requalification():
+    tracker = OutcomeAttributionTracker(horizon_minutes=60)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    created = tracker.process(state(start, 500, Direction.UP), EngineMode.LIVE, 500, "THETADATA", start)
+    signal_id = created[0]["id"]
+
+    down_time=start+timedelta(minutes=1)
+    tracker.process(state(down_time,498,Direction.DOWN),EngineMode.LIVE,498,"THETADATA",down_time)
+    failed_time=start+timedelta(minutes=2)
+    updates=tracker.process(state(failed_time,496,Direction.DOWN),EngineMode.LIVE,496,"THETADATA",failed_time)
+    record=next(item for item in updates if item["id"]==signal_id)
+    assert [leg["trigger_adverse_points"] for leg in record["family_legs"]]==[0.0,2.0]
+    assert record["family_gamma_rechecks"]["4"]["qualified"] is False
+    assert record["family_next_trigger_points"]==4.0
+
+    requalified_time=start+timedelta(minutes=2,seconds=5)
+    updates=tracker.process(state(requalified_time,496,Direction.UP),EngineMode.LIVE,496,"THETADATA",requalified_time)
+    record=next(item for item in updates if item["id"]==signal_id)
+    assert [leg["trigger_adverse_points"] for leg in record["family_legs"]]==[0.0,2.0,4.0]
+    assert record["family_gamma_rechecks"]["4"]["qualified"] is True

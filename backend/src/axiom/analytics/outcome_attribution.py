@@ -205,18 +205,41 @@ class OutcomeAttributionTracker:
         record["lifecycle_state"]=lifecycle
 
     @staticmethod
-    def _update_risk_family(record:dict[str,Any],price:float,now:datetime)->None:
-        """Activate equal-weight child legs at the configured adverse levels."""
+    def _update_risk_family(record:dict[str,Any],price:float,now:datetime,state:MarketState)->None:
+        """Activate child legs, requalifying deeper Gamma levels before entry."""
         legs=record.get("family_legs")
         if not legs:
             return
         parent=float(record["entry_price"])
         is_long=record["direction"]==Direction.UP.value
         adverse=max(0.0,parent-price if is_long else price-parent)
-        thresholds=[float(value) for value in record.get("family_trigger_levels",[0.0,4.0,6.0,8.0])]
+        gamma_family=record.get("system")=="GAMMA_DYNAMICS"
+        thresholds=[float(value) for value in record.get(
+            "family_trigger_levels",
+            [0.0,2.0,4.0,6.0,8.0] if gamma_family else [0.0,4.0,6.0,8.0],
+        )]
         active_thresholds={float(leg["trigger_adverse_points"]) for leg in legs}
+        rechecks=dict(record.get("family_gamma_rechecks") or {})
         for leg_number,threshold in enumerate(thresholds[1:],start=2):
             if adverse<threshold or threshold in active_thresholds:
+                continue
+            gamma=state.gamma_dynamics if gamma_family else None
+            requires_recheck=gamma_family and threshold>=4.0
+            direction_match=bool(gamma and gamma.decision.value==record["direction"])
+            qualified=bool(gamma and gamma.qualified and direction_match)
+            recheck={
+                "checked_at":now,
+                "threshold_adverse_points":threshold,
+                "required":requires_recheck,
+                "qualified":qualified if requires_recheck else True,
+                "direction_match":direction_match if requires_recheck else True,
+                "decision":gamma.decision.value if gamma else Direction.NEUTRAL.value,
+                "intensity":float(gamma.intensity) if gamma else 0.0,
+                "pressure":float(gamma.pressure) if gamma else 0.0,
+                "explanation":gamma.explanation if gamma else "Gamma Dynamics unavailable at this observation.",
+            }
+            rechecks[str(int(threshold))]=recheck
+            if requires_recheck and not qualified:
                 continue
             datum=parent-threshold if is_long else parent+threshold
             legs.append({
@@ -227,6 +250,7 @@ class OutcomeAttributionTracker:
                 "datum":datum,
                 "observed_trigger_price":price,
                 "activated_at":now,
+                "gamma_recheck":recheck,
             })
             active_thresholds.add(threshold)
         datums=[float(leg["datum"]) for leg in legs]
@@ -259,6 +283,7 @@ class OutcomeAttributionTracker:
             family_stage=f"{len(legs)} OF {len(thresholds)} LEGS",
             family_next_trigger_points=next_trigger,
             family_last_updated_at=now,
+            family_gamma_rechecks=rechecks,
         )
 
     def _update_minute_path(self,record:dict[str,Any],price:float,now:datetime,
@@ -432,7 +457,7 @@ class OutcomeAttributionTracker:
             record["price_source_timestamp"] = price_source_timestamp
             record["dynamic_high"] = record["highest_price"]
             record["dynamic_low"] = record["lowest_price"]
-            self._update_risk_family(record,price,now)
+            self._update_risk_family(record,price,now,state)
             self._update_lifecycle(record,now)
             if record.get("target_reached_at") is None and now >= record["expires_at"]:
                 self._expire(record)
@@ -574,7 +599,7 @@ class OutcomeAttributionTracker:
                 "qqq_price": price if symbol == "QQQ" else None,
                 "family_id":call_id,
                 "family_parent_call_id":f"{call_id}.1",
-                "family_trigger_levels":[0.0,4.0,6.0,8.0],
+                "family_trigger_levels":[0.0,2.0,4.0,6.0,8.0] if system=="GAMMA_DYNAMICS" else [0.0,4.0,6.0,8.0],
                 "family_legs":[{
                     "call_id":f"{call_id}.1",
                     "leg_number":1,
@@ -591,9 +616,10 @@ class OutcomeAttributionTracker:
                 "family_total_pl_points":0.0,
                 "family_average_pl_points":0.0,
                 "family_outcome_state":"BREAK_EVEN",
-                "family_stage":"1 OF 4 LEGS",
-                "family_next_trigger_points":4.0,
+                "family_stage":"1 OF 5 LEGS" if system=="GAMMA_DYNAMICS" else "1 OF 4 LEGS",
+                "family_next_trigger_points":2.0 if system=="GAMMA_DYNAMICS" else 4.0,
                 "family_last_updated_at":now,
+                "family_gamma_rechecks":{},
             }
             self._active[signal_id] = record
             self._last_signal[key] = now
