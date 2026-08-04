@@ -4,7 +4,7 @@ from axiom.domain.models import Greeks
 
 
 def history(count=30):
-    return [Greeks(gamma=.01+i*.0001, speed=.001+i*.00001, zomma=.02+i*.0002, color=.03+i*.0003) for i in range(count)]
+    return [Greeks(gamma=.01+i*.0001, speed=.001+i*.00001, zomma=.02+i*.0002, color=.03+i*.0003, ultima=.01+i*.0001, vomma=.015+i*.0001) for i in range(count)]
 
 
 def test_gamma_dynamics_qualifies_upward_relative_pressure():
@@ -22,6 +22,13 @@ def test_gamma_dynamics_v2_adds_vomma_and_ultima():
     assert set(result.inputs)=={"zomma","color","speed","gamma","vomma","ultima"}
     assert result.ideal_ranges["ultima"]
     assert result.ideal_ranges["vomma"]
+    assert len(set(result.ideal_ranges.values())) == 6
+
+
+def test_gamma_dynamics_v2_requires_speed_gamma_directional_confluence():
+    result=GammaDynamicsSix().calculate(Greeks(gamma=-.08,speed=.02,zomma=.2,color=.3,ultima=.08,vomma=.09),history(),"QQQ")
+    assert result.qualified is False
+    assert result.decision is Direction.NEUTRAL
 
 
 def test_gamma_dynamics_qualifies_downward_relative_pressure():

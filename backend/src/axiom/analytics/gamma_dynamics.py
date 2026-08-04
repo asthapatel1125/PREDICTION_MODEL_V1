@@ -9,6 +9,14 @@ from axiom.domain.models import GammaDynamics, Greeks
 
 GAMMA_DYNAMICS_V1_GREEKS = ("zomma", "color", "speed", "gamma")
 GAMMA_DYNAMICS_V2_GREEKS = (*GAMMA_DYNAMICS_V1_GREEKS, "vomma", "ultima")
+GAMMA_DYNAMICS_V2_IDEALS = {
+    "zomma": 0.40,
+    "color": 0.35,
+    "speed": 0.30,
+    "gamma": 0.25,
+    "vomma": 0.30,
+    "ultima": 0.40,
+}
 
 
 class GammaDynamicsSix:
@@ -56,19 +64,33 @@ class GammaDynamicsSix:
         samples = list(history)
         percentiles = {name: self._absolute_percentile(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
         normalized = {name: self._scaled(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
-        # Volatility curvature is deliberately magnitude-based: without an IV
-        # direction or moneyness surface, the signs of Vomma/Ultima/Zomma/Color
-        # are not a reliable price-direction signal. Speed remains directional.
+        # Zomma, Color, Vomma, and Ultima are volatility/time context gates. Their
+        # signs depend on the option surface, so their magnitudes confirm that the
+        # regime is active. Speed and Gamma must agree in sign to establish the
+        # prospective underlying direction.
         intensity_weights = {"zomma": .30, "color": .25, "ultima": .25, "vomma": .20}
         intensity = sum(abs(normalized[name]) * weight for name, weight in intensity_weights.items())
         pressure_weights = {"speed": .45, "gamma": .30, "zomma": .15, "vomma": .10}
         pressure_magnitude = sum(abs(normalized[name]) * weight for name, weight in pressure_weights.items())
-        gamma_active = abs(inputs["gamma"]) > self.zero_tolerance
-        aligned_up = inputs["speed"] > self.zero_tolerance and gamma_active
-        aligned_down = inputs["speed"] < -self.zero_tolerance and gamma_active
+        context_confirmed = all(
+            abs(normalized[name]) >= GAMMA_DYNAMICS_V2_IDEALS[name]
+            for name in ("zomma", "color", "vomma", "ultima")
+        )
+        aligned_up = (
+            normalized["speed"] >= GAMMA_DYNAMICS_V2_IDEALS["speed"]
+            and normalized["gamma"] >= GAMMA_DYNAMICS_V2_IDEALS["gamma"]
+            and inputs["speed"] > self.zero_tolerance
+            and inputs["gamma"] > self.zero_tolerance
+        )
+        aligned_down = (
+            normalized["speed"] <= -GAMMA_DYNAMICS_V2_IDEALS["speed"]
+            and normalized["gamma"] <= -GAMMA_DYNAMICS_V2_IDEALS["gamma"]
+            and inputs["speed"] < -self.zero_tolerance
+            and inputs["gamma"] < -self.zero_tolerance
+        )
         pressure = pressure_magnitude if aligned_up else -pressure_magnitude if aligned_down else 0.0
         warmed = len(samples) >= self.minimum_history
-        qualified = warmed and intensity >= self.intensity_threshold and (aligned_up or aligned_down)
+        qualified = warmed and context_confirmed and intensity >= self.intensity_threshold and (aligned_up or aligned_down)
         decision = Direction.UP if qualified and aligned_up else Direction.DOWN if qualified and aligned_down else Direction.NEUTRAL
         contributions = {
             "speed": pressure_weights["speed"] * abs(normalized["speed"]) * (1 if aligned_up else -1 if aligned_down else 0),
@@ -79,17 +101,19 @@ class GammaDynamicsSix:
             "vomma": intensity_weights["vomma"] * abs(normalized["vomma"]),
         }
         ideal_ranges = {
-            "zomma": "|normalized| >= 0.30; elevated IV-to-Gamma sensitivity",
-            "color": "|normalized| >= 0.30; elevated time-to-Gamma sensitivity",
-            "speed": "|normalized| >= 0.30 and signed with the call direction",
-            "gamma": "|normalized| >= 0.30; active curvature base",
-            "ultima": "|normalized| >= 0.30; elevated volatility-instability context",
-            "vomma": "|normalized| >= 0.30; elevated volatility-convexity context",
+            "zomma": "|normalized| >= 0.40; IV-to-Gamma regime confirmation",
+            "color": "|normalized| >= 0.35; time-to-Gamma regime confirmation",
+            "speed": "LONG >= +0.30 / SHORT <= -0.30; directional acceleration",
+            "gamma": "LONG >= +0.25 / SHORT <= -0.25; signed curvature agreement",
+            "ultima": "|normalized| >= 0.40; volatility-instability confirmation",
+            "vomma": "|normalized| >= 0.30; volatility-convexity confirmation",
         }
         if not warmed:
             explanation = f"Building a relative baseline: {len(samples)}/{self.minimum_history} observations."
-        elif not gamma_active or abs(inputs["speed"]) <= self.zero_tolerance:
-            explanation = "Gamma or Speed is effectively zero, so signed curvature pressure is not confirmed."
+        elif not (aligned_up or aligned_down):
+            explanation = "Speed and Gamma have not reached their signed long/short thresholds in the same direction."
+        elif not context_confirmed:
+            explanation = "Directional curvature is present, but the Zomma/Color/Vomma/Ultima context gates are not all confirmed."
         elif intensity < self.intensity_threshold:
             explanation = "Gamma and Speed align, but weighted |normalized| Zomma/Color/Ultima/Vomma intensity is below 0.65."
         else:
