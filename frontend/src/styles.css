@@ -788,11 +788,16 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 @media(max-width:650px){.gamma-dynamics-grid.gamma-actual-grid.gamma-four-grid,.gamma-ideal-values-grid,.gamma-ideal-values-grid.gamma-four-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Compact the leading direction column in all Gamma 1.0, Delta, and Gamma 2.0 event logs. */
+.gamma-dynamics-log>.gamma-log-scroll>table{
+  width:max-content;
+  min-width:100%;
+  table-layout:auto;
+}
 .gamma-dynamics-log>.gamma-log-scroll>table>thead>tr>th:first-child,
 .gamma-dynamics-log>.gamma-log-scroll>table>tbody>tr:not(.gamma-family-dropdown-row)>td:first-child{
-  width:108px;
-  min-width:108px;
-  max-width:108px;
-  padding-left:10px;
-  padding-right:8px;
+  width:92px;
+  min-width:92px;
+  max-width:92px;
+  padding-left:8px;
+  padding-right:6px;
 }
