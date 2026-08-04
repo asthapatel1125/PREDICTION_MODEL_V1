@@ -199,7 +199,7 @@ class SqlAlchemyRepository:
                 changed=self._reconcile_expired_outcome(row,now) or changed
             if changed:await s.commit()
         systems={}
-        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS","DELTA_DYNAMICS"):
+        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","DELTA_DYNAMICS"):
             items=[dict(row.payload) for row in rows if row.system==system]
             # Every database row has a stable primary-key/call ID. Never hide
             # a live call merely because another call shares its direction or

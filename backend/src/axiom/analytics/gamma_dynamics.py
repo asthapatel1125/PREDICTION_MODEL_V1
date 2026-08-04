@@ -7,10 +7,11 @@ from axiom.domain.enums import Direction
 from axiom.domain.models import GammaDynamics, Greeks
 
 
-GAMMA_DYNAMICS_GREEKS = ("zomma", "color", "speed", "gamma", "ultima", "vomma")
+GAMMA_DYNAMICS_V1_GREEKS = ("zomma", "color", "speed", "gamma")
+GAMMA_DYNAMICS_V2_GREEKS = (*GAMMA_DYNAMICS_V1_GREEKS, "vomma", "ultima")
 
 
-class GammaDynamicsQuartet:
+class GammaDynamicsSix:
     """Classifies six-Greek Gamma dynamics without mixing incompatible Greek units.
 
     Speed is the directional term. Gamma is the curvature base, while Zomma,
@@ -46,7 +47,7 @@ class GammaDynamicsQuartet:
         return max(-3.0, min(3.0, (float(current) - mean) / standard_deviation)) / 3.0
 
     def calculate(self, greeks: Greeks, history: Sequence[Greeks], source_symbol: str) -> GammaDynamics:
-        inputs = {name: float(getattr(greeks, name)) for name in GAMMA_DYNAMICS_GREEKS}
+        inputs = {name: float(getattr(greeks, name)) for name in GAMMA_DYNAMICS_V2_GREEKS}
         samples = list(history)
         percentiles = {name: self._absolute_percentile(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
         normalized = {name: self._scaled(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
@@ -94,4 +95,48 @@ class GammaDynamicsQuartet:
             pressure=pressure, history_points=len(samples), intensity_threshold=self.intensity_threshold,
             inputs=inputs, percentiles=percentiles, normalized=normalized,
             contributions=contributions, ideal_ranges=ideal_ranges, explanation=explanation,
+        )
+
+
+class GammaDynamicsQuartet(GammaDynamicsSix):
+    """Original Gamma Dynamics 1.0: Zomma, Color, Speed, and Gamma."""
+
+    def calculate(self, greeks: Greeks, history: Sequence[Greeks], source_symbol: str) -> GammaDynamics:
+        inputs = {name: float(getattr(greeks, name)) for name in GAMMA_DYNAMICS_V1_GREEKS}
+        samples = list(history)
+        percentiles = {name: self._absolute_percentile(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
+        normalized = {name: self._scaled(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
+        intensity = (percentiles["zomma"] + percentiles["color"]) / 2
+        pressure_magnitude = (percentiles["speed"] + percentiles["gamma"]) / 2
+        gamma_active = abs(inputs["gamma"]) > self.zero_tolerance
+        aligned_up = inputs["speed"] > self.zero_tolerance and gamma_active
+        aligned_down = inputs["speed"] < -self.zero_tolerance and gamma_active
+        pressure = pressure_magnitude if aligned_up else -pressure_magnitude if aligned_down else 0.0
+        warmed = len(samples) >= self.minimum_history
+        qualified = warmed and intensity >= self.intensity_threshold and (aligned_up or aligned_down)
+        decision = Direction.UP if qualified and aligned_up else Direction.DOWN if qualified and aligned_down else Direction.NEUTRAL
+        contributions = {
+            "zomma": .5 * percentiles["zomma"], "color": .5 * percentiles["color"],
+            "speed": .5 * percentiles["speed"] * (1 if aligned_up else -1 if aligned_down else 0),
+            "gamma": .5 * percentiles["gamma"],
+        }
+        ideal_ranges = {
+            "zomma":"combines with Color for intensity >= 0.65",
+            "color":"combines with Zomma for intensity >= 0.65",
+            "speed":"non-zero and signed with the call direction",
+            "gamma":"non-zero curvature base; magnitude strengthens pressure",
+        }
+        if not warmed:
+            explanation=f"Building a relative baseline: {len(samples)}/{self.minimum_history} observations."
+        elif not gamma_active or abs(inputs["speed"])<=self.zero_tolerance:
+            explanation="Gamma or Speed is effectively zero, so signed curvature pressure is not confirmed."
+        elif intensity<self.intensity_threshold:
+            explanation="Gamma and Speed align, but Zomma/Color intensity is below its rolling threshold."
+        else:
+            explanation=f"Speed indicates {'upward' if aligned_up else 'downward'} curvature change while Gamma supplies the base and Zomma/Color confirm intensity."
+        return GammaDynamics(
+            decision=decision,qualified=qualified,source_symbol=source_symbol,intensity=intensity,
+            pressure=pressure,history_points=len(samples),intensity_threshold=self.intensity_threshold,
+            inputs=inputs,percentiles=percentiles,normalized=normalized,
+            contributions=contributions,ideal_ranges=ideal_ranges,explanation=explanation,
         )

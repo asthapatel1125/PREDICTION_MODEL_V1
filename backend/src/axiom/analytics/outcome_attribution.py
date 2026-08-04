@@ -11,7 +11,8 @@ from axiom.domain.models import MarketState
 
 SYSTEM_GREEKS = {
     "PRIMARY_OPTIONS": ("gamma", "vanna", "charm", "speed", "zomma", "color", "ultima"),
-    "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma", "ultima", "vomma"),
+    "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma"),
+    "GAMMA_DYNAMICS_V2": ("zomma", "color", "speed", "gamma", "vomma", "ultima"),
     "DELTA_DYNAMICS": ("ultima", "zomma", "gamma", "speed", "color", "delta"),
 }
 
@@ -44,7 +45,7 @@ class OutcomeAttributionTracker:
         """Describe the target without pretending that QQQ and NQ share a point scale."""
         if symbol == "QQQ":
             eastern=timestamp.astimezone(self.eastern)
-            if system == "GAMMA_DYNAMICS":
+            if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
                 morning=eastern.weekday()<5 and time(9,30)<=eastern.time()<time(12,0)
                 target_points=1.25 if morning else .75
                 return {
@@ -82,6 +83,9 @@ class OutcomeAttributionTracker:
         gamma = state.gamma_dynamics
         if gamma and gamma.qualified and gamma.decision != Direction.NEUTRAL:
             systems.append(("GAMMA_DYNAMICS", gamma.decision))
+        gamma_v2 = getattr(state,"gamma_dynamics_v2",None)
+        if gamma_v2 and gamma_v2.qualified and gamma_v2.decision != Direction.NEUTRAL:
+            systems.append(("GAMMA_DYNAMICS_V2", gamma_v2.decision))
         zone = state.zone_intelligence
         if zone and zone.qualified and zone.direction != Direction.NEUTRAL:
             systems.append(("DELTA_DYNAMICS", zone.direction))
@@ -109,8 +113,8 @@ class OutcomeAttributionTracker:
             # strike/moneyness and IV-change surface.
             scores[name] = (
                 direction_sign * sign * percentile
-                if system == "GAMMA_DYNAMICS" and name == "speed"
-                else percentile if system == "GAMMA_DYNAMICS"
+                if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} and name == "speed"
+                else percentile if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}
                 else direction_sign * sign * percentile
             )
         return scores
@@ -160,7 +164,7 @@ class OutcomeAttributionTracker:
         )
 
     def _call_id(self,timestamp:datetime,system:str)->str:
-        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3,"DELTA_DYNAMICS":4}[system]
+        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3,"DELTA_DYNAMICS":4,"GAMMA_DYNAMICS_V2":5}[system]
         eastern=timestamp.astimezone(self.eastern)
         milliseconds=eastern.microsecond//1000
         return f"{eastern:%Y%m%d%H%M%S}{milliseconds:03d}{stream:02d}"
@@ -213,7 +217,7 @@ class OutcomeAttributionTracker:
         parent=float(record["entry_price"])
         is_long=record["direction"]==Direction.UP.value
         adverse=max(0.0,parent-price if is_long else price-parent)
-        gamma_family=record.get("system")=="GAMMA_DYNAMICS"
+        gamma_family=record.get("system") in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}
         thresholds=[float(value) for value in record.get(
             "family_trigger_levels",
             [0.0,2.0,4.0,6.0,8.0] if gamma_family else [0.0,4.0,6.0,8.0],
@@ -223,7 +227,7 @@ class OutcomeAttributionTracker:
         for leg_number,threshold in enumerate(thresholds[1:],start=2):
             if adverse<threshold or threshold in active_thresholds:
                 continue
-            gamma=state.gamma_dynamics if gamma_family else None
+            gamma=(getattr(state,"gamma_dynamics_v2",None) if record.get("system")=="GAMMA_DYNAMICS_V2" else state.gamma_dynamics) if gamma_family else None
             requires_recheck=gamma_family and threshold>=4.0
             direction_match=bool(gamma and gamma.decision.value==record["direction"])
             qualified=bool(gamma and gamma.qualified and direction_match)
@@ -336,13 +340,17 @@ class OutcomeAttributionTracker:
     def _decision_reasons(system: str, state: MarketState, direction: Direction) -> list[str]:
         side = "bullish" if direction == Direction.UP else "bearish"
         sign_word = "positive" if direction == Direction.UP else "negative"
-        if system == "GAMMA_DYNAMICS" and state.gamma_dynamics:
-            gamma = state.gamma_dynamics
+        if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
+            gamma = getattr(state,"gamma_dynamics_v2",None) if system=="GAMMA_DYNAMICS_V2" else state.gamma_dynamics
+            if not gamma:return []
             inputs = gamma.inputs
+            version = "2.0" if system == "GAMMA_DYNAMICS_V2" else "1.0"
+            intensity_terms = "Zomma/Color/Vomma/Ultima" if system == "GAMMA_DYNAMICS_V2" else "Zomma/Color"
+            greek_count = "six" if system == "GAMMA_DYNAMICS_V2" else "four"
             return [
                 f"Speed {inputs.get('speed', 0):+.4g} supplies the {side} direction while Gamma magnitude {abs(inputs.get('gamma', 0)):.4g} supplies the active curvature base.",
-                f"Zomma/Color/Ultima/Vomma normalized intensity is {gamma.intensity:.1%}, against the {gamma.intensity_threshold:.1%} qualification threshold.",
-                f"Signed six-Greek curvature pressure is {gamma.pressure:+.2f}, confirming the {side} Gamma-dynamics state.",
+                f"{intensity_terms} normalized intensity is {gamma.intensity:.1%}, against the {gamma.intensity_threshold:.1%} qualification threshold.",
+                f"Signed {greek_count}-Greek curvature pressure is {gamma.pressure:+.2f}, confirming the {side} Gamma Dynamics {version} state.",
             ]
         if system == "DELTA_DYNAMICS" and state.zone_intelligence:
             zone=state.zone_intelligence
@@ -588,6 +596,10 @@ class OutcomeAttributionTracker:
                     state.gamma_dynamics.model_dump(mode="json")
                     if system == "GAMMA_DYNAMICS" and state.gamma_dynamics else None
                 ),
+                "gamma_dynamics_v2_at_signal": (
+                    state.gamma_dynamics_v2.model_dump(mode="json")
+                    if system == "GAMMA_DYNAMICS_V2" and getattr(state,"gamma_dynamics_v2",None) else None
+                ),
                 "zone_intelligence_at_signal": (
                     state.zone_intelligence.model_dump(mode="json")
                     if system == "DELTA_DYNAMICS" and state.zone_intelligence else None
@@ -599,7 +611,7 @@ class OutcomeAttributionTracker:
                 "qqq_price": price if symbol == "QQQ" else None,
                 "family_id":call_id,
                 "family_parent_call_id":f"{call_id}.1",
-                "family_trigger_levels":[0.0,2.0,4.0,6.0,8.0] if system=="GAMMA_DYNAMICS" else [0.0,4.0,6.0,8.0],
+                "family_trigger_levels":[0.0,2.0,4.0,6.0,8.0] if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} else [0.0,4.0,6.0,8.0],
                 "family_legs":[{
                     "call_id":f"{call_id}.1",
                     "leg_number":1,
@@ -616,8 +628,8 @@ class OutcomeAttributionTracker:
                 "family_total_pl_points":0.0,
                 "family_average_pl_points":0.0,
                 "family_outcome_state":"BREAK_EVEN",
-                "family_stage":"1 OF 5 LEGS" if system=="GAMMA_DYNAMICS" else "1 OF 4 LEGS",
-                "family_next_trigger_points":2.0 if system=="GAMMA_DYNAMICS" else 4.0,
+                "family_stage":"1 OF 5 LEGS" if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} else "1 OF 4 LEGS",
+                "family_next_trigger_points":2.0 if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} else 4.0,
                 "family_last_updated_at":now,
                 "family_gamma_rechecks":{},
             }

@@ -1,4 +1,4 @@
-from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet
+from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet, GammaDynamicsSix
 from axiom.domain.enums import Direction
 from axiom.domain.models import Greeks
 
@@ -12,8 +12,14 @@ def test_gamma_dynamics_qualifies_upward_relative_pressure():
     assert result.qualified is True
     assert result.decision is Direction.UP
     assert result.pressure > 0
-    assert set(result.inputs) == {"zomma", "color", "speed", "gamma", "ultima", "vomma"}
+    assert set(result.inputs) == {"zomma", "color", "speed", "gamma"}
     assert set(result.normalized) == set(result.inputs)
+
+
+def test_gamma_dynamics_v2_adds_vomma_and_ultima():
+    result=GammaDynamicsSix().calculate(Greeks(gamma=.08,speed=.02,zomma=.2,color=.3,ultima=.08,vomma=.09),history(),"QQQ")
+    assert result.qualified is True
+    assert set(result.inputs)=={"zomma","color","speed","gamma","vomma","ultima"}
     assert result.ideal_ranges["ultima"]
     assert result.ideal_ranges["vomma"]
 

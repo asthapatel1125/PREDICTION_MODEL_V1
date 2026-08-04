@@ -129,6 +129,7 @@ class MarketState(FrozenModel):
     # rows written by older deployments can still be read.
     greeks: Greeks | None = None
     gamma_dynamics: GammaDynamics | None = None
+    gamma_dynamics_v2: GammaDynamics | None = None
     zone_intelligence: ZoneIntelligence | None = None
     session_analysis: dict[str, Any] = Field(default_factory=dict)
     supporting_indicators: dict[str, float | str | bool]

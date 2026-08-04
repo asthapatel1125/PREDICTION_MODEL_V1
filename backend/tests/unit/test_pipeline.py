@@ -16,6 +16,9 @@ def test_pipeline_is_deterministic(config):
     final=results_one[-1].state
     assert final.greeks is not None
     assert final.gamma_dynamics is not None
+    assert final.gamma_dynamics_v2 is not None
+    assert set(final.gamma_dynamics.inputs)=={"zomma","color","speed","gamma"}
+    assert set(final.gamma_dynamics_v2.inputs)=={"zomma","color","speed","gamma","vomma","ultima"}
     assert {"delta","theta","vega","rho"}<=set(final.greeks.model_dump())
     assert all(f"greek_{name}" in final.supporting_indicators for name in ("delta","theta","vega","rho"))
     assert set(final.signal_checks)=={"explosion","direction","pressure_alignment","confidence","risk"}
