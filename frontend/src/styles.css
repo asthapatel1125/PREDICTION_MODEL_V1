@@ -799,9 +799,9 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-dynamics-log.six-greek-log .gamma-log-scroll>table{width:2400px;min-width:2400px}
 .gamma-dynamics-log .gamma-log-scroll>table>thead>tr>th:first-child,
 .gamma-dynamics-log .gamma-log-scroll>table>tbody>tr:not(.gamma-family-dropdown-row)>td:first-child{
-  width:72px;
-  min-width:72px;
-  max-width:72px;
+  width:90px;
+  min-width:90px;
+  max-width:90px;
   padding-left:5px;
   padding-right:3px;
 }
