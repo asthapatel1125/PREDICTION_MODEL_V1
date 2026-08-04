@@ -788,17 +788,34 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 @media(max-width:650px){.gamma-dynamics-grid.gamma-actual-grid.gamma-four-grid,.gamma-ideal-values-grid,.gamma-ideal-values-grid.gamma-four-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Compact the leading direction column in all Gamma 1.0, Delta, and Gamma 2.0 event logs. */
-.gamma-dynamics-log>.gamma-log-scroll>table{
-  display:inline-table;
-  width:auto;
-  min-width:max-content;
-  table-layout:auto;
+.gamma-dynamics-log .gamma-log-scroll>table{
+  display:table;
+  width:6200px;
+  min-width:6200px;
+  table-layout:fixed;
 }
-.gamma-dynamics-log>.gamma-log-scroll>table>thead>tr>th:first-child,
-.gamma-dynamics-log>.gamma-log-scroll>table>tbody>tr:not(.gamma-family-dropdown-row)>td:first-child{
-  width:80px;
-  min-width:80px;
-  max-width:80px;
-  padding-left:6px;
-  padding-right:4px;
+.gamma-dynamics-log.gamma-dynamics-log-v2 .gamma-log-scroll>table{width:7200px;min-width:7200px}
+.gamma-dynamics-log.delta-dynamics-log .gamma-log-scroll>table{width:4100px;min-width:4100px}
+.gamma-dynamics-log.six-greek-log .gamma-log-scroll>table{width:2400px;min-width:2400px}
+.gamma-dynamics-log .gamma-log-scroll>table>thead>tr>th:first-child,
+.gamma-dynamics-log .gamma-log-scroll>table>tbody>tr:not(.gamma-family-dropdown-row)>td:first-child{
+  width:72px;
+  min-width:72px;
+  max-width:72px;
+  padding-left:5px;
+  padding-right:3px;
+}
+.gamma-dynamics-log .gamma-log-scroll>table>thead>tr>th:nth-child(2){width:210px}
+.gamma-dynamics-log.delta-dynamics-log .gamma-log-scroll>table>thead>tr>th:nth-child(2),
+.gamma-dynamics-log.six-greek-log .gamma-log-scroll>table>thead>tr>th:nth-child(2){width:150px}
+.gamma-dynamics-log .gamma-log-scroll>table>thead>tr>th:nth-child(3){width:130px}
+.gamma-dynamics-log .gamma-log-scroll>table>thead>tr>th:nth-child(4){width:175px}
+.gamma-dynamics-log .gamma-log-scroll>table>thead>tr>th:nth-child(5){width:125px}
+.gamma-dynamics-log .gamma-log-scroll>table>tbody>.gamma-family-dropdown-row>td{
+  max-width:0;
+}
+.gamma-dynamics-log .gamma-log-scroll>table>tbody>tr:not(.gamma-family-dropdown-row)>td:first-child .direction-pill{
+  padding-left:5px;
+  padding-right:5px;
+  font-size:8px;
 }
