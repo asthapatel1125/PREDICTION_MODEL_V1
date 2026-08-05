@@ -49,17 +49,6 @@ export async function fetchDashboard(symbol, signal) {
 export const fetchStateHistory = (symbol, limit = 5000, signal) =>
   request(`/api/v1/history/${encodeURIComponent(symbol)}?limit=${limit}`, { signal });
 
-export const fetchDeltaDynamicsHistory = (symbol, filters, signal) => {
-  const query = new URLSearchParams({
-    start_date: filters.startDate,
-    end_date: filters.endDate,
-    start_time: filters.startTime,
-    end_time: filters.endTime,
-    limit: "10000",
-  });
-  return request(`/api/v1/delta-dynamics/history/${encodeURIComponent(symbol)}?${query}`, { signal });
-};
-
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
 export const fetchOutcomeAttribution = (symbol, signal) =>
