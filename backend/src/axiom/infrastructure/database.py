@@ -296,6 +296,14 @@ class SqlAlchemyRepository:
             rows=(await s.execute(select(MarketStateRow).where(MarketStateRow.symbol==symbol.upper()).order_by(MarketStateRow.timestamp.desc()).limit(limit))).scalars().all()
             return [MarketState.model_validate(r.payload) for r in rows]
 
+    async def states_between(self,symbol:str,start:datetime,end:datetime,limit:int=10000)->list[MarketState]:
+        """Return the persisted provider stream in chronological order for an audit window."""
+        async with self.sessions() as s:
+            rows=(await s.execute(select(MarketStateRow).where(
+                MarketStateRow.symbol==symbol.upper(),MarketStateRow.timestamp>=start,MarketStateRow.timestamp<=end,
+            ).order_by(MarketStateRow.timestamp.asc()).limit(limit))).scalars().all()
+            return [MarketState.model_validate(row.payload) for row in rows]
+
     async def ping(self)->bool:
         try:
             async with self.sessions() as s:await s.execute(text("select 1"))

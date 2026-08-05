@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime,timezone
+from datetime import date,datetime,time,timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter,FastAPI,HTTPException,Query,WebSocket,WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from pydantic import BaseModel,Field
 from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
+from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -46,7 +48,7 @@ class LiveEngineRequest(BaseModel):
 
 class Container:
     settings:PlatformSettings;config:StrategyConfig;repository:SqlAlchemyRepository;bus:InMemoryEventBus
-    training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None
+    data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
 
 
@@ -60,14 +62,14 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.config=StrategyConfig.from_yaml(config_path);_,container.repository=await create_database(cfg.database_url)
         container.bus=InMemoryEventBus(cfg.websocket_queue_size)
         api_key=cfg.thetadata_api_key.get_secret_value() if cfg.thetadata_api_key else None
-        data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
+        container.data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
             transport=cfg.thetadata_transport,max_dte=cfg.thetadata_max_dte,strike_range=cfg.thetadata_strike_range,
             market_timezone=cfg.market_timezone,poll_seconds=cfg.thetadata_poll_seconds)
         twelve_key=cfg.twelve_data_api_key.get_secret_value() if cfg.twelve_data_api_key else None
         price_data=TwelveDataPriceClient(twelve_key)
-        container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data,
+        container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
-        container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,data,
+        container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
             cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
         container.replay_runs={};container.replay_tasks=set()
@@ -90,6 +92,33 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
     @api.get("/history/{symbol}")
     async def history(symbol:str,limit:int=Query(100,ge=1,le=5000)):return await container.repository.latest_states(symbol,limit)
+
+    @api.get("/delta-dynamics/history/{symbol}")
+    async def delta_dynamics_history(symbol:str,start_date:date=Query(date(2026,8,4)),
+        end_date:date=Query(date(2026,8,4)),start_time:time=Query(time(9,0)),
+        end_time:time=Query(time(17,0)),limit:int=Query(10000,ge=1,le=10000)):
+        market_tz=ZoneInfo(cfg.market_timezone)
+        start=datetime.combine(start_date,start_time,tzinfo=market_tz)
+        end=datetime.combine(end_date,end_time,tzinfo=market_tz)
+        if end<start:raise HTTPException(422,"The end of the Delta Dynamics audit range must not precede its start")
+        if (end-start).total_seconds()>7*86400:raise HTTPException(422,"Delta Dynamics audit ranges are limited to seven days")
+        rows=await container.repository.states_between(symbol,start.astimezone(timezone.utc),end.astimezone(timezone.utc),limit)
+        if rows:
+            return {"symbol":symbol.upper(),"source":"PERSISTED_THETADATA_STREAM","market_timezone":cfg.market_timezone,
+                "start":start,"end":end,"count":len(rows),"rows":rows}
+        zone_engine=ZoneIntelligenceEngine(market_timezone=cfg.market_timezone)
+        greek_history=[];historical=[]
+        try:
+            async for bar in container.data.historical_bars(symbol,start,end,60):
+                zone=zone_engine.calculate(bar.greeks,greek_history,bar.timestamp,bar.symbol)
+                historical.append({"timestamp":bar.timestamp,"symbol":bar.symbol,"greeks":bar.greeks,
+                    "zone_intelligence":zone,"supporting_indicators":{"price":bar.close}})
+                greek_history.append(bar.greeks)
+                if len(historical)>=limit:break
+        except Exception as exc:
+            raise HTTPException(502,f"ThetaData historical Greek retrieval failed: {exc}") from exc
+        return {"symbol":symbol.upper(),"source":"THETADATA_HISTORY_1_MINUTE","market_timezone":cfg.market_timezone,
+            "start":start,"end":end,"count":len(historical),"rows":historical}
 
     @api.get("/configuration")
     async def configuration():return container.config.model_dump(mode="json")
