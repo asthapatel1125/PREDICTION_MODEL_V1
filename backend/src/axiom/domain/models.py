@@ -49,6 +49,9 @@ class MarketBar(FrozenModel):
     greeks: Greeks
     contract_count: int = Field(default=0, ge=0)
     open_interest: float = Field(default=0, ge=0)
+    # Contract-level Gamma Dynamics 2.0 measurements calculated before the
+    # adapter reduces an option chain to a single aggregate Greeks snapshot.
+    gamma_metrics: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("symbol")
     @classmethod
@@ -88,6 +91,14 @@ class GammaDynamics(FrozenModel):
     normalized: dict[str, float] = Field(default_factory=dict)
     contributions: dict[str, float] = Field(default_factory=dict)
     ideal_ranges: dict[str, str] = Field(default_factory=dict)
+    # Version 2.0 keeps the six-Greek display contract above, while exposing
+    # the chain-level model inputs and decisions used to produce the signal.
+    chain_metrics: dict[str, float] = Field(default_factory=dict)
+    normalized_features: dict[str, float] = Field(default_factory=dict)
+    squeeze_score: float = 0.0
+    probability: float = Field(default=0.5, ge=0, le=0.95)
+    target_price: float | None = Field(default=None, gt=0)
+    alert_checks: dict[str, bool] = Field(default_factory=dict)
     explanation: str
 
 

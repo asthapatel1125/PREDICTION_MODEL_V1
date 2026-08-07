@@ -23,6 +23,38 @@ def test_snapshot_aggregation_is_open_interest_weighted():
     assert bar.open_interest==110
 
 
+def test_snapshot_calculates_zero_dte_gamma_dynamics_chain_metrics():
+    client=ThetaDataV3Client(api_key="test")
+    timestamp=datetime(2026,7,16,14,0,tzinfo=timezone.utc)
+    common={"timestamp":timestamp,"expiration":"20260716","underlying_price":500,"open_interest":100,
+            "bid":1,"ask":1.1,"bid_size":700,"ask_size":700,"implied_volatility":.20,
+            "theta":-.2,"vega":.4,"rho":.1,"gamma":.2,"vanna":.1,"charm":.1,"vomma":.3,
+            "veta":.1,"speed":.1,"zomma":.1,"color":-.1,"ultima":.1}
+    rows=[{**common,"strike":500,"right":"call","delta":.6},
+          {**common,"strike":500,"right":"put","delta":-.4},
+          {**common,"strike":505,"right":"call","delta":.4,"gamma":.05},
+          {**common,"strike":505,"right":"put","delta":-.1,"gamma":.05}]
+    metrics=client._aggregate(rows,"QQQ",5)[0].gamma_metrics
+    assert metrics["chain_available"]==1
+    assert metrics["key_fault_line"]==500
+    assert metrics["net_gex_key"]==pytest.approx(0)
+    assert metrics["key_liquidity"]==pytest.approx(2800)
+    assert metrics["bad_liquidity"]==0
+    assert metrics["weighted_charm"]==pytest.approx(2000)
+
+
+def test_missing_speed_and_color_use_specification_fallbacks():
+    client=ThetaDataV3Client(api_key="test")
+    timestamp=datetime(2026,7,16,14,0,tzinfo=timezone.utc)
+    common={"timestamp":timestamp,"expiration":"20260716","right":"call","underlying_price":500,
+            "open_interest":1,"bid":1,"ask":1.1,"delta":.5,"theta":-.2,"vega":.4,"rho":.1,
+            "vanna":.1,"charm":.1,"vomma":.3,"veta":.1,"zomma":.1,"ultima":.1}
+    rows=[{**common,"strike":495,"gamma":.1},{**common,"strike":500,"gamma":.2},{**common,"strike":505,"gamma":.5}]
+    bar=client._aggregate(rows,"QQQ",5)[0]
+    assert bar.greeks.speed==pytest.approx(.02 / 3)
+    assert bar.greeks.color==pytest.approx((.00004 + .00008 + .0002) / 3)
+
+
 def test_live_polling_defaults_to_5_seconds():
     assert ThetaDataV3Client(api_key="test").poll_seconds==5
 

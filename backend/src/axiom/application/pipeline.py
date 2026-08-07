@@ -192,7 +192,15 @@ class DecisionPipeline:
         alignment=self.mtf.alignment(bar.symbol); risk=self.risk.calculate(primary,sample)
         confidence=self.confidence.calculate(explosion,direction,pressure,momentum,alignment)
         gamma_dynamics=self.gamma_dynamics.calculate(primary.greeks,[item.greeks for item in sample],bar.symbol)
-        gamma_dynamics_v2=self.gamma_dynamics_v2.calculate(primary.greeks,[item.greeks for item in sample],bar.symbol)
+        # V2 uses contract-level metrics calculated before the option chain is
+        # reduced to aggregate Greeks. Its rolling baseline excludes the live
+        # snapshot currently being evaluated.
+        gamma_metric_history=[item.gamma_metrics for item in sample[:-1] if item.gamma_metrics]
+        gamma_dynamics_v2=self.gamma_dynamics_v2.calculate(
+            primary.greeks,[item.greeks for item in sample[:-1]],bar.symbol,
+            chain_metrics=primary.gamma_metrics,metric_history=gamma_metric_history,
+            timestamp=primary.timestamp,
+        )
         zone_intelligence=self.zone_intelligence.calculate(primary.greeks,[item.greeks for item in sample],bar.timestamp,bar.symbol)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,

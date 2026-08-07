@@ -396,6 +396,13 @@ class OutcomeAttributionTracker:
         if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
             gamma = getattr(state,"gamma_dynamics_v2",None) if system=="GAMMA_DYNAMICS_V2" else state.gamma_dynamics
             if not gamma:return []
+            if system == "GAMMA_DYNAMICS_V2":
+                metrics = gamma.chain_metrics
+                return [
+                    f"Key Fault Line {metrics.get('key_fault_line', 0):.2f} carries Net GEX {metrics.get('net_gex_key', 0):+.3g}; squeeze score is {gamma.squeeze_score:+.3f}.",
+                    f"OI-weighted Charm plus Net Dealer Delta establish the {side} direction; model probability is {gamma.probability:.1%}.",
+                    f"Weighted Speed, Color, liquidity, ATM spread, market-time, and cooldown gates passed for Gamma Dynamics 2.0.",
+                ]
             inputs = gamma.inputs
             version = "2.0" if system == "GAMMA_DYNAMICS_V2" else "1.0"
             intensity_terms = "Zomma/Color/Vomma/Ultima" if system == "GAMMA_DYNAMICS_V2" else "Zomma/Color"

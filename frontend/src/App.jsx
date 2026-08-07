@@ -923,7 +923,12 @@ function GammaDynamicsLog({history,state,symbol,calls=[],version=1}){
     const childRows=visibleEvents.flatMap(event=>{const call=linkedCall(event);return (call?.family_legs??[]).map(leg=>{const metric=legMetrics(call,leg);return [event.id,leg.leg_number,leg.call_id,leg.role,metric.status,leg.trigger_adverse_points===0?"0":`${call.direction==="UP"?"-":"+"}${number(leg.trigger_adverse_points).toFixed(0)} PTS`,`${logDate(leg.activated_at)} · ${logTime(leg.activated_at)}`,metric.datum.toFixed(4),metric.price.toFixed(4),`${metric.pl>=0?"+":""}${metric.pl.toFixed(4)} pts`,metric.high.toFixed(4),metric.timeHigh,metric.low.toFixed(4),metric.timeLow]})});
     try{await navigator.clipboard.writeText([exportTsv(`${versionLabel} EVENT LOG · ${symbol} · EASTERN TIME`,headers,parentRows),exportTsv(`${versionLabel} CHILD LEGS`,childHeaders,childRows)].join("\n\n"));setCopied(true);window.setTimeout(()=>setCopied(false),1800)}catch{setCopied(false)}
   };
-  const gateItems=[
+  const gateItems=v2?[
+    ["BASELINE",Boolean(current.alert_checks?.baseline),`${number(current.history_points).toFixed(0)} / 20 observations`],
+    ["SQUEEZE",Boolean(current.alert_checks?.squeeze),`${number(current.squeeze_score).toFixed(3)} / ${number(current.intensity_threshold,.65).toFixed(2)}`],
+    ["SPEED",Boolean(current.alert_checks?.speed),signedGreek(current.normalized_features?.weighted_speed)],
+    ["COLOR",Boolean(current.alert_checks?.color),signedGreek(current.normalized_features?.weighted_color)],
+  ]:[
     ["BASELINE",number(current.history_points)>=20,`${number(current.history_points).toFixed(0)} / 20 observations`],
     ["INTENSITY",number(current.intensity)>=number(current.intensity_threshold,.65),`${pct(current.intensity)} / ${pct(current.intensity_threshold??.65)}`],
     ["SPEED",Math.abs(number(current.inputs?.speed))>1e-12,signedGreek(current.inputs?.speed)],

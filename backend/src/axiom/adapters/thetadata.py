@@ -187,7 +187,11 @@ class ThetaDataV3Client(MarketDataPort):
     def _require_all_greek_orders(cls, rows: list[dict[str, Any]]) -> None:
         if not rows:
             return
-        missing = [name for name in Greeks.model_fields
+        # Speed and Color have deterministic fallbacks below when a provider
+        # snapshot omits a third-order field. The remaining fields are required
+        # because neither the UI nor the Gamma Dynamics formulas can recover
+        # them safely from other values.
+        missing = [name for name in Greeks.model_fields if name not in {"speed", "color"}
                    if not any(cls._optional_number(row.get(name)) is not None for row in rows)]
         if missing:
             raise ThetaDataProtocolError(
@@ -226,6 +230,11 @@ class ThetaDataV3Client(MarketDataPort):
         result: list[MarketBar] = []
         for group in (buckets[key] for key in sorted(buckets)):
             ts = max(self._timestamp(row) for row in group)
+            latest = max(group, key=self._timestamp)
+            price = self._number(latest.get("underlying_price") or latest.get("stock_price") or latest.get("price"))
+            if price <= 0:
+                continue
+            self._hydrate_third_order_fallbacks(group, price)
             weights = [max(self._number(row.get("open_interest") or row.get("volume") or 1), 1) for row in group]
             weighted = list(zip(group, weights))
             def exposure(name: str) -> float:
@@ -238,10 +247,6 @@ class ThetaDataV3Client(MarketDataPort):
                 # call/put sign would change the provider values and double-sign
                 # Greeks such as put delta/rho.
                 return sum(value * weight for value, weight in available) / valid_weight
-            latest = max(group, key=self._timestamp)
-            price = self._number(latest.get("underlying_price") or latest.get("stock_price") or latest.get("price"))
-            if price <= 0:
-                continue
             spreads = [max(0.0, self._number(row.get("ask")) - self._number(row.get("bid"))) for row in group]
             result.append(MarketBar(timestamp=ts, symbol=symbol, timeframe_seconds=resolution_seconds,
                 open=price, high=price, low=price, close=price,
@@ -249,8 +254,111 @@ class ThetaDataV3Client(MarketDataPort):
                 bid_ask_spread=sum(spreads) / max(len(spreads), 1),
                 greeks=Greeks(**{name: exposure(name) for name in Greeks.model_fields}),
                 contract_count=len(group),
-                open_interest=sum(self._number(row.get("open_interest")) for row in group)))
+                open_interest=sum(self._number(row.get("open_interest")) for row in group),
+                gamma_metrics=self._gamma_metrics(group, price, ts)))
         return result
+
+    @classmethod
+    def _hydrate_third_order_fallbacks(cls, rows: list[dict[str, Any]], spot: float) -> None:
+        """Fill only missing Speed/Color with the specification's fallbacks."""
+        by_surface: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for row in rows:
+            key = (str(row.get("expiration", "")), str(row.get("right", "")))
+            by_surface.setdefault(key, []).append(row)
+        for surface in by_surface.values():
+            ordered = sorted(surface, key=lambda row: cls._number(row.get("strike")))
+            for index, row in enumerate(ordered):
+                if cls._optional_number(row.get("speed")) is None and 0 < index < len(ordered) - 1:
+                    previous, following = ordered[index - 1], ordered[index + 1]
+                    denominator = cls._number(following.get("strike")) - cls._number(previous.get("strike"))
+                    if abs(denominator) > 1e-12:
+                        row["speed"] = (
+                            cls._number(following.get("gamma")) - cls._number(previous.get("gamma"))
+                        ) / denominator
+                if cls._optional_number(row.get("speed")) is None:
+                    row["speed"] = 0.0
+                if cls._optional_number(row.get("color")) is None:
+                    row["color"] = -cls._number(row.get("theta")) * cls._number(row.get("gamma")) / max(spot, 1e-12)
+
+    @classmethod
+    def _gamma_metrics(cls, rows: list[dict[str, Any]], spot: float, observed_at: datetime) -> dict[str, float]:
+        """Calculate Gamma Dynamics 2.0 features from one option-chain snapshot."""
+        dated = [row for row in rows if cls._expiration_date(row.get("expiration")) is not None]
+        contracts = [row for row in dated if cls._expiration_date(row.get("expiration")) == observed_at.date()] if dated else rows
+        by_strike: dict[float, list[dict[str, Any]]] = {}
+        for row in contracts:
+            strike = cls._optional_number(row.get("strike"))
+            if strike is not None and strike > 0:
+                by_strike.setdefault(strike, []).append(row)
+        if not by_strike:
+            return {"spot": spot, "chain_available": 0.0}
+        net_gex: dict[float, float] = {}
+        for strike, contracts_at_strike in by_strike.items():
+            net_gex[strike] = sum(
+                cls._right_sign(row.get("right"))
+                * cls._number(row.get("open_interest")) * 100.0 * cls._number(row.get("gamma")) * spot ** 2 * 0.01
+                for row in contracts_at_strike
+            )
+        key_fault_line = min(net_gex, key=lambda strike: (-abs(net_gex[strike]), strike))
+        key_rows = by_strike[key_fault_line]
+        atm_strike = min(by_strike, key=lambda strike: (abs(strike - spot), strike))
+        atm_rows = by_strike[atm_strike]
+        subset = [
+            row for row in contracts
+            if 0.25 < abs(cls._number(row.get("delta"))) < 0.75
+            and abs(cls._number(row.get("strike")) - spot) / max(spot, 1e-12) < 0.01
+        ]
+        def weighted(name: str) -> float:
+            return sum(cls._number(row.get(name)) * cls._number(row.get("open_interest")) * 100.0 for row in subset)
+        iv_values = [
+            value for row in atm_rows
+            if (value := cls._optional_number(row.get("implied_volatility") or row.get("implied_vol") or row.get("iv"))) is not None
+        ]
+        key_sizes = [
+            cls._optional_number(row.get("bid_size")) for row in key_rows
+        ] + [cls._optional_number(row.get("ask_size")) for row in key_rows]
+        liquidity_available = any(value is not None for value in key_sizes)
+        liquidity = sum(value or 0.0 for value in key_sizes)
+        atm_spread = sum(max(0.0, cls._number(row.get("ask")) - cls._number(row.get("bid"))) for row in atm_rows) / max(len(atm_rows), 1)
+        return {
+            "spot": spot,
+            "chain_available": 1.0,
+            "key_fault_line": key_fault_line,
+            "net_gex_key": net_gex[key_fault_line],
+            "gamma_squeeze_score": abs(net_gex[key_fault_line]) / max(0.1, abs(spot - key_fault_line)),
+            "weighted_speed": weighted("speed"),
+            "weighted_color": weighted("color"),
+            "weighted_charm": weighted("charm"),
+            "weighted_vanna": weighted("vanna"),
+            "net_dealer_delta": sum(
+                cls._number(row.get("delta")) * cls._number(row.get("open_interest")) * 100.0 * cls._right_sign(row.get("right"))
+                for row in contracts
+            ),
+            "atm_iv": sum(iv_values) / len(iv_values) if iv_values else 0.0,
+            "atm_iv_available": float(bool(iv_values)),
+            "atm_spread": atm_spread,
+            "key_liquidity": liquidity,
+            "liquidity_available": float(liquidity_available),
+            "bad_liquidity": float(liquidity_available and liquidity < 1000.0),
+        }
+
+    @staticmethod
+    def _right_sign(value: Any) -> float:
+        return -1.0 if str(value).strip().lower() in {"p", "put"} else 1.0
+
+    @staticmethod
+    def _expiration_date(value: Any) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        digits = re.sub(r"[^0-9]", "", str(value or ""))
+        if len(digits) != 8:
+            return None
+        try:
+            return datetime.strptime(digits, "%Y%m%d").date()
+        except ValueError:
+            return None
 
     def _timestamp(self, row: dict[str, Any]) -> datetime:
         value = row.get("_bucket_timestamp") or row.get("timestamp") or row.get("datetime") or row.get("underlying_timestamp")
