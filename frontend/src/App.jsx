@@ -1068,7 +1068,7 @@ function GreekAuditBadge({label,tone="neutral",detail=null}){
 
 function GammaEventGraphModal({call,onClose}){
   useEffect(()=>{const close=event=>event.key==="Escape"&&onClose();window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close)},[onClose]);
-  return createPortal(<div className="event-graph-backdrop" role="dialog" aria-modal="true" aria-label="Gamma Dynamics event graph" onPointerDown={event=>{if(event.target===event.currentTarget)onClose()}}><section className="event-graph-dialog"><header><div><span>GAMMA DYNAMICS 1.0 · EVENT GRAPH</span><b>{call.symbol} · {biasLabel(call.direction)} · {logDate(call.alerted_at)} {logTime(call.alerted_at)}</b></div><button type="button" onClick={onClose}>CLOSE</button></header><FiftyPointPathChart call={call}/></section></div>,document.body);
+  return createPortal(<div className="event-graph-backdrop" role="dialog" aria-modal="true" aria-label="Gamma Dynamics event details" onPointerDown={event=>{if(event.target===event.currentTarget)onClose()}}><section className="event-graph-dialog event-call-dialog"><header><div><span>GAMMA DYNAMICS 1.0 · EVENT DETAILS</span><b>{call.symbol} · {biasLabel(call.direction)} · {logDate(call.alerted_at)} {logTime(call.alerted_at)}</b></div><button type="button" onClick={onClose}>CLOSE</button></header><div className="event-call-dialog-body"><FiftyPointOutcomeCard call={call} system="GAMMA_DYNAMICS"/></div></section></div>,document.body);
 }
 
 function FiftyPointPathChart({call,onValueChange}){
