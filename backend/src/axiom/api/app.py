@@ -48,7 +48,7 @@ class LiveEngineRequest(BaseModel):
 
 class Container:
     settings:PlatformSettings;config:StrategyConfig;repository:SqlAlchemyRepository;bus:InMemoryEventBus
-    data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None
+    data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
 
 
@@ -73,7 +73,21 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
             cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
         container.replay_runs={};container.replay_tasks=set()
+        async def automatic_live_stream()->None:
+            """Keep the licensed QQQ stream active on market weekdays, 7:00 AM–6:00 PM Eastern."""
+            market_tz=ZoneInfo(cfg.market_timezone)
+            while True:
+                now=datetime.now(market_tz)
+                within_window=now.weekday()<5 and time(7,0)<=now.time()<time(18,0)
+                running=container.live_task and not container.live_task.done()
+                if within_window and not running:
+                    container.live_task=asyncio.create_task(container.live.run("QQQ",5),name="live-QQQ-auto")
+                elif not within_window and running:
+                    container.live.stop()
+                await asyncio.sleep(15)
+        container.auto_stream_task=asyncio.create_task(automatic_live_stream(),name="automatic-live-stream")
         yield
+        if container.auto_stream_task:container.auto_stream_task.cancel()
         if container.live_task:container.live_task.cancel()
         for task in container.replay_tasks:task.cancel()
 
