@@ -1112,7 +1112,7 @@ function FiftyPointPathChart({call,onValueChange}){
   const closePath=bars.map((bar,index)=>`${index?"L":"M"}${x(index).toFixed(1)},${y(number(bar.close)).toFixed(1)}`).join(" ");
   const ticks=Array.from({length:5},(_,index)=>max-(max-min)*index/4);
   const xTickIndexes=[...new Set(Array.from({length:Math.min(5,bars.length)},(_,index)=>Math.round(index*(bars.length-1)/Math.max(1,Math.min(5,bars.length)-1))))];
-  const onPointerMove=event=>{const bounds=event.currentTarget.getBoundingClientRect(),ratio=(event.clientX-bounds.left)/Math.max(bounds.width,1),svgX=ratio*dims.width,index=Math.max(0,Math.min(bars.length-1,Math.round((svgX-dims.left)/Math.max(plotWidth,1)*bars.length-.5))),bar=bars[index];setHovered({index,bar});onValueChange?.(bar)};
+  const onPointerMove=event=>{const bounds=event.currentTarget.getBoundingClientRect(),ratio=(event.clientX-bounds.left)/Math.max(bounds.width,1),svgX=ratio*dims.width,index=Math.max(0,Math.min(bars.length-1,Math.round((svgX-dims.left)/Math.max(plotWidth,1)*bars.length-.5))),bar=bars[index];setHovered({index,bar,side:ratio>.5?"left":"right"});onValueChange?.(bar)};
   const onWheel=event=>{
     event.preventDefault();
     if(event.shiftKey){
@@ -1125,7 +1125,6 @@ function FiftyPointPathChart({call,onValueChange}){
   };
   const resetY=()=>{setYZoom(1);setYCenter(null)};
   const diff=value=>{const result=number(value)-datum;return `${result>=0?"+":""}${result.toFixed(4)} pts`};
-  const activeBar=hovered?.bar??bars.at(-1);
   const targetVisible=target>=min&&target<=max,targetAtTop=target>max;
   useEffect(()=>{if(!expanded)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";const close=event=>event.key==="Escape"&&setExpanded(false);window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previous;window.removeEventListener("keydown",close)}},[expanded]);
   const content=<div className={`alert-path-chart ${expanded?"is-expanded":""}`}>
@@ -1147,7 +1146,7 @@ function FiftyPointPathChart({call,onValueChange}){
         <path className="minute-high-line" d={highPath}/><path className="minute-low-line" d={lowPath}/><path className="minute-close-line" d={closePath}/>
         {hovered&&<line className="path-crosshair" x1={x(hovered.index)} x2={x(hovered.index)} y1={dims.top} y2={dims.height-dims.bottom}/>}
       </svg>
-      {activeBar&&<div className="alert-path-tooltip corner"><b>{hovered?"HOVERED":"LATEST"} · {logDate(activeBar.timestamp)} · {logTime(activeBar.timestamp)}</b><span>OPEN {number(activeBar.open).toFixed(4)} <i>{diff(activeBar.open)}</i></span><span>HIGH {number(activeBar.high).toFixed(4)} <i>{diff(activeBar.high)}</i></span><span>LOW {number(activeBar.low).toFixed(4)} <i>{diff(activeBar.low)}</i></span><span>CLOSE {number(activeBar.close).toFixed(4)} <i>{diff(activeBar.close)}</i></span></div>}
+      {hovered&&<div className={`alert-path-tooltip corner ${hovered.side}`}><b>{logDate(hovered.bar.timestamp)} · {logTime(hovered.bar.timestamp)}</b><span>OPEN {number(hovered.bar.open).toFixed(4)} <i>{diff(hovered.bar.open)}</i></span><span>HIGH {number(hovered.bar.high).toFixed(4)} <i>{diff(hovered.bar.high)}</i></span><span>LOW {number(hovered.bar.low).toFixed(4)} <i>{diff(hovered.bar.low)}</i></span><span>CLOSE {number(hovered.bar.close).toFixed(4)} <i>{diff(hovered.bar.close)}</i></span></div>}
     </div>
     <div className="alert-path-help"><span>Wheel: zoom Y around cursor price</span><span>Shift + wheel or Y ↑/↓: move Y-axis</span><span>Double-click: reset observed-price scale</span></div>
   </div>;
