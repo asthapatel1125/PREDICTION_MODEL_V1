@@ -372,21 +372,39 @@ async def create_database(url:str)->tuple[async_sessionmaker[AsyncSession],SqlAl
     engine=create_async_engine(url,**kwargs)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        # create_all does not evolve existing Supabase tables. These additive,
-        # nullable columns keep old rows readable while making zone signals queryable.
-        for ddl in (
-            "alter table market_states add column if not exists zone_name varchar(40)",
-            "alter table market_states add column if not exists zone_score double precision",
-            "alter table market_states add column if not exists zone_confidence double precision",
-            "alter table market_states add column if not exists zone_qualified boolean",
-            "alter table market_states add column if not exists zone_direction varchar(8)",
-            "alter table market_states add column if not exists zone_normalized_greeks json",
-            "alter table market_states add column if not exists zone_greek_bands json",
-            "alter table market_states add column if not exists zone_rule_checks json",
-            "create index if not exists ix_market_states_zone_name on market_states (zone_name)",
-            "create index if not exists ix_market_states_zone_score on market_states (zone_score)",
-            "create index if not exists ix_market_states_zone_qualified on market_states (zone_qualified)",
-            "create index if not exists ix_market_states_zone_direction on market_states (zone_direction)",
-        ):
-            await connection.execute(text(ddl))
+        # create_all does not evolve existing Supabase tables.  Checking the
+        # catalog first avoids issuing ADD COLUMN IF NOT EXISTS on every boot:
+        # Postgres still takes an ACCESS EXCLUSIVE lock for that statement,
+        # even when the column already exists.
+        column_ddls={
+            "zone_name":"alter table market_states add column zone_name varchar(40)",
+            "zone_score":"alter table market_states add column zone_score double precision",
+            "zone_confidence":"alter table market_states add column zone_confidence double precision",
+            "zone_qualified":"alter table market_states add column zone_qualified boolean",
+            "zone_direction":"alter table market_states add column zone_direction varchar(8)",
+            "zone_normalized_greeks":"alter table market_states add column zone_normalized_greeks json",
+            "zone_greek_bands":"alter table market_states add column zone_greek_bands json",
+            "zone_rule_checks":"alter table market_states add column zone_rule_checks json",
+        }
+        index_ddls={
+            "ix_market_states_zone_name":"create index ix_market_states_zone_name on market_states (zone_name)",
+            "ix_market_states_zone_score":"create index ix_market_states_zone_score on market_states (zone_score)",
+            "ix_market_states_zone_qualified":"create index ix_market_states_zone_qualified on market_states (zone_qualified)",
+            "ix_market_states_zone_direction":"create index ix_market_states_zone_direction on market_states (zone_direction)",
+        }
+        if connection.dialect.name=="postgresql":
+            columns=(await connection.execute(text("""
+                select column_name from information_schema.columns
+                where table_schema=current_schema() and table_name='market_states'
+            """))).scalars().all()
+            for name,ddl in column_ddls.items():
+                if name not in columns:
+                    await connection.execute(text(ddl))
+            indexes=(await connection.execute(text("""
+                select indexname from pg_indexes
+                where schemaname=current_schema() and tablename='market_states'
+            """))).scalars().all()
+            for name,ddl in index_ddls.items():
+                if name not in indexes:
+                    await connection.execute(text(ddl))
     factory=async_sessionmaker(engine,expire_on_commit=False);return factory,SqlAlchemyRepository(factory)
