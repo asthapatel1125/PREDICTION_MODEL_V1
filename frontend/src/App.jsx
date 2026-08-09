@@ -6,13 +6,14 @@ import {
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["One-screen focus", "decision"], ["Gamma dynamics 1.0", "gamma-dynamics"], ["Gamma dynamics 2.0", "gamma-dynamics-v2"], ["Delta dynamics", "six-greek-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
+  ["System scorecard", "system-scorecard"], ["One-screen focus", "decision"], ["Gamma dynamics 1.0", "gamma-dynamics"], ["Gamma dynamics 2.0", "gamma-dynamics-v2"], ["Delta dynamics", "six-greek-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
   ["Custom Greek graphs", "custom-greeks"], ["Live alerts", "live-alerts"],
 ];
 const DEFAULT_MODULE_ORDER=["gamma-dynamics","gamma-dynamics-v2","six-greek-dynamics","forecast","score-modules","greek-orders","custom-greeks","live-alerts"];
 const OVERVIEW_LABELS=Object.fromEntries(OVERVIEW_SECTIONS.map(([label,id])=>[id,label]));
 const OVERVIEW_NUMBERS=Object.fromEntries(OVERVIEW_SECTIONS.map(([,id],index)=>[id,String(index+1).padStart(2,"0")]));
 const OVERVIEW_CATEGORIES={
+  "system-scorecard":"OUTCOME BRIEFING",
   decision:"DECISION",
   "gamma-dynamics":"SIGNAL MODEL",
   "gamma-dynamics-v2":"SIGNAL MODEL",
@@ -509,7 +510,7 @@ function OverviewDisclosure({id,title,description,children,defaultOpen=false}){
 function DraggableOverviewModule({id,index,dragged,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,children}){
   const target=dragOver?.id===id&&dragged!==id;
   return <div className={`draggable-overview-module ${dragged===id?"is-dragging":""} ${target?`is-drag-over drop-${dragOver.position}`:""}`} data-module-id={id} style={{order:index}}>
-    <button type="button" className="module-drag-handle" draggable="true" onDragStart={event=>onDragStart(event,id)} onDragEnd={onDragEnd} aria-label={`Drag ${OVERVIEW_LABELS[id]} section to reorder`} title="Drag with your cursor to reorder this section"><span>⠿</span><b>REORDER</b><small>Position {index+2}</small></button>
+      <button type="button" className="module-drag-handle" draggable="true" onDragStart={event=>onDragStart(event,id)} onDragEnd={onDragEnd} aria-label={`Drag ${OVERVIEW_LABELS[id]} section to reorder`} title="Drag with your cursor to reorder this section"><span>⠿</span><b>REORDER</b><small>Position {index+3}</small></button>
     <div className="module-drop-zone" onDragEnter={event=>onDragOver(event,id)} onDragOver={event=>onDragOver(event,id)} onDrop={event=>onDrop(event,id)}>{children}</div>
   </div>;
 }
@@ -679,6 +680,53 @@ function PriorityAlert({ alert, state, symbol }) {
     <div><div className="alert-heading"><span className="alert-label">OPTIONS-PRESSURE BIAS · MANUAL PRICE CONFIRMATION REQUIRED</span><span className="alert-confidence">{pct(decision.optionsConfidence)}</span></div><h2>{symbol} · {side} BIAS</h2><p>{state?.explosion?.explanation} {state?.direction?.explanation} {state?.pressure?.explanation}</p><small>{time(state?.timestamp)} · {pretty(state?.profile)} · Options Pro inputs only · not an entry signal</small></div>
     <div className="alert-levels bias-levels"><div><span>BIAS</span><b>{side}</b></div><div><span>EXPLOSION</span><b>{number(state?.explosion?.value).toFixed(2)}</b></div><div><span>PRESSURE</span><b>{number(state?.pressure?.value)>0?"+":""}{number(state?.pressure?.value).toFixed(2)}</b></div><div><span>DIRECTION</span><b>{number(state?.direction?.value)>0?"+":""}{number(state?.direction?.value).toFixed(0)} / 3</b></div></div>
   </article>;
+}
+
+const SCORECARD_SYSTEMS=[
+  ["GAMMA_DYNAMICS","Gamma Dynamics 1.0"],
+  ["GAMMA_DYNAMICS_V2","Gamma Dynamics 2.0"],
+  ["DELTA_DYNAMICS","Delta Dynamics"],
+];
+
+function medianDuration(values){
+  const ordered=values.filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!ordered.length)return null;
+  const middle=Math.floor(ordered.length/2);
+  return ordered.length%2?ordered[middle]:(ordered[middle-1]+ordered[middle])/2;
+}
+
+function scorecardCallState(call){
+  const outcome=callOutcome(call);
+  if(outcome.closed)return outcome.grade==="success"?"succeeded":"failed";
+  const entry=number(call.entry_price),current=number(call.current_price??call.final_price??call.minute_bars?.at(-1)?.close,entry);
+  return call.direction==="UP"?(current>=entry?"succeeding":"failing"):(current<=entry?"succeeding":"failing");
+}
+
+function GammaV2GateState({state}){
+  const model=state?.gamma_dynamics_v2,checks=model?.alert_checks??{},entries=Object.entries(checks),passed=entries.filter(([,value])=>value).length;
+  if(!entries.length)return <div className="scorecard-gates waiting"><span>GATE STATE · WAITING FOR LIVE DATA</span><b>WAITING ON · CHAIN SNAPSHOT</b></div>;
+  if(model?.qualified)return <div className="scorecard-gates qualified"><span>GATE STATE · {passed} / {entries.length} PASS</span><b>QUALIFIED · {biasLabel(model.decision)}</b></div>;
+  const priority=["chain_available","baseline","squeeze","speed","color","liquidity","active_window","cooldown","atm_spread","direction"];
+  const blocker=priority.find(name=>checks[name]===false)??entries.find(([,value])=>!value)?.[0]??"live_data";
+  return <div className="scorecard-gates waiting"><span>GATE STATE · {passed} / {entries.length} PASS</span><b>WAITING ON · {pretty(blocker).toUpperCase()}</b></div>;
+}
+
+function SystemScorecardCard({system,label,calls,state}){
+  const logical=dedupeLogicalCalls(calls),counts=logical.reduce((result,call)=>{result[scorecardCallState(call)]+=1;return result},{succeeded:0,failed:0,succeeding:0,failing:0});
+  const closed=counts.succeeded+counts.failed,successRate=closed?counts.succeeded/closed:null;
+  const fastWins=logical.filter(call=>scorecardCallState(call)==="succeeded"&&Number.isFinite(Number(call.seconds_to_target))&&Number(call.seconds_to_target)<=600).length;
+  const medianWin=medianDuration(logical.filter(call=>scorecardCallState(call)==="succeeded").map(call=>Number(call.seconds_to_target)));
+  return <article className={`system-scorecard-card ${system==="GAMMA_DYNAMICS_V2"?"gamma-v2":""}`}>
+    <header><div><span>{label.toUpperCase()}</span><b>{successRate===null?"—":pct(successRate)} SUCCESS RATE</b></div><small>{closed} CLOSED</small></header>
+    <div className="scorecard-status-grid"><div className="succeeded"><span>✓ SUCCEEDED</span><b>{counts.succeeded}</b></div><div className="failed"><span>✕ FAILED</span><b>{counts.failed}</b></div><div className="succeeding"><span>↑ LIVE SUCCEEDING</span><b>{counts.succeeding}</b></div><div className="failing"><span>↓ LIVE FAILING</span><b>{counts.failing}</b></div></div>
+    <div className="scorecard-speed"><span>⚡ {fastWins} WINS ≤10M</span><span>MEDIAN WIN · {medianWin===null?"—":duration(medianWin)}</span></div>
+    {system==="GAMMA_DYNAMICS_V2"&&<GammaV2GateState state={state}/>}
+  </article>;
+}
+
+function SystemScorecard({attribution,state,symbol}){
+  const updated=state?.timestamp?`${logDate(state.timestamp)} · ${logTime(state.timestamp)} ET`:"WAITING FOR STREAM";
+  return <section id="system-scorecard" className="overview-section system-scorecard-section"><OverviewSectionHeading number="01" title="System scorecard" description="Outcome briefing across Gamma Dynamics 1.0, Gamma Dynamics 2.0, and Delta Dynamics."/><article className="panel system-scorecard"><header className="panel-head"><div><span>SYSTEM OUTCOME BRIEFING</span><h2>{symbol} · available tracked calls</h2></div><div className="scorecard-updated"><span>LAST UPDATED</span><b>{updated}</b></div></header><div className="system-scorecard-grid">{SCORECARD_SYSTEMS.map(([system,label])=><SystemScorecardCard key={system} system={system} label={label} calls={attribution?.systems?.[system]?.calls??[]} state={state}/>)}</div></article></section>;
 }
 
 function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
@@ -1324,7 +1372,7 @@ export default function Home() {
   useEffect(()=>{const controller=new AbortController();fetchStateHistory(symbol,5000,controller.signal).then(rows=>setChartHistory([...rows].reverse())).catch(error=>{if(error.name!=="AbortError")setChartHistory([])});return()=>controller.abort()},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchInstruments(controller.signal).then(setInstruments).catch(()=>{});return()=>controller.abort()},[]);
   useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(id)},[]);
-  const orderedOverviewSections=[OVERVIEW_SECTIONS[0],...moduleOrder.map(id=>[OVERVIEW_LABELS[id],id])];
+  const orderedOverviewSections=[...OVERVIEW_SECTIONS.slice(0,2),...moduleOrder.map(id=>[OVERVIEW_LABELS[id],id])];
   useEffect(()=>{if(view!=="Overview")return;const sections=orderedOverviewSections.map(([,id])=>document.getElementById(id)).filter(Boolean);const observer=new IntersectionObserver(entries=>{const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(visible)setActiveSection(visible.target.id)},{rootMargin:"-18% 0px -68% 0px",threshold:[0,.2,.5,.8]});sections.forEach(section=>observer.observe(section));return()=>observer.disconnect()},[view,moduleOrder]);
   useEffect(()=>{window.localStorage.setItem("axiom-overview-module-order",JSON.stringify(moduleOrder))},[moduleOrder]);
   useEffect(()=>subscribeToEvents(message=>{if(message.topic==="market_state"){setDashboard(current=>({...current,state:message.payload,history:[...(current.history??[]),message.payload].slice(-120)}));setChartHistory(current=>[...current.filter(row=>row.timestamp!==message.payload.timestamp),message.payload].slice(-5000))}if(message.topic==="alert")setDashboard(current=>({...current,alerts:[toDashboardAlert(message.payload),...(current.alerts??[])].slice(0,100)}));if(message.topic==="outcome")setDashboard(current=>({...current,alerts:(current.alerts??[]).map(alert=>alert.id===message.payload.alert_id?{...alert,result:number(message.payload.precision)>=.7?"SUCCESS":"FAILURE",precision:number(message.payload.precision).toFixed(2)}:alert)}));if(message.topic==="engine_status"){setDashboard(current=>({...current,engine:message.payload}));setSystem(current=>current?{...current,engine:message.payload}:current)}if(message.topic==="system_event")setSystem(current=>current?{...current,events:[message.payload,...(current.events??[])].slice(0,25)}:current);if(message.topic==="replay_status")setReplay(message.payload)},setConnected),[]);
@@ -1352,7 +1400,8 @@ export default function Home() {
   return <main className={`workspace focus-${focusTone}`}><header className="topbar"><div className="brand"><div className="brandmark"><span/><span/><span/></div><div><b>AXIOM</b><small>PRESSURE INTELLIGENCE</small></div></div><nav className="mode-switch" aria-label="Engine mode"><button className={view!=="Historical Replay"?"active":""} onClick={()=>setView("Overview")}>Live engine</button><button className={view==="Historical Replay"?"active":""} onClick={()=>setView("Historical Replay")}>Training replay</button></nav><label className="section-jump"><span>Section</span><select value={activeSection} onChange={event=>jumpTo(event.target.value)}>{orderedOverviewSections.map(([label,id])=><option value={id} key={id}>{OVERVIEW_NUMBERS[id]} · {label}</option>)}</select></label><div className="header-actions status-cluster" aria-live="polite"><span className="status-chip is-idle">AUTO STREAM <b>7 AM–6 PM ET</b></span><span className={`status-chip ${connected?"is-good":"is-bad"}`}>API <b>{connected?"ONLINE":"OFFLINE"}</b></span><span className={`status-chip ${engine.running?"is-good":"is-idle"}`}>ENGINE <b>{engine.running?"ON":"IDLE"}</b></span><span className={`status-chip ${dataFresh?"is-good":dataDelayed?"is-bad":"is-idle"}`}>DATA <b>{dataFresh?`${stateAge}s`:dataDelayed?"STALE":"IDLE"}</b></span></div></header>
     <aside className="sidebar"><div className="side-top"><div className="nav-context"><span>WORKSPACE</span><b>Live Overview</b><small>Decision → models → evidence</small></div><div className="nav-section-label"><span>NAVIGATION</span><b>{orderedOverviewSections.length} SECTIONS</b></div><nav className="overview-subnav" aria-label="Overview sections">{orderedOverviewSections.map(([label,section],index)=><button className={activeSection===section?"active":""} aria-current={activeSection===section?"location":undefined} key={section} onClick={()=>jumpTo(section)}><b>{String(index+1).padStart(2,"0")}</b><span><strong>{label}</strong><small>{OVERVIEW_CATEGORIES[section]}</small></span></button>)}</nav><div className="layout-actions"><button type="button" onClick={()=>setAllSections(true)}>Expand all</button><button type="button" onClick={()=>setAllSections(false)}>Collapse all</button></div><button type="button" className="reset-layout" onClick={()=>{setModuleOrder(DEFAULT_MODULE_ORDER);notify("Overview order reset")}}>↺ Reset section order</button></div><div className="side-bottom"><div className={`system-health ${system?.database_connected?"is-good":"is-bad"}`}><span><i/>{system?.database_connected?"System healthy":"System degraded"}</span><small>v{config?.version??"—"} · Render</small></div></div></aside>
     <section className="content">{view!=="Overview"?<ModulePage {...{view,state,history,alerts,performance,system,config,replay,onReplay:runReplay,notify}}/>:<><div id="overview-top" className="page-head overview-command overview-section"><div><div className="eyebrow">LIVE TRADING COMMAND</div><h1>Pressure intelligence</h1><p>Options-derived directional pressure with independent price confirmation.</p></div><div className="controls"><label>Instrument<select value={symbol} disabled={engine.running} onChange={e=>setSymbol(e.target.value)}>{instruments.map(item=><option value={item.symbol} key={item.symbol}>{item.symbol}</option>)}</select><small className={selectedInstrument?.available?"provider-ready":"provider-missing"}>{selectedInstrument?.provider}{selectedInstrument?.requirement?` · ${selectedInstrument.requirement}`:""}</small></label><label>Update interval<select value={resolution} onChange={e=>setResolution(Number(e.target.value))}><option value="5">5 seconds</option><option value="15">15 seconds</option><option value="60">1 minute</option></select></label></div></div>
-    <OverviewSectionHeading number="01" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
+    <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
+    <OverviewSectionHeading number="02" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics 1.0 · Four-Greek Engine" description="Zomma · Color · Speed · Gamma"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={1}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={1}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]} version={1}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
