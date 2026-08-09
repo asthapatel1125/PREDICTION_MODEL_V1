@@ -714,7 +714,8 @@ function scorecardDateValue(date){
 
 function filterScorecardCalls(calls,fromDate,fromTime,toDate,toTime){
   const start=scorecardRangeTimestamp(fromDate,fromTime),end=scorecardRangeTimestamp(toDate,toTime,true);
-  return calls.filter(call=>{const timestamp=new Date(call.alerted_at??call.timestamp??call.created_at??call.entry_at??"").getTime();return !Number.isFinite(timestamp)||(timestamp>=start&&timestamp<=end)});
+  const allTime=!fromDate&&!fromTime&&!toDate&&!toTime;
+  return calls.filter(call=>{const timestamp=new Date(call.alerted_at??call.timestamp??call.created_at??call.entry_at??"").getTime();return allTime||Number.isFinite(timestamp)&&timestamp>=start&&timestamp<=end});
 }
 
 function SystemScorecardRow({system,label,calls,overallCalls,state}){
