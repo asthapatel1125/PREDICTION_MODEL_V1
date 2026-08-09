@@ -702,8 +702,18 @@ function scorecardCallState(call){
   return call.direction==="UP"?(current>=entry?"succeeding":"failing"):(current<=entry?"succeeding":"failing");
 }
 
-function filterScorecardCalls(calls,from,to){
-  const start=from?new Date(from).getTime():-Infinity,end=to?new Date(to).getTime():Infinity;
+function scorecardRangeTimestamp(date,time,end=false){
+  if(!date)return end?Infinity:-Infinity;
+  const timestamp=new Date(`${date}T${time||(end?"23:59:59":"00:00:00")}`).getTime();
+  return Number.isFinite(timestamp)?timestamp:(end?Infinity:-Infinity);
+}
+
+function scorecardDateValue(date){
+  return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,10);
+}
+
+function filterScorecardCalls(calls,fromDate,fromTime,toDate,toTime){
+  const start=scorecardRangeTimestamp(fromDate,fromTime),end=scorecardRangeTimestamp(toDate,toTime,true);
   return calls.filter(call=>{const timestamp=new Date(call.alerted_at??call.timestamp??call.created_at??call.entry_at??"").getTime();return !Number.isFinite(timestamp)||(timestamp>=start&&timestamp<=end)});
 }
 
@@ -719,21 +729,27 @@ function GammaV2GateState({state}){
 function SystemScorecardCard({system,label,calls,state}){
   const logical=dedupeLogicalCalls(calls),counts=logical.reduce((result,call)=>{result[scorecardCallState(call)]+=1;return result},{succeeded:0,failed:0,succeeding:0,failing:0});
   const closed=counts.succeeded+counts.failed,successRate=closed?counts.succeeded/closed:null;
-  const fastWins=logical.filter(call=>scorecardCallState(call)==="succeeded"&&Number.isFinite(Number(call.seconds_to_target))&&Number(call.seconds_to_target)<=600).length;
-  const medianWin=medianDuration(logical.filter(call=>scorecardCallState(call)==="succeeded").map(call=>Number(call.seconds_to_target)));
+  const wins=logical.filter(call=>scorecardCallState(call)==="succeeded"),completed=logical.filter(call=>["succeeded","failed"].includes(scorecardCallState(call))),medianWin=medianDuration(wins.map(call=>Number(call.seconds_to_target)));
+  const speedBuckets=[
+    ["≤10M",seconds=>seconds<=600],
+    ["10–30M",seconds=>seconds>600&&seconds<=1800],
+    ["30M+",seconds=>seconds>1800],
+  ].map(([label,includes])=>({label,count:wins.filter(call=>{const seconds=Number(call.seconds_to_target);return Number.isFinite(seconds)&&includes(seconds)}).length}));
+  const favorableMoves=completed.map(call=>Number(call.favorable_points)).filter(Number.isFinite),averageFavorable=favorableMoves.length?favorableMoves.reduce((total,value)=>total+value,0)/favorableMoves.length:null;
   const scorecardClass=system==="GAMMA_DYNAMICS"?"scorecard-gamma-v1":system.toLowerCase().replaceAll("_","-");
   return <article className={`system-scorecard-card ${scorecardClass}`}>
     <header><div><span>{label.toUpperCase()}</span><b>{successRate===null?"—":pct(successRate)} SUCCESS RATE</b></div><small>{closed} CLOSED</small></header>
     <div className="scorecard-status-grid"><div className="succeeded"><span>✓ SUCCEEDED</span><b>{counts.succeeded}</b></div><div className="failed"><span>✕ FAILED</span><b>{counts.failed}</b></div><div className="succeeding"><span>↑ LIVE SUCCEEDING</span><b>{counts.succeeding}</b></div><div className="failing"><span>↓ LIVE FAILING</span><b>{counts.failing}</b></div></div>
-    <div className="scorecard-speed"><span>⚡ {fastWins} WINS ≤10M</span><span>MEDIAN WIN · {medianWin===null?"—":duration(medianWin)}</span></div>
+    <div className="scorecard-performance"><div className="scorecard-target-completion"><span>TARGET HITS BY SPEED</span><div>{speedBuckets.map(bucket=><small key={bucket.label}><b>{bucket.count}</b>{bucket.label}</small>)}</div></div><div className="scorecard-favorable"><span>AVG FAVORABLE MOVE</span><b>{averageFavorable===null?"—":`+${averageFavorable.toFixed(2)} PT`}</b><small>MEDIAN WIN · {medianWin===null?"—":duration(medianWin)}</small></div></div>
     {system==="GAMMA_DYNAMICS_V2"&&<GammaV2GateState state={state}/>}
   </article>;
 }
 
 function SystemScorecard({attribution,state,symbol}){
-  const [from,setFrom]=useState(""),[to,setTo]=useState("");
+  const [filterOpen,setFilterOpen]=useState(false),[fromDate,setFromDate]=useState(""),[fromTime,setFromTime]=useState(""),[toDate,setToDate]=useState(""),[toTime,setToTime]=useState("");
   const updated=state?.timestamp?`${logDate(state.timestamp)} · ${logTime(state.timestamp)} ET`:"WAITING FOR STREAM";
-  return <section id="system-scorecard" className="overview-section system-scorecard-section"><OverviewSectionHeading number="01" title="System scorecard" description="Outcome briefing across Gamma Dynamics 1.0, Gamma Dynamics 2.0, and Delta Dynamics."/><article className="panel system-scorecard"><header className="panel-head"><div><span>SYSTEM OUTCOME BRIEFING</span><h2>{symbol} · available tracked calls</h2></div><div className="scorecard-updated"><span>LAST UPDATED</span><b>{updated}</b></div></header><div className="scorecard-filter-bar"><span>OUTCOME DATE &amp; TIME · ALL SYSTEMS</span><label>FROM<input type="datetime-local" value={from} onChange={event=>setFrom(event.target.value)} aria-label="Scorecard outcome start date and time"/></label><label>TO<input type="datetime-local" value={to} onChange={event=>setTo(event.target.value)} aria-label="Scorecard outcome end date and time"/></label><button type="button" onClick={()=>{setFrom("");setTo("")}} disabled={!from&&!to}>CLEAR</button></div><div className="system-scorecard-grid">{SCORECARD_SYSTEMS.map(([system,label])=><SystemScorecardCard key={system} system={system} label={label} calls={filterScorecardCalls(attribution?.systems?.[system]?.calls??[],from,to)} state={state}/>)}</div></article></section>;
+  const hasRange=Boolean(fromDate||fromTime||toDate||toTime),rangeLabel=hasRange?"CUSTOM RANGE":"ALL TIME",clearRange=()=>{setFromDate("");setFromTime("");setToDate("");setToTime("")},setToday=()=>{const today=scorecardDateValue(new Date());setFromDate(today);setFromTime("");setToDate(today);setToTime("")},setLastWeek=()=>{const now=new Date(),start=new Date(now);start.setDate(now.getDate()-6);setFromDate(scorecardDateValue(start));setFromTime("");setToDate(scorecardDateValue(now));setToTime("")};
+  return <section id="system-scorecard" className="overview-section system-scorecard-section"><OverviewSectionHeading number="01" title="System scorecard" description="Outcome briefing across Gamma Dynamics 1.0, Gamma Dynamics 2.0, and Delta Dynamics."/><article className="panel system-scorecard"><header className="panel-head"><div><span>SYSTEM OUTCOME BRIEFING</span><h2>{symbol} · available tracked calls</h2></div><div className="scorecard-updated"><span>LAST UPDATED</span><b>{updated}</b></div></header><div className="scorecard-filter-bar"><span>OUTCOME DATE &amp; TIME · ALL SYSTEMS</span><button type="button" className={`scorecard-filter-trigger ${filterOpen?"is-open":""}`} onClick={()=>setFilterOpen(open=>!open)} aria-expanded={filterOpen}><i>◷</i><b>{rangeLabel}</b><em>{filterOpen?"⌃":"⌄"}</em></button>{filterOpen&&<div className="scorecard-filter-popover" role="dialog" aria-label="Scorecard date and time filter"><header><div><span>FILTER OUTCOMES</span><b>Choose an alert-time range</b></div><button type="button" onClick={()=>setFilterOpen(false)} aria-label="Close date filter">×</button></header><div className="scorecard-filter-fields"><label><span>FROM DATE</span><input type="date" value={fromDate} onChange={event=>setFromDate(event.target.value)}/></label><label><span>FROM TIME</span><input type="time" value={fromTime} onChange={event=>setFromTime(event.target.value)}/></label><label><span>TO DATE</span><input type="date" value={toDate} onChange={event=>setToDate(event.target.value)}/></label><label><span>TO TIME</span><input type="time" value={toTime} onChange={event=>setToTime(event.target.value)}/></label></div><footer><div><button type="button" onClick={setToday}>TODAY</button><button type="button" onClick={setLastWeek}>LAST 7 DAYS</button><button type="button" onClick={clearRange} disabled={!hasRange}>ALL TIME</button></div><button type="button" className="scorecard-filter-apply" onClick={()=>setFilterOpen(false)}>APPLY RANGE</button></footer></div>}</div><div className="system-scorecard-grid">{SCORECARD_SYSTEMS.map(([system,label])=><SystemScorecardCard key={system} system={system} label={label} calls={filterScorecardCalls(attribution?.systems?.[system]?.calls??[],fromDate,fromTime,toDate,toTime)} state={state}/>)}</div></article></section>;
 }
 
 function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
