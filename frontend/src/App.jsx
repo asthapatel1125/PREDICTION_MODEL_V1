@@ -721,7 +721,8 @@ function SystemScorecardCard({system,label,calls,state}){
   const closed=counts.succeeded+counts.failed,successRate=closed?counts.succeeded/closed:null;
   const fastWins=logical.filter(call=>scorecardCallState(call)==="succeeded"&&Number.isFinite(Number(call.seconds_to_target))&&Number(call.seconds_to_target)<=600).length;
   const medianWin=medianDuration(logical.filter(call=>scorecardCallState(call)==="succeeded").map(call=>Number(call.seconds_to_target)));
-  return <article className={`system-scorecard-card ${system.toLowerCase().replaceAll("_","-")}`}>
+  const scorecardClass=system==="GAMMA_DYNAMICS"?"scorecard-gamma-v1":system.toLowerCase().replaceAll("_","-");
+  return <article className={`system-scorecard-card ${scorecardClass}`}>
     <header><div><span>{label.toUpperCase()}</span><b>{successRate===null?"—":pct(successRate)} SUCCESS RATE</b></div><small>{closed} CLOSED</small></header>
     <div className="scorecard-status-grid"><div className="succeeded"><span>✓ SUCCEEDED</span><b>{counts.succeeded}</b></div><div className="failed"><span>✕ FAILED</span><b>{counts.failed}</b></div><div className="succeeding"><span>↑ LIVE SUCCEEDING</span><b>{counts.succeeding}</b></div><div className="failing"><span>↓ LIVE FAILING</span><b>{counts.failing}</b></div></div>
     <div className="scorecard-speed"><span>⚡ {fastWins} WINS ≤10M</span><span>MEDIAN WIN · {medianWin===null?"—":duration(medianWin)}</span></div>
