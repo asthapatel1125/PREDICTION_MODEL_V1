@@ -702,6 +702,11 @@ function scorecardCallState(call){
   return call.direction==="UP"?(current>=entry?"succeeding":"failing"):(current<=entry?"succeeding":"failing");
 }
 
+function filterScorecardCalls(calls,from,to){
+  const start=from?new Date(from).getTime():-Infinity,end=to?new Date(to).getTime():Infinity;
+  return calls.filter(call=>{const timestamp=new Date(call.alerted_at??call.timestamp??call.created_at??call.entry_at??"").getTime();return !Number.isFinite(timestamp)||(timestamp>=start&&timestamp<=end)});
+}
+
 function GammaV2GateState({state}){
   const model=state?.gamma_dynamics_v2,checks=model?.alert_checks??{},entries=Object.entries(checks),passed=entries.filter(([,value])=>value).length;
   if(!entries.length)return <div className="scorecard-gates waiting"><span>GATE STATE · WAITING FOR LIVE DATA</span><b>WAITING ON · CHAIN SNAPSHOT</b></div>;
@@ -716,7 +721,7 @@ function SystemScorecardCard({system,label,calls,state}){
   const closed=counts.succeeded+counts.failed,successRate=closed?counts.succeeded/closed:null;
   const fastWins=logical.filter(call=>scorecardCallState(call)==="succeeded"&&Number.isFinite(Number(call.seconds_to_target))&&Number(call.seconds_to_target)<=600).length;
   const medianWin=medianDuration(logical.filter(call=>scorecardCallState(call)==="succeeded").map(call=>Number(call.seconds_to_target)));
-  return <article className={`system-scorecard-card ${system==="GAMMA_DYNAMICS_V2"?"gamma-v2":""}`}>
+  return <article className={`system-scorecard-card ${system.toLowerCase().replaceAll("_","-")}`}>
     <header><div><span>{label.toUpperCase()}</span><b>{successRate===null?"—":pct(successRate)} SUCCESS RATE</b></div><small>{closed} CLOSED</small></header>
     <div className="scorecard-status-grid"><div className="succeeded"><span>✓ SUCCEEDED</span><b>{counts.succeeded}</b></div><div className="failed"><span>✕ FAILED</span><b>{counts.failed}</b></div><div className="succeeding"><span>↑ LIVE SUCCEEDING</span><b>{counts.succeeding}</b></div><div className="failing"><span>↓ LIVE FAILING</span><b>{counts.failing}</b></div></div>
     <div className="scorecard-speed"><span>⚡ {fastWins} WINS ≤10M</span><span>MEDIAN WIN · {medianWin===null?"—":duration(medianWin)}</span></div>
@@ -725,8 +730,9 @@ function SystemScorecardCard({system,label,calls,state}){
 }
 
 function SystemScorecard({attribution,state,symbol}){
+  const [from,setFrom]=useState(""),[to,setTo]=useState("");
   const updated=state?.timestamp?`${logDate(state.timestamp)} · ${logTime(state.timestamp)} ET`:"WAITING FOR STREAM";
-  return <section id="system-scorecard" className="overview-section system-scorecard-section"><OverviewSectionHeading number="01" title="System scorecard" description="Outcome briefing across Gamma Dynamics 1.0, Gamma Dynamics 2.0, and Delta Dynamics."/><article className="panel system-scorecard"><header className="panel-head"><div><span>SYSTEM OUTCOME BRIEFING</span><h2>{symbol} · available tracked calls</h2></div><div className="scorecard-updated"><span>LAST UPDATED</span><b>{updated}</b></div></header><div className="system-scorecard-grid">{SCORECARD_SYSTEMS.map(([system,label])=><SystemScorecardCard key={system} system={system} label={label} calls={attribution?.systems?.[system]?.calls??[]} state={state}/>)}</div></article></section>;
+  return <section id="system-scorecard" className="overview-section system-scorecard-section"><OverviewSectionHeading number="01" title="System scorecard" description="Outcome briefing across Gamma Dynamics 1.0, Gamma Dynamics 2.0, and Delta Dynamics."/><article className="panel system-scorecard"><header className="panel-head"><div><span>SYSTEM OUTCOME BRIEFING</span><h2>{symbol} · available tracked calls</h2></div><div className="scorecard-updated"><span>LAST UPDATED</span><b>{updated}</b></div></header><div className="scorecard-filter-bar"><span>OUTCOME DATE &amp; TIME · ALL SYSTEMS</span><label>FROM<input type="datetime-local" value={from} onChange={event=>setFrom(event.target.value)} aria-label="Scorecard outcome start date and time"/></label><label>TO<input type="datetime-local" value={to} onChange={event=>setTo(event.target.value)} aria-label="Scorecard outcome end date and time"/></label><button type="button" onClick={()=>{setFrom("");setTo("")}} disabled={!from&&!to}>CLEAR</button></div><div className="system-scorecard-grid">{SCORECARD_SYSTEMS.map(([system,label])=><SystemScorecardCard key={system} system={system} label={label} calls={filterScorecardCalls(attribution?.systems?.[system]?.calls??[],from,to)} state={state}/>)}</div></article></section>;
 }
 
 function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
