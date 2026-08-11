@@ -49,6 +49,9 @@ export async function fetchDashboard(symbol, signal) {
 export const fetchStateHistory = (symbol, limit = 5000, signal) =>
   request(`/api/v1/history/${encodeURIComponent(symbol)}?limit=${limit}`, { signal });
 
+export const fetchDynamicsSessionHistory = (symbol, sessionDate, signal) =>
+  request(`/api/v1/dynamics-session/${encodeURIComponent(symbol)}?session_date=${encodeURIComponent(sessionDate)}`, { signal });
+
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
 export const fetchOutcomeAttribution = (symbol, signal) =>

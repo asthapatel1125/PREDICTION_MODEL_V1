@@ -107,6 +107,21 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/history/{symbol}")
     async def history(symbol:str,limit:int=Query(100,ge=1,le=5000)):return await container.repository.latest_states(symbol,limit)
 
+    @api.get("/dynamics-session/{symbol}")
+    async def dynamics_session(symbol:str,session_date:date|None=Query(None)):
+        """Return every persisted snapshot in the 07:00–18:00 Eastern stream window.
+
+        A five-second stream produces up to 7,920 records in this window, so
+        this endpoint deliberately does not inherit the dashboard's short
+        history limit. Each state contains Delta and both Gamma model outputs.
+        """
+        market_tz=ZoneInfo(cfg.market_timezone)
+        day=session_date or datetime.now(market_tz).date()
+        start=datetime.combine(day,time(7,0),tzinfo=market_tz)
+        end=datetime.combine(day,time(18,0),tzinfo=market_tz)
+        rows=await container.repository.states_between(symbol,start.astimezone(timezone.utc),end.astimezone(timezone.utc),10_000)
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,"count":len(rows),"rows":rows}
+
     @api.get("/delta-dynamics/history/{symbol}")
     async def delta_dynamics_history(symbol:str,start_date:date=Query(date(2026,8,4)),
         end_date:date=Query(date(2026,8,4)),start_time:time=Query(time(9,0)),
