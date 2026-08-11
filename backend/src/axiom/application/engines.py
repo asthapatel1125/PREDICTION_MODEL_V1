@@ -111,13 +111,14 @@ class LiveEngine(_EngineRunner):
             outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq);self.data=data
         self.price_data=price_data;self.price_poll_seconds=price_poll_seconds;self._price_observation=None;self._price_polled_at=None
         self.running=False;self.symbol:str|None=None;self.resolution_seconds=5;self.started_at:datetime|None=None
-        self.last_update:datetime|None=None;self.last_error:str|None=None;self.bars_processed=0;self.alerts_generated=0
+        self.last_update:datetime|None=None;self.last_received_at:datetime|None=None;self.last_error:str|None=None;self.bars_processed=0;self.alerts_generated=0
         self.average_latency_ms=0.0;self.retries=0
 
     def status(self)->dict[str,object]:
         return {"running":self.running,"symbol":self.symbol,"resolution_seconds":self.resolution_seconds,
             "started_at":self.started_at.isoformat() if self.started_at else None,
-            "last_update":self.last_update.isoformat() if self.last_update else None,"last_error":self.last_error,
+            "last_update":self.last_update.isoformat() if self.last_update else None,
+            "last_received_at":self.last_received_at.isoformat() if self.last_received_at else None,"last_error":self.last_error,
             "bars_processed":self.bars_processed,"alerts_generated":self.alerts_generated,
             "average_latency_ms":self.average_latency_ms,"retries":self.retries,
             "outcome_price_source":self._price_observation["source"] if self._price_observation else "THETADATA_OPTIONS_UNDERLYING",
@@ -156,7 +157,7 @@ class LiveEngine(_EngineRunner):
                     async for bar in self.data.live_bars(symbol,resolution_seconds):
                         if self._stop.is_set():return
                         result=await self.handle(bar,EngineMode.LIVE,await self._outcome_price(bar));self.bars_processed+=1
-                        self.alerts_generated+=int(result.alert is not None);self.last_update=bar.timestamp;self.last_error=None
+                        self.alerts_generated+=int(result.alert is not None);self.last_update=bar.timestamp;self.last_received_at=datetime.now(timezone.utc);self.last_error=None
                         self.average_latency_ms+=(result.processing_latency_ms-self.average_latency_ms)/self.bars_processed
                         await self.publisher.publish("engine_status",self.status());backoff=1.0
                     if not self._stop.is_set():await self.finalize_attribution("STREAM_INTERRUPTED")

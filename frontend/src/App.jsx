@@ -1511,7 +1511,7 @@ export default function Home() {
   const lastQualifiedAlert=liveBiasAlerts.filter(alert=>alert.symbol===symbol).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]??null;
   const selectedInstrument=instruments.find(item=>item.symbol===symbol)??FALLBACK_INSTRUMENTS.find(item=>item.symbol===symbol);
   const optionsDecision=deriveOptionsDecision(state);
-  const stateTime=state?.timestamp?new Date(state.timestamp).getTime():NaN,stateAge=Number.isFinite(stateTime)?Math.max(0,Math.round((clock-stateTime)/1000)):null;
+  const freshnessTimestamp=engine.last_received_at??state?.timestamp,stateTime=freshnessTimestamp?new Date(freshnessTimestamp).getTime():NaN,stateAge=Number.isFinite(stateTime)?Math.max(0,Math.round((clock-stateTime)/1000)):null;
   const freshnessLimit=Math.max(12,Math.ceil(resolution*2.5));
   const dataFresh=engine.running&&stateAge!==null&&stateAge<=freshnessLimit,dataDelayed=engine.running&&!dataFresh;
   const focusDecision=!engine.running?{...optionsDecision,qualified:false,direction:"NEUTRAL",lifecycle:"IDLE"}:
