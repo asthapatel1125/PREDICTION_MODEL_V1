@@ -32,6 +32,11 @@ class OutcomeAttributionTracker:
         self._active: dict[str, dict[str, Any]] = {}
         self._last_signal: dict[tuple[str, str], datetime] = {}
         self._episode_direction: dict[tuple[str, str], Direction] = {}
+        # Gamma 1.0 is deliberately conservative: a qualified opposite
+        # snapshot must persist before it can close and replace an open call.
+        self.gamma_v1_reversal_confirmations = 3
+        self.gamma_v1_reversal_min_adverse_points = 0.25
+        self._gamma_v1_reversal: dict[tuple[str, str], dict[str, Any]] = {}
         self._history: dict[str, dict[str, deque[float]]] = defaultdict(
             lambda: defaultdict(lambda: deque(maxlen=100))
         )
@@ -74,6 +79,38 @@ class OutcomeAttributionTracker:
             "target_conversion_quality": "OBSERVED_INSTRUMENT_SCALE",
             "target_label": f"50 {symbol} POINTS",
         }
+
+    @staticmethod
+    def _active_parent(records: dict[str, dict[str, Any]], symbol: str, system: str) -> tuple[str, dict[str, Any]] | None:
+        """Return the one unresolved parent call for a system/symbol pair."""
+        for signal_id, record in records.items():
+            if record["symbol"] == symbol and record["system"] == system and record.get("status") == "TRACKING":
+                return signal_id, record
+        return None
+
+    @staticmethod
+    def _append_admission_audit(record: dict[str, Any], now: datetime, reason: str, candidate: Direction, confirmations: int = 0) -> None:
+        audit=list(record.get("admission_audit") or [])
+        audit.append({"timestamp":now,"reason":reason,"candidate_direction":candidate.value,"confirmations":confirmations})
+        record["admission_audit"]=audit[-50:]
+        record["suppressed_signal_count"]=int(record.get("suppressed_signal_count",0))+1
+        record["last_suppressed_signal"]={"timestamp":now,"reason":reason,"candidate_direction":candidate.value,"confirmations":confirmations}
+
+    def _finalize_gamma_v1_reversal(self, record: dict[str, Any], now: datetime, price: float, candidate: Direction) -> None:
+        """Close an active Gamma 1.0 call before a confirmed opposite call opens."""
+        scores=dict(record.get("greek_scores_current") or {})
+        ordered=[name for name,_ in sorted(scores.items(),key=lambda item:(-float(item[1]),item[0]))]
+        record.update(
+            status="REVERSED", lifecycle_state="COMPLETE",
+            completion_reason="CONFIRMED_OPPOSITE_SIGNAL",
+            outcome_grade="REVERSED", success_basis=None,
+            reversed_at=now, reversal_direction=candidate.value,
+            final_price=price, final_price_at=now, current_price=price, current_price_at=now,
+            seconds_observed=max(0.0,(now-record["alerted_at"]).total_seconds()),
+            greek_scores_at_failure=scores,
+            greek_rankings_at_failure={"strongest":ordered[:1],"strong":ordered[1:2],"normal":ordered[2:4],"weak":ordered[4:5],"weakest":ordered[5:6]},
+            greek_values_at_failure=dict(record.get("greek_values_current") or {}),
+        )
 
     @staticmethod
     def _qualified_systems(state: MarketState) -> list[tuple[str, Direction]]:
@@ -543,15 +580,44 @@ class OutcomeAttributionTracker:
             if episode_symbol!=symbol:continue
             next_direction=current.get(system)
             if next_direction==previous_direction:continue
-            if next_direction is None:del self._episode_direction[key]
+            if next_direction is None:
+                del self._episode_direction[key]
+                if system=="GAMMA_DYNAMICS":self._gamma_v1_reversal.pop(key,None)
 
         for system, direction in qualified:
             key = (symbol, system)
+            # Gamma 1.0 permits one unresolved parent only. Same-direction
+            # repeats are confirmations; an opposite direction is only allowed
+            # after three consecutive qualified observations and a meaningful
+            # adverse move from the active call's entry price.
+            if system=="GAMMA_DYNAMICS":
+                active_parent=self._active_parent(self._active,symbol,system)
+                if active_parent:
+                    active_id,active=active_parent
+                    active_direction=Direction(active["direction"])
+                    if active_direction==direction:
+                        self._episode_direction[key]=direction
+                        self._gamma_v1_reversal.pop(key,None)
+                        self._append_admission_audit(active,now,"DUPLICATE_SAME_DIRECTION",direction)
+                        continue
+                    active_sign=1.0 if active_direction==Direction.UP else -1.0
+                    adverse=max(0.0,active_sign*(float(active["entry_price"])-float(price)))
+                    candidate=self._gamma_v1_reversal.get(key)
+                    confirmations=(int(candidate.get("confirmations",0))+1 if candidate and candidate.get("direction")==direction.value else 1)
+                    self._gamma_v1_reversal[key]={"direction":direction.value,"confirmations":confirmations,"first_seen_at":candidate.get("first_seen_at",now) if candidate and candidate.get("direction")==direction.value else now}
+                    if confirmations<self.gamma_v1_reversal_confirmations or adverse<self.gamma_v1_reversal_min_adverse_points:
+                        reason="OPPOSITE_AWAITING_CONFIRMATION" if confirmations<self.gamma_v1_reversal_confirmations else "OPPOSITE_MOVE_TOO_SMALL"
+                        self._append_admission_audit(active,now,reason,direction,confirmations)
+                        continue
+                    self._append_admission_audit(active,now,"CONFIRMED_OPPOSITE_REVERSAL",direction,confirmations)
+                    self._finalize_gamma_v1_reversal(active,now,price,direction)
+                    del self._active[active_id]
+                    updates.append(dict(active))
+                    self._gamma_v1_reversal.pop(key,None)
             if self._episode_direction.get(key)==direction:continue
             self._episode_direction[key]=direction
             # A flickering qualified state must not create several logical
             # calls that all track the same unresolved directional episode.
-            # Opposite-direction calls remain independent and may overlap.
             same_direction_active=any(
                 record["symbol"]==symbol
                 and record["system"]==system
@@ -602,6 +668,11 @@ class OutcomeAttributionTracker:
                 "expires_at": expires_at,
                 "status": "TRACKING",
                 "outcome_grade":"TRACKING",
+                "admission_policy":"GAMMA_V1_SINGLE_PARENT_CONFIRMED_REVERSAL" if system=="GAMMA_DYNAMICS" else "STANDARD",
+                "admission_audit":[],
+                "suppressed_signal_count":0,
+                "reversal_confirmations_required":self.gamma_v1_reversal_confirmations if system=="GAMMA_DYNAMICS" else None,
+                "reversal_min_adverse_points":self.gamma_v1_reversal_min_adverse_points if system=="GAMMA_DYNAMICS" else None,
                 "entry_price": price,
                 "target_points":target_points,
                 "partial_target_points":target_points*0.6,
