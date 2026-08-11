@@ -1191,7 +1191,7 @@ function GammaDynamicsV2FlowLog({history=[],state,symbol}){
   const value=value=>Number.isFinite(Number(value))?number(value).toFixed(4):"—";
   const price=value=>Number.isFinite(Number(value))?number(value).toFixed(2):"—";
   const score=value=>Number.isFinite(Number(value))?number(value).toFixed(3):"—";
-  return <article className="panel gamma-v2-flow-log"><header className="panel-head"><div><span>GAMMA DYNAMICS 2.0 · LIVE HEDGE-FLOW LOG</span><h2>Qualified hedge-flow setups · real GEX, filters, levels, and execution</h2></div><b>{rows.length} QUALIFIED SETUPS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>TIME · EASTERN</th><th>SPOT</th><th>ZERO GAMMA</th><th>SUPPORT · T+10</th><th>RESISTANCE · T+10</th><th>GEX · RAW</th><th>GEX · REAL</th><th>GEX $ DENSITY</th><th>TW GEX</th><th>FLOW HACK</th><th>VOL HACK</th><th>RR · T+10</th><th>DR · T+10</th><th>SPOOF</th><th>FADE</th><th>AMP</th><th>FINAL · CLEAN</th><th>REGIME</th><th>ENTRY</th><th>SL</th><th>TP</th><th>EDGE</th><th>LIQ</th><th>URGENCY · MIN</th></tr></thead><tbody>{rows.map(({timestamp,metrics})=>{const regime=metrics.regime??"WAIT";return <tr key={timestamp}><td>{logDate(timestamp)} · {logTime(timestamp)}</td><td>{price(metrics.spot)}</td><td>{price(metrics.zero_gamma)}</td><td>{price(metrics.ksup_t10)}</td><td>{price(metrics.kres_t10)}</td><td>{value(metrics.gex_raw)}</td><td>{value(metrics.gex_real)}</td><td>{value(metrics.gex_dollar_density)}</td><td>{score(metrics.tw_gex)}</td><td>{value(metrics.flow_hack)}</td><td>{score(metrics.vol_hack)}</td><td>{score(metrics.rr_t10)}</td><td>{score(metrics.dr_t10)}</td><td>{score(metrics.spoof_score)}</td><td>{score(metrics.fade_score)}</td><td>{score(metrics.amp_score)}</td><td>{score(metrics.final_score_clean)}</td><td><span className={`gamma-v2-regime ${regime.toLowerCase()}`}>{regime}</span></td><td>{price(metrics.entry)}</td><td>{price(metrics.stop_loss)}</td><td>{price(metrics.take_profit)}</td><td>{score(metrics.edge)}</td><td>{score(metrics.liquidity_score)}</td><td>{score(metrics.urgency_minutes)}</td></tr>})}</tbody></table>{!rows.length&&<div className="gamma-log-empty"><b>NO QUALIFIED HEDGE-FLOW SETUP YET</b><p>Rows appear only when every Gamma Dynamics 2.0 gate passes; ordinary streamed snapshots are intentionally excluded.</p></div>}</div></article>;
+  return <article className="panel gamma-v2-flow-log"><header className="panel-head"><div><span>GAMMA DYNAMICS 2.0 · LIVE HEDGE-FLOW LOG</span><h2>Qualified hedge-flow setups · real GEX, filters, levels, and execution</h2></div><b>{rows.length} QUALIFIED SETUPS</b></header><div className="gamma-log-scroll"><table><thead><tr><th>TIME · EASTERN</th><th>REGIME</th><th>FINAL · CLEAN</th><th>FADE</th><th>AMP</th><th>ENTRY</th><th>SL</th><th>TP</th><th>SPOT</th><th>ZERO GAMMA</th><th>SUPPORT · T+10</th><th>RESISTANCE · T+10</th><th>GEX · REAL</th><th>GEX · RAW</th><th>GEX $ DENSITY</th><th>TW GEX</th><th>SPOOF</th><th>FLOW HACK</th><th>VOL HACK</th><th>RR · T+10</th><th>DR · T+10</th><th>EDGE</th><th>LIQ</th><th>URGENCY · MIN</th></tr></thead><tbody>{rows.map(({timestamp,metrics})=>{const regime=metrics.regime??"WAIT";return <tr key={timestamp}><td>{logDate(timestamp)} · {logTime(timestamp)}</td><td><span className={`gamma-v2-regime ${regime.toLowerCase()}`}>{regime}</span></td><td>{score(metrics.final_score_clean)}</td><td>{score(metrics.fade_score)}</td><td>{score(metrics.amp_score)}</td><td>{price(metrics.entry)}</td><td>{price(metrics.stop_loss)}</td><td>{price(metrics.take_profit)}</td><td>{price(metrics.spot)}</td><td>{price(metrics.zero_gamma)}</td><td>{price(metrics.ksup_t10)}</td><td>{price(metrics.kres_t10)}</td><td>{value(metrics.gex_real)}</td><td>{value(metrics.gex_raw)}</td><td>{value(metrics.gex_dollar_density)}</td><td>{score(metrics.tw_gex)}</td><td>{score(metrics.spoof_score)}</td><td>{value(metrics.flow_hack)}</td><td>{score(metrics.vol_hack)}</td><td>{score(metrics.rr_t10)}</td><td>{score(metrics.dr_t10)}</td><td>{score(metrics.edge)}</td><td>{score(metrics.liquidity_score)}</td><td>{score(metrics.urgency_minutes)}</td></tr>})}</tbody></table>{!rows.length&&<div className="gamma-log-empty"><b>NO QUALIFIED HEDGE-FLOW SETUP YET</b><p>Rows appear only when every Gamma Dynamics 2.0 gate passes; ordinary streamed snapshots are intentionally excluded.</p></div>}</div></article>;
 }
 
 function GammaEventLogSummary({event,call}){
@@ -1429,6 +1429,28 @@ function ModulePage({ view, state, history, alerts, performance, system, config,
   return <><PageHead eyebrow="PLATFORM OPERATIONS" title="System monitoring" subtitle="Live health from Render, Supabase, ThetaData, and the decision engine." action={<span className={`health-banner ${system?.database_connected ? "" : "error"}`}>● {system?.database_connected ? "DATABASE CONNECTED" : "DEGRADED"}</span>} /><div className="health-grid">{[["PostgreSQL",system?.database_connected?"Connected":"Down"],["Theta transport",system?.theta_transport??"—"],["Live engine",engine.running?"Running":"Idle"],["Bars processed",engine.bars_processed??0],["Alerts",engine.alerts_generated??0],["Retries",engine.retries??0]].map(([name,value])=><article className="panel health-card" key={name}><span>{name}</span><b>{value}</b><i><em style={{width:system?.database_connected?"100%":"20%"}}/></i><small>{engine.last_error && name==="Live engine"?engine.last_error:"Real backend telemetry"}</small></article>)}</div></>;
 }
 
+const UI_HOVER_LABELS={
+  "GEX · RAW":"Raw gamma exposure from the reported open interest.",
+  "GEX · REAL":"Forward-filled gamma exposure adjusted for inferred flow during the open-interest delay.",
+  "GEX $ DENSITY":"Dollar gamma exposure concentrated within 0.5% of spot.",
+  "TW GEX":"Time-weighted gamma-density persistence over the recent ten-minute window.",
+  "FLOW HACK":"Inferred options flow from the change in GEX after Color and Speed effects.",
+  "VOL HACK":"Inferred volume proxy derived from the flow estimate.",
+  "RR · T+10":"Projected ten-minute buy-to-sell flow ratio.",
+  "DR · T+10":"Projected ten-minute dealer-risk/outflow ratio.",
+  "SPOOF":"GEX change relative to inferred volume; higher values indicate lower confidence.",
+  "FADE":"Mean-reversion hedge-power score.",
+  "AMP":"Breakout/amplification hedge-power score.",
+  "FINAL · CLEAN":"Filtered final Gamma Dynamics 2.0 setup score.",
+  "SL":"Stop-loss level.","TP":"Take-profit level.","LIQ":"Liquidity score: spread divided by available depth.",
+  "TS":"Tracking call currently moving in the call’s favorable direction.",
+  "TF":"Tracking call currently moving against the call’s direction.",
+};
+function interfaceHoverLabel(element){
+  const text=(element.getAttribute("aria-label")||element.textContent||"").replace(/\s+/g," ").trim();
+  return UI_HOVER_LABELS[text]||text;
+}
+
 export default function Home() {
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
@@ -1438,6 +1460,7 @@ export default function Home() {
   const [instruments,setInstruments]=useState(FALLBACK_INSTRUMENTS);
   const [activeSection,setActiveSection]=useState("decision"),[clock,setClock]=useState(Date.now());
   const [moduleOrder,setModuleOrder]=useState(()=>{try{const saved=JSON.parse(window.localStorage.getItem("axiom-overview-module-order")??"null");return Array.isArray(saved)&&saved.length===DEFAULT_MODULE_ORDER.length&&DEFAULT_MODULE_ORDER.every(id=>saved.includes(id))?saved:DEFAULT_MODULE_ORDER}catch{return DEFAULT_MODULE_ORDER}}),[draggedModule,setDraggedModule]=useState(null),[dragOverModule,setDragOverModule]=useState(null);
+  useEffect(()=>{const labelOnHover=event=>{const target=event.target instanceof Element?event.target.closest("th,button"):null;if(target&&!target.getAttribute("title")){const label=interfaceHoverLabel(target);if(label)target.setAttribute("title",label)}};document.addEventListener("pointerover",labelOnHover);return()=>document.removeEventListener("pointerover",labelOnHover)},[]);
   const state=dashboard.state, history=dashboard.history??[], alerts=dashboard.alerts??[], engine=dashboard.engine??{}, performance=dashboard.performance??{};
   const notify=text=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
   const refresh=async(signal)=>{try{const [dash,sys,cfg,outcomes]=await Promise.all([fetchDashboard(symbol,signal),fetchSystem(signal),fetchConfiguration(signal),fetchOutcomeAttribution(symbol,signal).catch(error=>{if(error.name==="AbortError")throw error;return {symbol,systems:{},unavailable:true,error:error.message}})]);setDashboard(dash);setAttribution(outcomes);setChartHistory(current=>[...new Map([...current,...(dash.history??[])].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-5000));setSystem(sys);setConfig(cfg);setConnected(true)}catch(error){if(error.name!=="AbortError"){setConnected(false);notify(error.message)}}};
