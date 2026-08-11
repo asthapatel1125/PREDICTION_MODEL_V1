@@ -125,11 +125,22 @@ class ThetaDataV3Client(MarketDataPort):
     async def live_bars(self, symbol: str, resolution_seconds: int) -> AsyncIterator[MarketBar]:
         loop = asyncio.get_running_loop()
         next_poll = loop.time()
+        last_timestamp: datetime | None = None
+        repeated_snapshot_polls = 0
         while True:
             bars = self._aggregate(await self._snapshot_rows(symbol), symbol, resolution_seconds)
             if not bars:
                 raise ThetaDataProtocolError("No ThetaData snapshot rows; market may be closed or symbol unavailable")
             bar = bars[-1]
+            if last_timestamp is not None and bar.timestamp <= last_timestamp:
+                repeated_snapshot_polls += 1
+                if repeated_snapshot_polls >= 3:
+                    raise ThetaDataProtocolError(
+                        f"ThetaData snapshot timestamp has not advanced since {bar.timestamp.isoformat()}; refusing to recycle stale chain data"
+                    )
+            else:
+                last_timestamp = bar.timestamp
+                repeated_snapshot_polls = 0
             yield bar
             # Provider polling is intentionally independent from chart/bar resolution.
             next_poll += self.poll_seconds
