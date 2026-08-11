@@ -26,7 +26,9 @@ def test_gamma_dynamics_v2_adds_vomma_and_ultima():
         Greeks(gamma=.08,speed=.02,zomma=.2,color=.3,ultima=.08,vomma=.09),history(),"QQQ",
         metrics, metric_history(), active_time(),
     )
-    assert result.qualified is True
+    # V2 intentionally needs a complete 720 five-second-tick baseline.
+    assert result.qualified is False
+    assert result.alert_checks["baseline"] is False
     assert set(result.inputs)=={"zomma","color","speed","gamma","vomma","ultima"}
     assert result.ideal_ranges["ultima"]
     assert result.ideal_ranges["vomma"]
@@ -61,19 +63,20 @@ def chain_metrics(**overrides):
     return {**values, **overrides}
 
 
-def metric_history():
+def metric_history(count=20):
     return [
         {
             "gamma_squeeze_score": index, "weighted_charm": index,
             "weighted_speed": index, "weighted_vanna": index,
             "weighted_color": index, "net_dealer_delta": index, "atm_iv": .20,
         }
-        for index in range(20)
+        for index in range(count)
     ]
 
 
 def test_gamma_dynamics_v2_enforces_ten_minute_cooldown():
-    engine = GammaDynamicsSix()
+    # Keep this test focused on cooldown rather than the production warm-up.
+    engine = GammaDynamicsSix(minimum_history=20)
     first = engine.calculate(Greeks(), history(), "QQQ", chain_metrics(), metric_history(), active_time())
     second = engine.calculate(Greeks(), history(), "QQQ", chain_metrics(), metric_history(), active_time() + timedelta(minutes=1))
     assert first.qualified is True

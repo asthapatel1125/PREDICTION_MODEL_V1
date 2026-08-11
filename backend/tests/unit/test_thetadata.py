@@ -21,6 +21,8 @@ def test_snapshot_aggregation_is_open_interest_weighted():
     assert bar.greeks.vega>0
     assert bar.contract_count==2
     assert bar.open_interest==110
+    assert len(bar.gamma_ticks)==2
+    assert bar.gamma_ticks[0]["underlying_price"]==500
 
 
 def test_snapshot_calculates_zero_dte_gamma_dynamics_chain_metrics():

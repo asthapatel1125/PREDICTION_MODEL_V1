@@ -85,6 +85,41 @@ class SystemEventRow(Base):
     __tablename__="system_events";id:Mapped[int]=mapped_column(primary_key=True);timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True);level:Mapped[str]=mapped_column(String(16),index=True);component:Mapped[str]=mapped_column(String(80),index=True);message:Mapped[str]=mapped_column(Text);details:Mapped[dict[str,Any]]=mapped_column(JSON,default=dict)
 
 
+class GammaTickRow(Base):
+    """One persisted contract from each raw ThetaData chain snapshot."""
+    __tablename__="gamma_ticks"
+    id:Mapped[int]=mapped_column(primary_key=True)
+    timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    expiration:Mapped[str]=mapped_column(String(16),default="")
+    right:Mapped[str]=mapped_column(String(8),default="")
+    strike:Mapped[float]=mapped_column(Float,index=True)
+    open_interest:Mapped[float]=mapped_column(Float)
+    gamma:Mapped[float]=mapped_column(Float);delta:Mapped[float]=mapped_column(Float)
+    speed:Mapped[float]=mapped_column(Float);color:Mapped[float]=mapped_column(Float);charm:Mapped[float]=mapped_column(Float)
+    underlying_price:Mapped[float]=mapped_column(Float)
+    bid:Mapped[float]=mapped_column(Float);ask:Mapped[float]=mapped_column(Float)
+    bid_size:Mapped[float]=mapped_column(Float);ask_size:Mapped[float]=mapped_column(Float);depth:Mapped[float]=mapped_column(Float)
+    __table_args__=(UniqueConstraint("timestamp","symbol","expiration","right","strike",name="uq_gamma_tick_contract"),)
+
+
+class ConfluenceRow(Base):
+    """Gamma 2.0 calculated hedge-flow confluence at every observed snapshot."""
+    __tablename__="confluence"
+    id:Mapped[int]=mapped_column(primary_key=True)
+    timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True);strike:Mapped[float]=mapped_column(Float,index=True)
+    gex_real:Mapped[float]=mapped_column(Float);gex_density:Mapped[float]=mapped_column(Float);gex_dollar_density:Mapped[float]=mapped_column(Float)
+    tw_gex:Mapped[float]=mapped_column(Float);spoof_score:Mapped[float]=mapped_column(Float)
+    rr_t10:Mapped[float]=mapped_column(Float);dr_t10:Mapped[float]=mapped_column(Float)
+    pos_inv:Mapped[float]=mapped_column(Float);neg_inv:Mapped[float]=mapped_column(Float)
+    zg:Mapped[float]=mapped_column(Float);ksup_t10:Mapped[float]=mapped_column(Float);kres_t10:Mapped[float]=mapped_column(Float)
+    fade_score:Mapped[float]=mapped_column(Float);amp_score:Mapped[float]=mapped_column(Float);final_score_clean:Mapped[float]=mapped_column(Float)
+    regime:Mapped[str]=mapped_column(String(16));edge:Mapped[float]=mapped_column(Float);liq_score:Mapped[float]=mapped_column(Float)
+    payload:Mapped[dict[str,Any]]=mapped_column(JSON,default=dict)
+    __table_args__=(UniqueConstraint("timestamp","symbol","strike",name="uq_confluence_snapshot"),)
+
+
 class ModelVersionRow(Base):
     __tablename__="model_versions";id:Mapped[int]=mapped_column(primary_key=True);name:Mapped[str]=mapped_column(String(80));version:Mapped[str]=mapped_column(String(80));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True));formula_hash:Mapped[str]=mapped_column(String(64));parameters:Mapped[dict[str,Any]]=mapped_column(JSON);metrics:Mapped[dict[str,Any]]=mapped_column(JSON);active:Mapped[bool]=mapped_column(default=False)
     __table_args__=(UniqueConstraint("name","version",name="uq_model_name_version"),)
@@ -137,6 +172,44 @@ class SqlAlchemyRepository:
             if row is None:s.add(SystemOutcomeRow(id=record["id"],**values))
             else:
                 for key,value in values.items():setattr(row,key,value)
+            await s.commit()
+
+    async def save_gamma_ticks(self,ticks:list[dict[str,Any]])->None:
+        """Append the unaggregated chain; duplicate snapshot contracts are ignored."""
+        if not ticks:return
+        async with self.sessions() as s:
+            for tick in ticks:
+                exists=(await s.execute(select(GammaTickRow.id).where(
+                    GammaTickRow.timestamp==tick["timestamp"],GammaTickRow.symbol==tick["symbol"],
+                    GammaTickRow.expiration==tick["expiration"],GammaTickRow.right==tick["right"],
+                    GammaTickRow.strike==tick["strike"],
+                ).limit(1))).scalar_one_or_none()
+                if exists is None:s.add(GammaTickRow(**tick))
+            await s.commit()
+
+    async def save_confluence(self,state:MarketState)->None:
+        gamma=state.gamma_dynamics_v2
+        if gamma is None:return
+        metric=gamma.chain_metrics
+        strike=float(metric.get("entry") or metric.get("key_fault_line") or 0.0)
+        if strike<=0:return
+        values={
+            "gex_real":float(metric.get("gex_real",0.0)),"gex_density":float(metric.get("gex_density",0.0)),
+            "gex_dollar_density":float(metric.get("gex_dollar_density",0.0)),"tw_gex":float(metric.get("tw_gex",0.0)),
+            "spoof_score":float(metric.get("spoof_score",0.0)),"rr_t10":float(metric.get("rr_t10",0.0)),"dr_t10":float(metric.get("dr_t10",0.0)),
+            "pos_inv":float(metric.get("pos_inventory",0.0)),"neg_inv":float(metric.get("neg_inventory",0.0)),
+            "zg":float(metric.get("zero_gamma",0.0)),"ksup_t10":float(metric.get("ksup_t10",0.0)),"kres_t10":float(metric.get("kres_t10",0.0)),
+            "fade_score":float(metric.get("fade_score",0.0)),"amp_score":float(metric.get("amp_score",0.0)),
+            "final_score_clean":float(metric.get("final_score_clean",0.0)),"regime":str(metric.get("regime","WAIT")),
+            "edge":float(metric.get("edge",0.0)),"liq_score":float(metric.get("liquidity_score",0.0)),
+            "payload":self._json_ready(metric),
+        }
+        async with self.sessions() as s:
+            row=(await s.execute(select(ConfluenceRow).where(ConfluenceRow.timestamp==state.timestamp,
+                ConfluenceRow.symbol==state.symbol,ConfluenceRow.strike==strike))).scalar_one_or_none()
+            if row is None:s.add(ConfluenceRow(timestamp=state.timestamp,symbol=state.symbol,strike=strike,**values))
+            else:
+                for name,value in values.items():setattr(row,name,value)
             await s.commit()
 
     async def active_system_outcomes(self)->list[dict[str,Any]]:

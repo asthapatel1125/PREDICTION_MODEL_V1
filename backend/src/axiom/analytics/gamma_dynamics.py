@@ -38,7 +38,7 @@ class GammaDynamicsSix:
         "net_dealer_delta": 0.10,
     }
 
-    def __init__(self, intensity_threshold: float = 0.65, minimum_history: int = 20,
+    def __init__(self, intensity_threshold: float = 0.65, minimum_history: int = 720,
                  zero_tolerance: float = 1e-12, speed_threshold: float = 0.30,
                  color_threshold: float = -0.35, cooldown_seconds: int = 600,
                  market_timezone: str = "America/New_York"):
@@ -100,18 +100,24 @@ class GammaDynamicsSix:
         spot = metrics.get("spot", 0.0)
         prior_spot = previous.get("spot", spot)
         delta_spot = spot - prior_spot
+        dt_seconds = max(0.0, metrics.get("observed_epoch", 0.0) - previous.get("observed_epoch", 0.0)) if previous else 0.0
+        # A historical provider can omit observation epochs; retain the live
+        # engine's five-second cadence rather than treating the interval as 0.
+        dt_seconds = dt_seconds or (5.0 if previous else 0.0)
         flow_hack = (
             metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0))
-            - previous.get("color_ex", 0.0) - previous.get("speed_ex", 0.0) * delta_spot
+            - metrics.get("color_ex", 0.0) * dt_seconds - metrics.get("speed_ex", 0.0) * delta_spot
         ) if previous else 0.0
+        metrics["flow_dt_seconds"] = dt_seconds
         metrics["flow_hack"] = flow_hack
         metrics["gex_real"] = metrics.get("gex_raw", 0.0) + flow_hack * 15.0
         gamma_denominator = abs(metrics.get("gamma_open_interest", 0.0) * spot ** 2 * .01 * 100.0) + 1.0
         metrics["vol_hack"] = flow_hack / gamma_denominator
         flow_samples = []
-        for earlier, later in zip(metric_samples[-61:-1], metric_samples[-60:]):
+        for earlier, later in zip(metric_samples[-720:-1], metric_samples[-719:]):
             change_spot = later.get("spot", 0.0) - earlier.get("spot", 0.0)
-            flow_samples.append(later.get("gex_raw", 0.0) - earlier.get("gex_raw", 0.0) - earlier.get("color_ex", 0.0) - earlier.get("speed_ex", 0.0) * change_spot)
+            interval=max(0.0,later.get("observed_epoch",0.0)-earlier.get("observed_epoch",0.0)) or 5.0
+            flow_samples.append(later.get("gex_raw", 0.0) - earlier.get("gex_raw", 0.0) - later.get("color_ex", 0.0) * interval - later.get("speed_ex", 0.0) * change_spot)
         flow_samples.append(flow_hack)
         positive_flow = sum(value for value in flow_samples if value > 0)
         negative_flow = sum(-value for value in flow_samples if value < 0)
@@ -124,11 +130,10 @@ class GammaDynamicsSix:
         metrics["dr_t10"] = metrics["dr"] + (negative_flow - positive_flow) / total_oi * 10.0
         dealer_flow = -metrics["vol_hack"] * metrics.get("dex", 0.0)
         metrics["dealer_flow"] = dealer_flow
-        metrics["pos_inventory"] = max(0.0, dealer_flow) * 60.0
-        metrics["neg_inventory"] = min(0.0, dealer_flow) * 60.0
-        density_samples = [item.get("gex_density", 0.0) for item in metric_samples[-10:]] + [metrics.get("gex_density", 0.0)]
-        same_sign = [value for value in density_samples if value * metrics.get("gex_density", 0.0) > 0]
-        metrics["tw_gex"] = len(same_sign) / max(len(density_samples), 1)
+        metrics["pos_inventory"] = max(0.0, dealer_flow) * 720.0
+        metrics["neg_inventory"] = min(0.0, dealer_flow) * 720.0
+        density_samples = [item.get("gex_density", 0.0) for item in metric_samples[-11:]] + [metrics.get("gex_density", 0.0)]
+        metrics["tw_gex"] = sum(density_samples) / max(len(density_samples), 1)
         metrics["spoof_score"] = abs(metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0))) / (abs(metrics["vol_hack"]) + 1.0)
         metrics["damping"] = 1.0 + metrics.get("gex_dollar_density", 0.0) / max(metrics.get("market_depth", 0.0), 1.0)
         distance_support = abs(spot - metrics.get("support_level", spot)) + .001 * max(spot, 1.0)
@@ -161,7 +166,7 @@ class GammaDynamicsSix:
         previous_alert = self._last_alert.get(source_symbol)
         cooldown_ok = previous_alert is None or timestamp is None or (timestamp - previous_alert).total_seconds() >= self.cooldown_seconds
         warmed = len(metric_samples) >= self.minimum_history
-        fade = metrics["fade_score"] > 2.0 * metrics["amp_score"] and metrics["fade_score"] > 120.0
+        fade = metrics["fade_score"] > 120.0 and metrics["amp_score"] < 60.0
         amp = metrics["amp_score"] > 2.0 * metrics["fade_score"] and metrics["amp_score"] > 120.0 and metrics["dr_t10"] > .7
         regime = "FADE" if fade else "AMP" if amp else "WAIT"
         metrics["regime"] = regime
@@ -174,12 +179,14 @@ class GammaDynamicsSix:
             "regime": regime != "WAIT",
             "density": metrics.get("gex_dollar_density", 0.0) > 100_000_000.0 if fade else True,
             "persistence": metrics["tw_gex"] > .7 if fade else True,
-            "spoof": metrics["spoof_score"] < 2.0 if fade else True,
+            "spoof": metrics["spoof_score"] < 2.0,
             "flow_ratio": metrics["rr_t10"] > 1.2 if fade else metrics["dr_t10"] > .7,
             "inventory": metrics["pos_inventory"] > 300_000_000.0 if fade else True,
             "edge": metrics["edge"] > 4.0,
             "liquidity": metrics.get("liquidity_score", float("inf")) < .6,
             "urgency": metrics["urgency_minutes"] < 10.0,
+            "vix": metrics.get("vix", 0.0) < 22.0 if fade else True,
+            "news": not (metrics.get("high_impact_news", 0.0) > 0 and observed_at and time(9, 55) <= observed_at.time() <= time(10, 15)),
             "active_window": active_window,
             "cooldown": cooldown_ok,
         }

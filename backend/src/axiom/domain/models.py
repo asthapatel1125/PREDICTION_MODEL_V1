@@ -52,6 +52,9 @@ class MarketBar(FrozenModel):
     # Contract-level Gamma Dynamics 2.0 measurements calculated before the
     # adapter reduces an option chain to a single aggregate Greeks snapshot.
     gamma_metrics: dict[str, float] = Field(default_factory=dict)
+    # The aggregate bar remains the common engine input, but Gamma Dynamics
+    # 2.0 also retains every contract in the observed chain for persistence.
+    gamma_ticks: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("symbol")
     @classmethod

@@ -50,6 +50,12 @@ class _EngineRunner:
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
+        # Persist the source chain and its derived confluence independently of
+        # the aggregate market-state row used by the rest of the application.
+        if hasattr(self.repository,"save_gamma_ticks"):
+            await self.repository.save_gamma_ticks(bar.gamma_ticks)
+        if hasattr(self.repository,"save_confluence"):
+            await self.repository.save_confluence(result.state)
         await self.publisher.publish("market_state",result.state.model_dump(mode="json"))
         observation=price_observation or {"price":bar.close,"source":"THETADATA_REPLAY" if mode==EngineMode.TRAINING else "THETADATA_OPTIONS_UNDERLYING",
             "observed_at":datetime.now(timezone.utc),"source_timestamp":bar.timestamp}

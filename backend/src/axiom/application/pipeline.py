@@ -63,7 +63,9 @@ except ModuleNotFoundError:
             return GammaDynamics(decision=decision,qualified=qualified,source_symbol=source_symbol,intensity=intensity,
                 pressure=pressure,history_points=len(history),intensity_threshold=self.intensity_threshold,
                 inputs=inputs,percentiles=percentiles,normalized=normalized,explanation=explanation)
-    GammaDynamicsSix=GammaDynamicsQuartet
+    class GammaDynamicsSix(GammaDynamicsQuartet):
+        def __init__(self,intensity_threshold:float=.65,minimum_history:int=720,zero_tolerance:float=1e-12):
+            super().__init__(intensity_threshold,minimum_history,zero_tolerance)
 
 
 class DecisionPipeline:
@@ -192,14 +194,25 @@ class DecisionPipeline:
         alignment=self.mtf.alignment(bar.symbol); risk=self.risk.calculate(primary,sample)
         confidence=self.confidence.calculate(explosion,direction,pressure,momentum,alignment)
         gamma_dynamics=self.gamma_dynamics.calculate(primary.greeks,[item.greeks for item in sample],bar.symbol)
-        # V2 uses contract-level metrics calculated before the option chain is
-        # reduced to aggregate Greeks. Its rolling baseline excludes the live
-        # snapshot currently being evaluated.
-        gamma_metric_history=[item.gamma_metrics for item in sample[:-1] if item.gamma_metrics]
+        # V2 works from the native five-second chain snapshot.  It must not
+        # inherit the one-minute score-history window, otherwise its 720-tick
+        # (one-hour) warm-up and dGEX timing are silently wrong.
+        v2_history=self.mtf.bars(bar.symbol,bar.timeframe_seconds)
+        gamma_metric_history=[item.gamma_metrics for item in v2_history if item.gamma_metrics]
+        v2_metrics={
+            **bar.gamma_metrics,
+            # The pipeline's event feed is the source of scheduled high-impact
+            # releases.  Gamma 2.0 blocks the specified 09:55-10:15 window
+            # only when an event is scheduled for that Eastern trading day.
+            "high_impact_news":float(any(
+                event.astimezone(ZoneInfo("America/New_York")).date()==bar.timestamp.astimezone(ZoneInfo("America/New_York")).date()
+                for event in self._events
+            )),
+        }
         gamma_dynamics_v2=self.gamma_dynamics_v2.calculate(
-            primary.greeks,[item.greeks for item in sample[:-1]],bar.symbol,
-            chain_metrics=primary.gamma_metrics,metric_history=gamma_metric_history,
-            timestamp=primary.timestamp,
+            bar.greeks,[item.greeks for item in v2_history],bar.symbol,
+            chain_metrics=v2_metrics,metric_history=gamma_metric_history,
+            timestamp=bar.timestamp,
         )
         zone_intelligence=self.zone_intelligence.calculate(primary.greeks,[item.greeks for item in sample],bar.timestamp,bar.symbol)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,

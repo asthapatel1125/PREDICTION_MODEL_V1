@@ -16,7 +16,11 @@ class _Bucket:
         return MarketBar(timestamp=last.timestamp, symbol=last.symbol, timeframe_seconds=seconds,
             open=first.open, high=max(b.high for b in self.bars), low=min(b.low for b in self.bars), close=last.close,
             volume=sum(b.volume for b in self.bars), bid_ask_spread=sum(b.bid_ask_spread for b in self.bars)/n,
-            greeks=Greeks(**{name: sum(getattr(b.greeks,name) for b in self.bars)/n for name in Greeks.model_fields}))
+            greeks=Greeks(**{name: sum(getattr(b.greeks,name) for b in self.bars)/n for name in Greeks.model_fields}),
+            contract_count=last.contract_count, open_interest=last.open_interest,
+            # A completed timeframe uses the final complete chain snapshot for
+            # chain-level calculations; averaging snapshots would corrupt dGEX.
+            gamma_metrics=last.gamma_metrics, gamma_ticks=last.gamma_ticks)
 
 
 class MultiTimeframeEngine:
@@ -48,4 +52,3 @@ class MultiTimeframeEngine:
             if len(bars) < 2: result[f"{tf}s"] = 0.0
             else: result[f"{tf}s"] = 1.0 if bars[-1].close > bars[-2].close else -1.0 if bars[-1].close < bars[-2].close else 0.0
         return result
-

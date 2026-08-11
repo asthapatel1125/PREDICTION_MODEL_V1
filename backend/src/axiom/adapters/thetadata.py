@@ -266,8 +266,31 @@ class ThetaDataV3Client(MarketDataPort):
                 greeks=Greeks(**{name: exposure(name) for name in Greeks.model_fields}),
                 contract_count=len(group),
                 open_interest=sum(self._number(row.get("open_interest")) for row in group),
-                gamma_metrics=self._gamma_metrics(group, price, ts)))
+                gamma_metrics=self._gamma_metrics(group, price, ts),
+                gamma_ticks=self._gamma_ticks(group, symbol, price, ts)))
         return result
+
+    @classmethod
+    def _gamma_ticks(cls, rows: list[dict[str, Any]], symbol: str, spot: float,
+                     observed_at: datetime) -> list[dict[str, Any]]:
+        """Return the complete per-contract chain snapshot without aggregation."""
+        ticks=[]
+        for row in rows:
+            strike=cls._optional_number(row.get("strike"))
+            if strike is None or strike <= 0:
+                continue
+            bid_size=cls._number(row.get("bid_size")); ask_size=cls._number(row.get("ask_size"))
+            ticks.append({
+                "timestamp": observed_at, "symbol": symbol.upper(), "expiration": str(row.get("expiration") or ""),
+                "right": str(row.get("right") or "").upper(), "strike": strike,
+                "open_interest": cls._number(row.get("open_interest")), "gamma": cls._number(row.get("gamma")),
+                "delta": cls._number(row.get("delta")), "speed": cls._number(row.get("speed")),
+                "color": cls._number(row.get("color")), "charm": cls._number(row.get("charm")),
+                "bid": cls._number(row.get("bid")), "ask": cls._number(row.get("ask")),
+                "bid_size": bid_size, "ask_size": ask_size, "underlying_price": spot,
+                "depth": bid_size + ask_size,
+            })
+        return ticks
 
     @classmethod
     def _hydrate_third_order_fallbacks(cls, rows: list[dict[str, Any]], spot: float) -> None:
@@ -352,6 +375,7 @@ class ThetaDataV3Client(MarketDataPort):
             for row in contracts
         )
         return {
+            "observed_epoch": observed_at.timestamp(),
             "spot": spot,
             "chain_available": 1.0,
             "key_fault_line": key_fault_line,
