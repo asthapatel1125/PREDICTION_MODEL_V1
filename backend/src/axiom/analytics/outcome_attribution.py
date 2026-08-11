@@ -72,6 +72,14 @@ class OutcomeAttributionTracker:
                 for bar in record.get("minute_bars") or []]
             record["admission_audit"]=[{**item,"timestamp":self._restore_datetime(item.get("timestamp"))}
                 for item in record.get("admission_audit") or []]
+            record["shadow_challengers"]=[{
+                **shadow,
+                "started_at":self._restore_datetime(shadow.get("started_at")),
+                "last_qualified_at":self._restore_datetime(shadow.get("last_qualified_at")),
+                "target_reached_at":self._restore_datetime(shadow.get("target_reached_at")),
+                "completed_at":self._restore_datetime(shadow.get("completed_at")),
+                "minute_bars":[{**bar,"timestamp":self._restore_datetime(bar.get("timestamp"))} for bar in shadow.get("minute_bars") or []],
+            } for shadow in record.get("shadow_challengers") or []]
             self._active[record["id"]]=record
             if record.get("system")=="GAMMA_DYNAMICS":
                 key=(str(record.get("symbol","")).upper(),"GAMMA_DYNAMICS")
@@ -150,6 +158,52 @@ class OutcomeAttributionTracker:
             greek_rankings_at_failure={"strongest":ordered[:1],"strong":ordered[1:2],"normal":ordered[2:4],"weak":ordered[4:5],"weakest":ordered[5:6]},
             greek_values_at_failure=dict(record.get("greek_values_current") or {}),
         )
+
+    def _start_or_update_shadow(self, record: dict[str, Any], now: datetime, price: float,
+        direction: Direction, confirmations: int, state: MarketState) -> None:
+        """Paper-track a suppressed Gamma 1.0 opposite candidate."""
+        shadows=list(record.get("shadow_challengers") or [])
+        shadow=next((item for item in reversed(shadows) if item.get("status")=="TRACKING" and item.get("direction")==direction.value),None)
+        if shadow is None:
+            points=float(record["target_points"])
+            shadow={
+                "id":f"{record['call_id']}.shadow.{len(shadows)+1}","direction":direction.value,
+                "status":"TRACKING","started_at":now,"entry_price":price,"current_price":price,
+                "target_points":points,"target_price":price+points if direction==Direction.UP else price-points,
+                "highest_price":price,"lowest_price":price,"minute_bars":[{"timestamp":self._minute_bucket(now),"open":price,"high":price,"low":price,"close":price,"samples":1}],
+                "qualification_snapshot":state.gamma_dynamics.model_dump(mode="json") if state.gamma_dynamics else None,
+            }
+            shadows.append(shadow)
+        shadow["confirmations"]=confirmations
+        shadow["last_qualified_at"]=now
+        record["shadow_challengers"]=shadows[-20:]
+
+    def _update_shadow_challengers(self, record: dict[str, Any], now: datetime, price: float) -> None:
+        if record.get("system")!="GAMMA_DYNAMICS":
+            return
+        for shadow in record.get("shadow_challengers") or []:
+            if shadow.get("status")!="TRACKING":
+                continue
+            bucket=self._minute_bucket(now);bars=shadow["minute_bars"]
+            if not bars or bars[-1]["timestamp"]!=bucket:
+                bars.append({"timestamp":bucket,"open":price,"high":price,"low":price,"close":price,"samples":1})
+            else:
+                bar=bars[-1];bar["high"]=max(float(bar["high"]),price);bar["low"]=min(float(bar["low"]),price);bar["close"]=price;bar["samples"]=int(bar.get("samples",0))+1
+            shadow["current_price"]=price;shadow["highest_price"]=max(float(shadow["highest_price"]),price);shadow["lowest_price"]=min(float(shadow["lowest_price"]),price)
+            if price>=float(shadow["target_price"]) if shadow["direction"]==Direction.UP.value else price<=float(shadow["target_price"]):
+                shadow.update(status="TARGET_REACHED",target_reached_at=now,target_reached_price=price)
+
+    def _finalize_shadow_challengers(self, record: dict[str, Any], now: datetime, price: float, reason: str) -> None:
+        """Compare paper challengers with the real parent when its path ends."""
+        active_sign=1.0 if record["direction"]==Direction.UP.value else -1.0
+        active_pnl=active_sign*(float(record.get("final_price",record.get("current_price",price)))-float(record["entry_price"]))
+        for shadow in record.get("shadow_challengers") or []:
+            if shadow.get("status")!="COMPLETE":
+                shadow_price=float(shadow.get("final_price",shadow.get("target_reached_price",shadow.get("current_price",price))))
+                shadow_sign=1.0 if shadow["direction"]==Direction.UP.value else -1.0
+                shadow_pnl=float(shadow.get("hypothetical_pnl_points",shadow_sign*(shadow_price-float(shadow["entry_price"]))))
+                shadow.update(status="COMPLETE",completed_at=now,completion_reason=reason,final_price=shadow_price,hypothetical_pnl_points=shadow_pnl,
+                    comparison={"active_pnl_points":active_pnl,"shadow_pnl_points":shadow_pnl,"better_path":"SHADOW" if shadow_pnl>active_pnl else "ACTIVE" if active_pnl>shadow_pnl else "TIE"})
 
     @staticmethod
     def _qualified_systems(state: MarketState) -> list[tuple[str, Direction]]:
@@ -286,6 +340,7 @@ class OutcomeAttributionTracker:
                 greek_rankings_at_failure={} if reached else self._rankings(scores),
                 greek_values_at_failure={} if reached else dict(record.get("greek_values_current", {})),
             )
+            self._finalize_shadow_challengers(record,final_at,final_price,reason)
             updates.append(dict(record))
             del self._active[signal_id]
         if updates:
@@ -524,6 +579,7 @@ class OutcomeAttributionTracker:
             # to manufacture a target touch. Finalize from the last stored tick.
             if record.get("target_reached_at") is None and now > record["expires_at"]:
                 self._expire(record)
+                self._finalize_shadow_challengers(record,now,float(record.get("final_price",record.get("current_price",price))),"PARENT_HORIZON_EXPIRED")
                 del self._active[signal_id]
                 updates.append(dict(record))
                 continue
@@ -536,6 +592,7 @@ class OutcomeAttributionTracker:
                 greek_lows[name]=min(float(greek_lows.get(name,value)),value)
             record.update(greek_values_current=greek_values,greek_values_highest=greek_highs,greek_values_lowest=greek_lows)
             self._update_minute_path(record,price,now,scores)
+            self._update_shadow_challengers(record,now,price)
             target_minute=self._minute_bucket(record["target_reached_at"]) if record.get("target_reached_at") else None
             if target_minute is not None and self._minute_bucket(now)>target_minute:
                 # The new-minute observation only closes the preceding target
@@ -552,6 +609,7 @@ class OutcomeAttributionTracker:
                     final_price=final_price,final_price_at=now,
                     current_price=final_price,current_price_at=now,
                 )
+                self._finalize_shadow_challengers(record,now,final_price,"PARENT_TARGET_REACHED")
                 del self._active[signal_id]
                 updates.append(dict(record))
                 continue
@@ -606,6 +664,7 @@ class OutcomeAttributionTracker:
             self._update_lifecycle(record,now)
             if record.get("target_reached_at") is None and now >= record["expires_at"]:
                 self._expire(record)
+                self._finalize_shadow_challengers(record,now,float(record.get("final_price",record.get("current_price",price))),"PARENT_HORIZON_EXPIRED")
                 del self._active[signal_id]
             updates.append(dict(record))
 
@@ -637,6 +696,11 @@ class OutcomeAttributionTracker:
                     if active_direction==direction:
                         self._episode_direction[key]=direction
                         self._gamma_v1_reversal.pop(key,None)
+                        for shadow in active.get("shadow_challengers") or []:
+                            if shadow.get("status")=="TRACKING":
+                                sign=1.0 if shadow["direction"]==Direction.UP.value else -1.0
+                                shadow.update(status="INVALIDATED",completed_at=now,completion_reason="OPPOSITE_QUALIFICATION_LOST",final_price=price,
+                                    hypothetical_pnl_points=sign*(price-float(shadow["entry_price"])))
                         self._append_admission_audit(active,now,"DUPLICATE_SAME_DIRECTION",direction)
                         continue
                     active_sign=1.0 if active_direction==Direction.UP else -1.0
@@ -644,12 +708,14 @@ class OutcomeAttributionTracker:
                     candidate=self._gamma_v1_reversal.get(key)
                     confirmations=(int(candidate.get("confirmations",0))+1 if candidate and candidate.get("direction")==direction.value else 1)
                     self._gamma_v1_reversal[key]={"direction":direction.value,"confirmations":confirmations,"first_seen_at":candidate.get("first_seen_at",now) if candidate and candidate.get("direction")==direction.value else now}
+                    self._start_or_update_shadow(active,now,price,direction,confirmations,state)
                     if confirmations<self.gamma_v1_reversal_confirmations or adverse<self.gamma_v1_reversal_min_adverse_points:
                         reason="OPPOSITE_AWAITING_CONFIRMATION" if confirmations<self.gamma_v1_reversal_confirmations else "OPPOSITE_MOVE_TOO_SMALL"
                         self._append_admission_audit(active,now,reason,direction,confirmations)
                         continue
                     self._append_admission_audit(active,now,"CONFIRMED_OPPOSITE_REVERSAL",direction,confirmations)
                     self._finalize_gamma_v1_reversal(active,now,price,direction)
+                    self._finalize_shadow_challengers(active,now,price,"SHADOW_PROMOTED_TO_CONFIRMED_REVERSAL")
                     del self._active[active_id]
                     updates.append(dict(active))
                     self._gamma_v1_reversal.pop(key,None)
@@ -710,6 +776,7 @@ class OutcomeAttributionTracker:
                 "admission_policy":"GAMMA_V1_SINGLE_PARENT_CONFIRMED_REVERSAL" if system=="GAMMA_DYNAMICS" else "STANDARD",
                 "admission_audit":[],
                 "suppressed_signal_count":0,
+                "shadow_challengers":[],
                 "reversal_confirmations_required":self.gamma_v1_reversal_confirmations if system=="GAMMA_DYNAMICS" else None,
                 "reversal_min_adverse_points":self.gamma_v1_reversal_min_adverse_points if system=="GAMMA_DYNAMICS" else None,
                 "entry_price": price,

@@ -303,6 +303,13 @@ class SqlAlchemyRepository:
             rows=(await s.execute(select(MarketStateRow).where(MarketStateRow.symbol==symbol.upper()).order_by(MarketStateRow.timestamp.desc()).limit(limit))).scalars().all()
             return [MarketState.model_validate(r.payload) for r in rows]
 
+    async def stream_archive(self,symbol:str,limit:int=100_000)->list[MarketState]:
+        """Return the retained live stream from its first persisted snapshot."""
+        async with self.sessions() as s:
+            rows=(await s.execute(select(MarketStateRow).where(MarketStateRow.symbol==symbol.upper())
+                .order_by(MarketStateRow.timestamp.asc()).limit(limit))).scalars().all()
+            return [MarketState.model_validate(row.payload) for row in rows]
+
     async def states_between(self,symbol:str,start:datetime,end:datetime,limit:int=10000)->list[MarketState]:
         """Return the persisted provider stream in chronological order for an audit window."""
         async with self.sessions() as s:

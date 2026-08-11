@@ -125,6 +125,22 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         rows=await container.repository.states_between(symbol,start.astimezone(timezone.utc),end.astimezone(timezone.utc),10_000)
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,"count":len(rows),"rows":rows}
 
+    @api.get("/dynamics-history/{symbol}")
+    async def dynamics_history(symbol:str,limit:int=Query(500_000,ge=1,le=500_000)):
+        """Return retained Dynamics states from the beginning of the stream.
+
+        All three Dynamics models are embedded in each persisted state, so one
+        chronological feed preserves Gamma 1.0, Gamma 2.0, and Delta together.
+        """
+        rows=await container.repository.latest_states(symbol,limit)
+        return {"symbol":symbol.upper(),"count":len(rows),"rows":list(reversed(rows))}
+
+    @api.get("/dynamics-history/{symbol}")
+    async def dynamics_history(symbol:str,limit:int=Query(100_000,ge=1,le=100_000)):
+        """Full retained Dynamics archive, ordered from the first stream tick."""
+        rows=await container.repository.stream_archive(symbol,limit)
+        return {"symbol":symbol.upper(),"source":"PERSISTED_LIVE_STREAM_ARCHIVE","count":len(rows),"rows":rows}
+
     @api.get("/delta-dynamics/history/{symbol}")
     async def delta_dynamics_history(symbol:str,start_date:date=Query(date(2026,8,4)),
         end_date:date=Query(date(2026,8,4)),start_time:time=Query(time(9,0)),

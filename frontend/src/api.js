@@ -52,6 +52,9 @@ export const fetchStateHistory = (symbol, limit = 5000, signal) =>
 export const fetchDynamicsSessionHistory = (symbol, sessionDate, signal) =>
   request(`/api/v1/dynamics-session/${encodeURIComponent(symbol)}?session_date=${encodeURIComponent(sessionDate)}`, { signal });
 
+export const fetchDynamicsHistory = (symbol, signal) =>
+  request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}`, { signal });
+
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
 export const fetchOutcomeAttribution = (symbol, signal) =>
