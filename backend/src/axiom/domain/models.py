@@ -93,7 +93,9 @@ class GammaDynamics(FrozenModel):
     ideal_ranges: dict[str, str] = Field(default_factory=dict)
     # Version 2.0 keeps the six-Greek display contract above, while exposing
     # the chain-level model inputs and decisions used to produce the signal.
-    chain_metrics: dict[str, float] = Field(default_factory=dict)
+    # Most chain metrics are numeric; Gamma Dynamics 2.0 also records the
+    # selected execution regime (WAIT / FADE / AMP) alongside them.
+    chain_metrics: dict[str, float | str] = Field(default_factory=dict)
     normalized_features: dict[str, float] = Field(default_factory=dict)
     squeeze_score: float = 0.0
     probability: float = Field(default=0.5, ge=0, le=0.95)
