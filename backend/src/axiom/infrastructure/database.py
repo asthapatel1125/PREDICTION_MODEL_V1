@@ -139,6 +139,13 @@ class SqlAlchemyRepository:
                 for key,value in values.items():setattr(row,key,value)
             await s.commit()
 
+    async def active_system_outcomes(self)->list[dict[str,Any]]:
+        """Load unresolved call paths so a restarted live engine can resume them."""
+        async with self.sessions() as s:
+            rows=(await s.execute(select(SystemOutcomeRow).where(SystemOutcomeRow.status=="TRACKING")
+                .order_by(SystemOutcomeRow.alerted_at.asc()))).scalars().all()
+            return [dict(row.payload) for row in rows]
+
     @staticmethod
     def _reconcile_expired_outcome(row:SystemOutcomeRow,now:datetime)->bool:
         """Finalize an overdue persisted call after a service restart."""

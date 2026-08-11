@@ -43,6 +43,45 @@ class OutcomeAttributionTracker:
         self.eastern = ZoneInfo("America/New_York")
 
     @staticmethod
+    def _restore_datetime(value: Any) -> Any:
+        if not isinstance(value,str):
+            return value
+        try:
+            return datetime.fromisoformat(value.replace("Z","+00:00"))
+        except ValueError:
+            return value
+
+    def restore_active(self, records: list[dict[str, Any]]) -> int:
+        """Rehydrate persisted tracking paths after a process restart.
+
+        The browser can refresh freely: its call cards come from the same
+        persisted records. This method additionally lets the server continue
+        updating the existing minute path rather than creating a new call.
+        """
+        restored=0
+        datetime_fields=("alerted_at","expires_at","highest_at","lowest_at","current_price_at",
+            "price_observed_at","price_source_timestamp","target_reached_at","final_price_at","expired_at")
+        for stored in records:
+            if str(stored.get("status") or "").upper()!="TRACKING" or not stored.get("id"):
+                continue
+            record=dict(stored)
+            for field in datetime_fields:
+                if field in record:
+                    record[field]=self._restore_datetime(record[field])
+            record["minute_bars"]=[{**bar,"timestamp":self._restore_datetime(bar.get("timestamp"))}
+                for bar in record.get("minute_bars") or []]
+            record["admission_audit"]=[{**item,"timestamp":self._restore_datetime(item.get("timestamp"))}
+                for item in record.get("admission_audit") or []]
+            self._active[record["id"]]=record
+            if record.get("system")=="GAMMA_DYNAMICS":
+                key=(str(record.get("symbol","")).upper(),"GAMMA_DYNAMICS")
+                self._episode_direction[key]=Direction(record["direction"])
+                if isinstance(record.get("alerted_at"),datetime):
+                    self._last_signal[key]=record["alerted_at"]
+            restored+=1
+        return restored
+
+    @staticmethod
     def _direction_sign(direction: Direction) -> int:
         return 1 if direction == Direction.UP else -1
 

@@ -72,6 +72,9 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
             cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
+        # Resume the persisted minute bars and active-call lifecycles after a
+        # Render restart. Browser refreshes already read these same records.
+        container.live.attribution.restore_active(await container.repository.active_system_outcomes())
         container.replay_runs={};container.replay_tasks=set()
         async def automatic_live_stream()->None:
             """Keep the licensed QQQ stream active on market weekdays, 7:00 AM–6:00 PM Eastern."""
