@@ -499,11 +499,11 @@ function OverviewSectionHeading({number:sectionNumber,title,description,action})
   return <div className="overview-section-heading"><div><span>{sectionNumber}</span><div><h2>{title}</h2><p>{description}</p></div></div>{action}</div>;
 }
 
-function OverviewDisclosure({id,title,description,children,defaultOpen=false}){
+function OverviewDisclosure({id,title,description,children,defaultOpen=false,summaryScore}){
   const storageKey=`axiom-section-open-${id}`;
   const [open,setOpen]=useState(()=>{try{const saved=window.localStorage.getItem(storageKey);return saved===null?defaultOpen:saved==="true"}catch{return defaultOpen}});
   const toggle=event=>{const next=event.currentTarget.open;setOpen(next);try{window.localStorage.setItem(storageKey,String(next))}catch{}};
-  return <details id={id} className="overview-disclosure overview-section" open={open} onToggle={toggle}><summary><div><span className="section-index" aria-hidden="true">◆</span><div><small className="section-category">{OVERVIEW_CATEGORIES[id]}</small><b>{title}</b><small>{description}</small></div></div><em>{open?"−  COLLAPSE":"+  OPEN"}</em></summary><div className="overview-disclosure-body">{children}</div></details>;
+  return <details id={id} className="overview-disclosure overview-section" open={open} onToggle={toggle}><summary><div><span className="section-index" aria-hidden="true">◆</span><div><small className="section-category">{OVERVIEW_CATEGORIES[id]}</small><b>{title}</b><small>{description}</small></div></div>{summaryScore}<em>{open?"−  COLLAPSE":"+  OPEN"}</em></summary><div className="overview-disclosure-body">{children}</div></details>;
 }
 
 function DraggableOverviewModule({id,index,dragged,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,children}){
@@ -681,7 +681,7 @@ function PriorityAlert({ alert, state, symbol }) {
   </article>;
 }
 
-function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
+function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock,attribution,history}) {
   const tone=decision.qualified?(decision.direction==="UP"?"long":"short"):"neutral";
   const label=decision.qualified?biasLabel(decision.direction):"WAIT";
   const lifecycleMessage=decision.lifecycle==="IDLE"?"ENGINE IDLE · WAIT":
@@ -706,6 +706,7 @@ function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock}) {
   return <section id="decision" className={`focus-view focus-view-${tone} overview-section`} aria-live="polite">
     <div className="focus-heading"><div><span>ONE-SCREEN OPTIONS FOCUS</span><h2>{symbol} · {label}</h2><small>{engine.running?"● LIVE OPTIONS PRO":"○ ENGINE IDLE"} · {time(state?.timestamp)} · {pretty(state?.regime??"waiting")}</small></div><div className="focus-alert"><span>{decision.lifecycle.replaceAll("_"," ")}</span><b>{lifecycleMessage}</b><small>Bias state only · never a safety or execution guarantee</small></div></div>
     <div className="focus-hold-policy"><span><b>ENTRY</b> {decision.entryRequired} consecutive qualified snapshots</span><span><b>MINIMUM HOLD</b> {decision.minHoldSeconds}s</span><span><b>EXIT</b> {decision.exitRequired} consecutive failed snapshots after minimum hold</span><span><b>RAW NOW</b> {decision.rawQualified?"QUALIFIED":"NOT QUALIFIED"}</span></div>
+    <DynamicsScorecard attribution={attribution} state={state} history={history}/>
     <div className="session-weight-strip">
       <div><span>MARKET PHASE / SESSION</span><b>{pretty(displaySession)}</b><small>{sessionNote}</small></div>
       <div><span>TRANSITION CONFIDENCE</span><b>{number(session.transition_confidence).toFixed(0)}%</b><small>Candidate {number(session.candidate_session_score).toFixed(2)} · current {number(session.current_session_score).toFixed(2)}</small></div>
@@ -834,6 +835,56 @@ function gammaLogVisualState(call){
   if(outcome.closed)return outcome.grade==="success"?{key:"success",label:outcome.basis==="directional"?"SUCCESS · DIRECTIONAL":"SUCCESS"}:{key:"failed",label:"FAILED"};
   const succeeding=call.direction==="UP"?price>=datum:price<=datum;
   return succeeding?{key:"tracking-success",label:"SUCCEEDING"}:{key:"tracking-failing",label:"FAILING"};
+}
+
+function dynamicsScore(calls=[]){
+  return dedupeLogicalCalls(calls).reduce((score,call)=>{
+    const state=gammaLogVisualState(call).key;
+    score.total+=1;
+    if(state==="success"||state==="child-rescued")score.succeeded+=1;
+    else if(state==="failed")score.failed+=1;
+    else if(state==="tracking-success")score.trackingSucceeded+=1;
+    else score.trackingFailed+=1;
+    return score;
+  },{total:0,succeeded:0,failed:0,trackingSucceeded:0,trackingFailed:0});
+}
+
+function scorePercent(value,total){return total?Math.round(value/total*100):0}
+
+const DYNAMICS_MARKET_HOURS=["PRE-MARKET","OPENING HOUR","MORNING","MIDDAY","AFTERNOON","POWER HOUR","AFTER HOURS"];
+function dynamicsTimeScores(calls=[]){
+  const buckets=Object.fromEntries(DYNAMICS_MARKET_HOURS.map(hour=>[hour,{succeeded:0,failed:0}]));
+  dedupeLogicalCalls(calls).forEach(call=>{
+    const state=gammaLogVisualState(call).key;
+    if(state!=="success"&&state!=="child-rescued"&&state!=="failed")return;
+    const bucket=buckets[marketHourLabel(call.alerted_at)];
+    if(!bucket)return;
+    if(state==="failed")bucket.failed+=1;else bucket.succeeded+=1;
+  });
+  return buckets;
+}
+
+function averageTimeToTarget(calls=[]){
+  const durations=dedupeLogicalCalls(calls).filter(call=>{
+    const state=gammaLogVisualState(call).key;
+    return (state==="success"||state==="child-rescued")&&Number.isFinite(Number(call.seconds_to_target));
+  }).map(call=>Number(call.seconds_to_target));
+  return durations.length?durations.reduce((sum,value)=>sum+value,0)/durations.length:null;
+}
+
+function DynamicsScoreSummary({calls=[]}){
+  const score=dynamicsScore(calls);
+  return <span className="module-score-summary" title={`${score.total} recorded calls`}><b>{scorePercent(score.succeeded,score.total)}% S</b><b>{scorePercent(score.failed,score.total)}% F</b><b>{scorePercent(score.trackingSucceeded,score.total)}% TS</b><b>{scorePercent(score.trackingFailed,score.total)}% TF</b></span>;
+}
+
+function DynamicsScorecard({attribution,state,history=[]}){
+  const systems=[
+    ["GAMMA DYNAMICS 1.0","GAMMA_DYNAMICS","gamma-v1"],
+    ["GAMMA DYNAMICS 2.0","GAMMA_DYNAMICS_V2","gamma-v2"],
+    ["DELTA DYNAMICS","DELTA_DYNAMICS","delta"],
+  ];
+  const models={GAMMA_DYNAMICS:deriveGammaDynamics(state,history),GAMMA_DYNAMICS_V2:deriveGammaDynamicsV2(state,history),DELTA_DYNAMICS:deriveSixGreekDynamics(state,history)};
+  return <section className="dynamics-scorecard" aria-label="Dynamics call performance scorecard"><header><div><span>DYNAMICS PERFORMANCE SCORECARD</span><b>Completed outcomes and live call direction</b></div><small>TS is tracking/succeeding; TF is tracking/failing.</small></header><div className="dynamics-scorecard-grid">{systems.map(([label,key,tone])=>{const calls=attribution?.systems?.[key]?.calls??[],score=dynamicsScore(calls),hours=dynamicsTimeScores(calls),open=score.trackingSucceeded+score.trackingFailed,averageSeconds=averageTimeToTarget(calls),model=models[key],bias=model?.qualified?(model.decision==="UP"?"UPWARD":model.decision==="DOWN"?"DOWNWARD":"WAIT"):"WAIT";return <article className={tone} key={key}><header><b>{label}</b><small>{score.total} TOTAL CALL{score.total===1?"":"S"}</small></header><div className="dynamics-live-summary"><span className={`bias ${bias.toLowerCase()}`}><b>{bias}</b>ACTIVE BIAS</span><span className={`target-time ${averageSeconds!=null&&averageSeconds<=600?"within-target":"over-target"}`}><b>{averageSeconds==null?"—":duration(averageSeconds)}</b>AVG TARGET · 10M</span><span className="open-calls"><b>{open}</b>OPEN · <i>TS {score.trackingSucceeded}</i> / <strong>TF {score.trackingFailed}</strong></span></div><div><span className="succeeded"><b>{score.succeeded}</b>SUCCEEDED <i>{scorePercent(score.succeeded,score.total)}%</i></span><span className="failed"><b>{score.failed}</b>FAILED <i>{scorePercent(score.failed,score.total)}%</i></span><span className="tracking-success"><b>{score.trackingSucceeded}</b>TS <i>{scorePercent(score.trackingSucceeded,score.total)}%</i></span><span className="tracking-failing"><b>{score.trackingFailed}</b>TF <i>{scorePercent(score.trackingFailed,score.total)}%</i></span></div><section className="dynamics-time-breakdown"><b>COMPLETED S / F BY ALERT MARKET HOUR</b><div>{DYNAMICS_MARKET_HOURS.map(hour=><span key={hour}><b>{hour}</b><i><em>S {hours[hour].succeeded}</em> / <strong>F {hours[hour].failed}</strong></i></span>)}</div></section></article>})}</div></section>;
 }
 
 function GammaDynamicsLog({history,state,symbol,calls=[],version=1}){
@@ -1082,8 +1133,8 @@ function GammaEventLogSummary({event,call}){
 
 function GammaDynamicsV2EventData({event,call}){
   const snapshot=call.gamma_dynamics_v2_at_signal??{},inputs=snapshot.inputs??call.greek_values_at_signal??event,metrics=snapshot.chain_metrics??{},checks=snapshot.alert_checks??{};
-  const value=item=>Number.isFinite(Number(item))?number(item).toFixed(4):"—";
-  const modelRows=[["SPOT",metrics.spot],["KEY FAULT LINE",metrics.key_fault_line],["NET GEX · KEY",metrics.net_gex_key],["GAMMA SQUEEZE",metrics.gamma_squeeze_score],["WEIGHTED SPEED",metrics.weighted_speed],["WEIGHTED COLOR",metrics.weighted_color],["WEIGHTED CHARM",metrics.weighted_charm],["WEIGHTED VANNA",metrics.weighted_vanna],["NET DEALER DELTA",metrics.net_dealer_delta],["ATM IV",metrics.atm_iv],["IV EXPANSION",metrics.iv_expansion],["ATM SPREAD",metrics.atm_spread],["KEY LIQUIDITY",metrics.key_liquidity],["SQUEEZE SCORE",snapshot.squeeze_score],["PROBABILITY",snapshot.probability],["5-MIN TARGET",snapshot.target_price]];
+  const value=item=>typeof item==="string"?item:Number.isFinite(Number(item))?number(item).toFixed(4):"—";
+  const modelRows=[["SPOT",metrics.spot],["ZERO GAMMA · REAL",metrics.zero_gamma],["SUPPORT · T+10",metrics.ksup_t10],["RESISTANCE · T+10",metrics.kres_t10],["GEX · RAW",metrics.gex_raw],["GEX · REAL",metrics.gex_real],["GEX $ DENSITY",metrics.gex_dollar_density],["TW GEX",metrics.tw_gex],["FLOW HACK",metrics.flow_hack],["VOL HACK",metrics.vol_hack],["RR · T+10",metrics.rr_t10],["DR · T+10",metrics.dr_t10],["SPOOF SCORE",metrics.spoof_score],["FADE SCORE",metrics.fade_score],["AMP SCORE",metrics.amp_score],["FINAL SCORE · CLEAN",metrics.final_score_clean],["REGIME",metrics.regime],["ENTRY",metrics.entry],["STOP LOSS",metrics.stop_loss],["TAKE PROFIT",metrics.take_profit],["LIQUIDITY SCORE",metrics.liquidity_score],["EDGE",metrics.edge],["URGENCY · MIN",metrics.urgency_minutes]];
   return <><div className="event-popup-summary"><table><thead><tr><th colSpan={modelRows.length}>GAMMA DYNAMICS 2.0 · CHAIN MODEL SNAPSHOT AT SIGNAL</th></tr><tr>{modelRows.map(([label])=><th key={label}>{label}</th>)}</tr></thead><tbody><tr>{modelRows.map(([label,current])=><td key={label}>{label==="PROBABILITY"?pct(current):value(current)}</td>)}</tr></tbody></table></div><div className="event-popup-summary"><table><thead><tr><th colSpan={GAMMA_DYNAMICS_V2_GREEKS.length}>SIX GREEKS · RAW AT SIGNAL</th></tr><tr>{GAMMA_DYNAMICS_V2_GREEKS.map(name=><th key={name}>{name.toUpperCase()}</th>)}</tr></thead><tbody><tr>{GAMMA_DYNAMICS_V2_GREEKS.map(name=><td key={name}>{signedGreek(inputs[name])}</td>)}</tr></tbody></table></div><div className="event-popup-summary"><table><thead><tr><th colSpan={Object.keys(checks).length||1}>QUALIFICATION GATES</th></tr><tr>{Object.keys(checks).map(name=><th key={name}>{pretty(name).toUpperCase()}</th>)}</tr></thead><tbody><tr>{Object.entries(checks).map(([name,passed])=><td className={passed?"positive":"negative"} key={name}>{passed?"PASS":"WAIT"}</td>)}</tr></tbody></table></div></>;
 }
 
@@ -1352,11 +1403,11 @@ export default function Home() {
     <aside className="sidebar"><div className="side-top"><div className="nav-context"><span>WORKSPACE</span><b>Live Overview</b><small>Decision → models → evidence</small></div><div className="nav-section-label"><span>NAVIGATION</span><b>{orderedOverviewSections.length} SECTIONS</b></div><nav className="overview-subnav" aria-label="Overview sections">{orderedOverviewSections.map(([label,section],index)=><button className={activeSection===section?"active":""} aria-current={activeSection===section?"location":undefined} key={section} onClick={()=>jumpTo(section)}><b>{String(index+1).padStart(2,"0")}</b><span><strong>{label}</strong><small>{OVERVIEW_CATEGORIES[section]}</small></span></button>)}</nav><div className="layout-actions"><button type="button" onClick={()=>setAllSections(true)}>Expand all</button><button type="button" onClick={()=>setAllSections(false)}>Collapse all</button></div><button type="button" className="reset-layout" onClick={()=>{setModuleOrder(DEFAULT_MODULE_ORDER);notify("Overview order reset")}}>↺ Reset section order</button></div><div className="side-bottom"><div className={`system-health ${system?.database_connected?"is-good":"is-bad"}`}><span><i/>{system?.database_connected?"System healthy":"System degraded"}</span><small>v{config?.version??"—"} · Render</small></div></div></aside>
     <section className="content">{view!=="Overview"?<ModulePage {...{view,state,history,alerts,performance,system,config,replay,onReplay:runReplay,notify}}/>:<><div id="overview-top" className="page-head overview-command overview-section"><div><div className="eyebrow">LIVE TRADING COMMAND</div><h1>Pressure intelligence</h1><p>Options-derived directional pressure with independent price confirmation.</p></div><div className="controls"><label>Instrument<select value={symbol} disabled={engine.running} onChange={e=>setSymbol(e.target.value)}>{instruments.map(item=><option value={item.symbol} key={item.symbol}>{item.symbol}</option>)}</select><small className={selectedInstrument?.available?"provider-ready":"provider-missing"}>{selectedInstrument?.provider}{selectedInstrument?.requirement?` · ${selectedInstrument.requirement}`:""}</small></label><label>Update interval<select value={resolution} onChange={e=>setResolution(Number(e.target.value))}><option value="5">5 seconds</option><option value="15">15 seconds</option><option value="60">1 minute</option></select></label></div></div>
     <OverviewSectionHeading number="01" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
-    <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock}/>
+    <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
-    <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics 1.0 · Four-Greek Engine" description="Zomma · Color · Speed · Gamma"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={1}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={1}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]} version={1}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
-    <DraggableOverviewModule id="gamma-dynamics-v2" index={moduleOrder.indexOf("gamma-dynamics-v2")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics-v2" title="Gamma Dynamics 2.0 · Six-Greek Engine" description="Zomma · Color · Speed · Gamma · Vomma · Ultima"><GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={2}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={2}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]} version={2}/><OutcomeAttributionMini system="GAMMA_DYNAMICS_V2" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
-    <DraggableOverviewModule id="six-greek-dynamics" index={moduleOrder.indexOf("six-greek-dynamics")} {...draggableProps}><OverviewDisclosure id="six-greek-dynamics" title="Delta Dynamics" description="Normalized Ultima · Zomma · Gamma · Speed · Color · Delta zone formulas"><SixGreekDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} deltaMode/></article><DeltaDynamicsEventLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.DELTA_DYNAMICS?.calls??[]}/><OutcomeAttributionMini system="DELTA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
+    <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics 1.0 · Four-Greek Engine" description="Zomma · Color · Speed · Gamma" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]}/>}> <GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={1}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={1}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]} version={1}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
+    <DraggableOverviewModule id="gamma-dynamics-v2" index={moduleOrder.indexOf("gamma-dynamics-v2")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics-v2" title="Gamma Dynamics 2.0 · Six-Greek Engine" description="Zomma · Color · Speed · Gamma · Vomma · Ultima" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]}/>}> <GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={2}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={2}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]} version={2}/><OutcomeAttributionMini system="GAMMA_DYNAMICS_V2" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
+    <DraggableOverviewModule id="six-greek-dynamics" index={moduleOrder.indexOf("six-greek-dynamics")} {...draggableProps}><OverviewDisclosure id="six-greek-dynamics" title="Delta Dynamics" description="Normalized Ultima · Zomma · Gamma · Speed · Color · Delta zone formulas" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.DELTA_DYNAMICS?.calls??[]}/>}> <SixGreekDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} deltaMode/></article><DeltaDynamicsEventLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.DELTA_DYNAMICS?.calls??[]}/><OutcomeAttributionMini system="DELTA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="forecast" index={moduleOrder.indexOf("forecast")} {...draggableProps}><OverviewDisclosure id="forecast" title="Experimental Forecast" description="Research-only 5-minute / 30-point probability model"><FiveMinuteForecast history={visualHistory} state={state} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="score-modules" index={moduleOrder.indexOf("score-modules")} {...draggableProps}><OverviewDisclosure id="score-modules" title="Signal Scores" description="Explosion, Direction, Pressure, and score histories"><div className="metric-grid live-metric-grid score-three"><ExplosionCard state={state} history={history}/><DirectionCard state={state}/><article className={`metric pressure-card ${number(state?.pressure?.value)>0.15?"pressure-buy":number(state?.pressure?.value)<-0.15?"pressure-sell":"pressure-watch"}`}><header><span>PRESSURE STATE</span><span className="pressure-live-badge">● {engine.running?"LIVE":"IDLE"}</span></header><div className="pressure-state"><i/><div><b>{number(state?.pressure?.value)>0.15?"BUY PRESSURE":number(state?.pressure?.value)<-0.15?"SELL PRESSURE":"BUILDING"}</b><span>{state?.pressure?.explanation??"Waiting for ThetaData"}</span></div></div><div className="pressure-confirmations"><span className={optionsDecision.checks.pressure_alignment?"confirmed":"waiting"}>Bias {optionsDecision.checks.pressure_alignment?"aligned":"waiting"}</span><span className={optionsDecision.checks.risk?"confirmed":"blocked"}>Risk {optionsDecision.checks.risk?"clear":"blocked"}</span></div><footer><span>Signed pressure</span><b>{number(state?.pressure?.value).toFixed(2)}</b></footer></article></div><div className="score-history-grid"><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="explosion"/></article><article className="panel chart-panel"><ScoreTimeChart history={visualHistory} state={state} symbol={symbol} metric="direction"/></article></div><OutcomeAttributionMini system="PRIMARY_OPTIONS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="greek-orders" index={moduleOrder.indexOf("greek-orders")} {...draggableProps}><OverviewDisclosure id="greek-orders" title="Greek Orders" description="First-, second-, and third-order streamed exposures"><article className="panel chart-panel"><GreekOrderChart history={visualHistory} state={state} symbol={symbol}/></article></OverviewDisclosure></DraggableOverviewModule>

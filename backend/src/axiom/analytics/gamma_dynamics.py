@@ -93,6 +93,58 @@ class GammaDynamicsSix:
         iv_available = metrics.get("atm_iv_available", 0.0) > 0 and previous_iv > self.zero_tolerance
         metrics["iv_expansion"] = (metrics.get("atm_iv", 0.0) - previous_iv) / previous_iv if iv_available else 0.0
         metrics["iv_expansion_available"] = float(iv_available)
+        # OI is delayed. Infer the intervening flow from the change in raw
+        # GEX after removing the observed Color and Speed components, then
+        # forward-fill it across the standard 15-minute OI lag.
+        previous = metric_samples[-1] if metric_samples else {}
+        spot = metrics.get("spot", 0.0)
+        prior_spot = previous.get("spot", spot)
+        delta_spot = spot - prior_spot
+        flow_hack = (
+            metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0))
+            - previous.get("color_ex", 0.0) - previous.get("speed_ex", 0.0) * delta_spot
+        ) if previous else 0.0
+        metrics["flow_hack"] = flow_hack
+        metrics["gex_real"] = metrics.get("gex_raw", 0.0) + flow_hack * 15.0
+        gamma_denominator = abs(metrics.get("gamma_open_interest", 0.0) * spot ** 2 * .01 * 100.0) + 1.0
+        metrics["vol_hack"] = flow_hack / gamma_denominator
+        flow_samples = []
+        for earlier, later in zip(metric_samples[-61:-1], metric_samples[-60:]):
+            change_spot = later.get("spot", 0.0) - earlier.get("spot", 0.0)
+            flow_samples.append(later.get("gex_raw", 0.0) - earlier.get("gex_raw", 0.0) - earlier.get("color_ex", 0.0) - earlier.get("speed_ex", 0.0) * change_spot)
+        flow_samples.append(flow_hack)
+        positive_flow = sum(value for value in flow_samples if value > 0)
+        negative_flow = sum(-value for value in flow_samples if value < 0)
+        total_oi = max(metrics.get("total_open_interest", 0.0), 1.0)
+        metrics["rr"] = positive_flow / (negative_flow + 1.0)
+        metrics["dr"] = -negative_flow / total_oi
+        outflow_average = negative_flow / max(len(flow_samples), 1)
+        flow_change = flow_samples[-1] - flow_samples[-2] if len(flow_samples) > 1 else 0.0
+        metrics["rr_t10"] = metrics["rr"] + (flow_change * 10.0) / max(outflow_average, 1.0)
+        metrics["dr_t10"] = metrics["dr"] + (negative_flow - positive_flow) / total_oi * 10.0
+        dealer_flow = -metrics["vol_hack"] * metrics.get("dex", 0.0)
+        metrics["dealer_flow"] = dealer_flow
+        metrics["pos_inventory"] = max(0.0, dealer_flow) * 60.0
+        metrics["neg_inventory"] = min(0.0, dealer_flow) * 60.0
+        density_samples = [item.get("gex_density", 0.0) for item in metric_samples[-10:]] + [metrics.get("gex_density", 0.0)]
+        same_sign = [value for value in density_samples if value * metrics.get("gex_density", 0.0) > 0]
+        metrics["tw_gex"] = len(same_sign) / max(len(density_samples), 1)
+        metrics["spoof_score"] = abs(metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0))) / (abs(metrics["vol_hack"]) + 1.0)
+        metrics["damping"] = 1.0 + metrics.get("gex_dollar_density", 0.0) / max(metrics.get("market_depth", 0.0), 1.0)
+        distance_support = abs(spot - metrics.get("support_level", spot)) + .001 * max(spot, 1.0)
+        metrics["fade_score"] = metrics.get("gex_dollar_density", 0.0) * metrics["pos_inventory"] * metrics["rr_t10"] / distance_support
+        metrics["amp_score"] = abs(metrics.get("gex_dollar_density", 0.0)) * abs(metrics["neg_inventory"]) * metrics["dr_t10"] * abs(metrics.get("speed_ex", 0.0))
+        theta_boost = 3.0 if timestamp and timestamp.astimezone(self.market_tz).time() >= time(15, 30) else 1.0
+        gex_real = metrics["gex_real"]
+        charm_shift = metrics.get("charm_ex", 0.0) / (gex_real if abs(gex_real) > 1e-12 else 1.0) * spot * 10.0 * theta_boost
+        metrics["ksup_t10"] = metrics.get("support_level", spot) + charm_shift
+        metrics["kres_t10"] = metrics.get("resistance_level", spot) + charm_shift
+        metrics["edge"] = abs(metrics["kres_t10"] - metrics["ksup_t10"]) / max(metrics.get("atm_spread", 0.0), .01)
+        metrics["urgency_minutes"] = abs(metrics.get("dex", 0.0)) / max(abs(metrics.get("charm_ex", 0.0)), 1.0)
+        metrics["final_score_clean"] = (
+            (metrics["fade_score"] - metrics["amp_score"]) * metrics.get("concentration", 0.0) * metrics["edge"] / 4.0
+            * metrics["tw_gex"] / (abs(metrics.get("gex_density", 0.0)) + .1) / (metrics["spoof_score"] + .5)
+        )
         normalized_features = {
             name: self._scaled(metrics.get(name, 0.0), [item.get(name, 0.0) for item in metric_samples])
             for name in self.feature_weights
@@ -103,28 +155,38 @@ class GammaDynamicsSix:
         direction = Direction.UP if direction_value > self.zero_tolerance else Direction.DOWN if direction_value < -self.zero_tolerance else Direction.NEUTRAL
         observed_at = timestamp.astimezone(self.market_tz) if timestamp else None
         active_window = bool(observed_at and (
-            time(9, 45) <= observed_at.time() <= time(11, 30)
-            or time(14, 30) <= observed_at.time() <= time(16, 0)
+            time(10, 0) <= observed_at.time() <= time(11, 30)
+            or time(13, 30) <= observed_at.time() <= time(15, 30)
         ))
         previous_alert = self._last_alert.get(source_symbol)
         cooldown_ok = previous_alert is None or timestamp is None or (timestamp - previous_alert).total_seconds() >= self.cooldown_seconds
         warmed = len(metric_samples) >= self.minimum_history
+        fade = metrics["fade_score"] > 2.0 * metrics["amp_score"] and metrics["fade_score"] > 120.0
+        amp = metrics["amp_score"] > 2.0 * metrics["fade_score"] and metrics["amp_score"] > 120.0 and metrics["dr_t10"] > .7
+        regime = "FADE" if fade else "AMP" if amp else "WAIT"
+        metrics["regime"] = regime
+        metrics["entry"] = metrics["ksup_t10"] if fade else metrics["kres_t10"] if amp else 0.0
+        metrics["take_profit"] = metrics.get("zero_gamma", 0.0) if fade else 0.0
+        metrics["stop_loss"] = metrics["entry"] * (.998 if fade else 1.002) if metrics["entry"] else 0.0
         checks = {
             "chain_available": metrics.get("chain_available", 0.0) > 0,
             "baseline": warmed,
-            "squeeze": squeeze_score > self.intensity_threshold,
-            "speed": abs(normalized_features["weighted_speed"]) > self.speed_threshold,
-            "color": normalized_features["weighted_color"] < self.color_threshold,
-            "liquidity": metrics.get("liquidity_available", 0.0) > 0 and metrics.get("bad_liquidity", 1.0) == 0.0,
+            "regime": regime != "WAIT",
+            "density": metrics.get("gex_dollar_density", 0.0) > 100_000_000.0 if fade else True,
+            "persistence": metrics["tw_gex"] > .7 if fade else True,
+            "spoof": metrics["spoof_score"] < 2.0 if fade else True,
+            "flow_ratio": metrics["rr_t10"] > 1.2 if fade else metrics["dr_t10"] > .7,
+            "inventory": metrics["pos_inventory"] > 300_000_000.0 if fade else True,
+            "edge": metrics["edge"] > 4.0,
+            "liquidity": metrics.get("liquidity_score", float("inf")) < .6,
+            "urgency": metrics["urgency_minutes"] < 10.0,
             "active_window": active_window,
             "cooldown": cooldown_ok,
-            "atm_spread": metrics.get("atm_spread", float("inf")) <= 0.20,
-            "direction": direction != Direction.NEUTRAL,
         }
         qualified = all(checks.values())
         if qualified and timestamp is not None:
             self._last_alert[source_symbol] = timestamp
-        decision = direction if qualified else Direction.NEUTRAL
+        decision = (Direction.UP if fade else Direction.DOWN if amp else Direction.NEUTRAL) if qualified else Direction.NEUTRAL
         pressure = (1.0 if direction == Direction.UP else -1.0 if direction == Direction.DOWN else 0.0) * min(1.0, abs(squeeze_score) / 3.0)
         intensity = probability
         contributions = {name: self.feature_weights[name] * normalized_features[name] for name in self.feature_weights}

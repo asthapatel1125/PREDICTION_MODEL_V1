@@ -320,6 +320,26 @@ class ThetaDataV3Client(MarketDataPort):
         liquidity_available = any(value is not None for value in key_sizes)
         liquidity = sum(value or 0.0 for value in key_sizes)
         atm_spread = sum(max(0.0, cls._number(row.get("ask")) - cls._number(row.get("bid"))) for row in atm_rows) / max(len(atm_rows), 1)
+        # Contract-level exposures for Gamma Dynamics 2.0.  Keep the raw
+        # values here; its rolling model infers flow and delayed-OI effects
+        # from consecutive snapshots rather than inventing tape data.
+        gex_total = sum(net_gex.values())
+        abs_gex_total = sum(abs(value) for value in net_gex.values())
+        near_strikes = [strike for strike in net_gex if abs(strike - spot) <= spot * .005]
+        near_gex = sum(net_gex[strike] for strike in near_strikes)
+        gex_density = near_gex / max(abs_gex_total, 1.0) / max(spot * .01, 1e-12)
+        support_candidates = [strike for strike, value in net_gex.items() if strike <= spot and value > 0]
+        resistance_candidates = [strike for strike, value in net_gex.items() if strike >= spot and value < 0]
+        support = max(support_candidates, key=lambda strike: net_gex[strike]) if support_candidates else min(by_strike, key=lambda strike: abs(strike - spot))
+        resistance = min(resistance_candidates, key=lambda strike: net_gex[strike]) if resistance_candidates else min(by_strike, key=lambda strike: abs(strike - spot))
+        total_oi = sum(cls._number(row.get("open_interest")) for row in contracts)
+        gamma_oi = sum(abs(cls._number(row.get("gamma"))) * cls._number(row.get("open_interest")) for row in contracts)
+        max_flow = max((abs(value) for value in net_gex.values()), default=0.0)
+        zero_gamma = sum(value * strike for strike, value in net_gex.items()) / gex_total if abs(gex_total) > 1e-12 else spot
+        exposure = lambda greek, power, scale=1.0: sum(
+            cls._right_sign(row.get("right")) * cls._number(row.get(greek)) * cls._number(row.get("open_interest")) * 100.0 * spot ** power * scale
+            for row in contracts
+        )
         return {
             "spot": spot,
             "chain_available": 1.0,
@@ -340,6 +360,25 @@ class ThetaDataV3Client(MarketDataPort):
             "key_liquidity": liquidity,
             "liquidity_available": float(liquidity_available),
             "bad_liquidity": float(liquidity_available and liquidity < 1000.0),
+            "gex_raw": gex_total,
+            "gex_abs_total": abs_gex_total,
+            "gex_density": gex_density,
+            "gex_dollar_density": gex_density * spot ** 2 * .01,
+            "zero_gamma": zero_gamma,
+            "support_level": support,
+            "resistance_level": resistance,
+            "total_open_interest": total_oi,
+            "gamma_open_interest": gamma_oi,
+            "max_flow": max_flow,
+            "concentration": max_flow / max(abs_gex_total, 1.0),
+            "market_depth": liquidity * spot,
+            "liquidity_score": atm_spread / max(liquidity, 1.0),
+            "dex": exposure("delta", 1),
+            "speed_ex": exposure("speed", 3, .01),
+            "color_ex": exposure("color", 2, .01),
+            "charm_ex": exposure("charm", 1),
+            "vanna_ex": exposure("vanna", 1),
+            "volga_ex": exposure("vomma", 0),
         }
 
     @staticmethod

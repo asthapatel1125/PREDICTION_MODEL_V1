@@ -576,6 +576,20 @@ class OutcomeAttributionTracker:
                     "target_label":"1.25-POINT REACH"}
             target_points=float(target_spec["target_points"])
             target_price=price+target_points if direction==Direction.UP else price-target_points
+            expires_at=now+self.horizon
+            if system=="GAMMA_DYNAMICS_V2" and state.gamma_dynamics_v2:
+                metrics=state.gamma_dynamics_v2.chain_metrics
+                # The v2 execution model uses the real-zero-gamma take-profit
+                # for fades when it is available, and observes a 10-minute
+                # hedge window / 20-minute normal timeout.
+                model_target=float(metrics.get("take_profit", 0.0) or 0.0)
+                if model_target>0:
+                    target_price=model_target
+                    target_points=abs(model_target-price)
+                eastern_now=now.astimezone(self.eastern).time()
+                hedge_windows=((time(9,55),time(10,5)),(time(11,55),time(12,5)),(time(14,55),time(15,5)),(time(15,40),time(15,50)))
+                timeout_minutes=10 if any(start<=eastern_now<=end for start,end in hedge_windows) else 20
+                expires_at=now+timedelta(minutes=timeout_minutes)
             record = {
                 "id": signal_id,
                 "call_id": call_id,
@@ -585,7 +599,7 @@ class OutcomeAttributionTracker:
                 "proxy_for": None,
                 "direction": direction.value,
                 "alerted_at": now,
-                "expires_at": now + self.horizon,
+                "expires_at": expires_at,
                 "status": "TRACKING",
                 "outcome_grade":"TRACKING",
                 "entry_price": price,
