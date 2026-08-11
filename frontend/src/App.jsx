@@ -1451,9 +1451,34 @@ const UI_HOVER_LABELS={
   "SL":"Stop-loss level.","TP":"Take-profit level.","LIQ":"Liquidity score: spread divided by available depth.",
   "TS":"Tracking call currently moving in the call’s favorable direction.",
   "TF":"Tracking call currently moving against the call’s direction.",
+  "DIRECTION":"The signal’s expected price direction: upward/long or downward/short.",
+  "CALL STATE":"Current observed outcome of the call: succeeded, failed, or still tracking.",
+  "STREAM DURATION":"Elapsed observed time since the call was created.",
+  "HIGH CHANGE":"Favorable or adverse movement from the alert datum to the highest observed price.",
+  "TIME · MS":"Event time in Eastern time, including milliseconds when available.",
+  "DATE · EASTERN":"Calendar date of the signal in Eastern time.",
+  "MARKET HOUR":"Trading-session bucket assigned to the alert time.",
+  "SOURCE":"Instrument and live data source used for the signal.",
+  "DATUM / ALERT PRICE":"Observed underlying price at the time the call was created.",
+  "SESSION TARGET":"Model target price for the active session and signal direction.",
+  "STRIKE / REFERENCE":"Option strike used by the model, or the nearest price reference when no strike is available.",
+  "DYNAMIC / EXTREME HIGH":"Highest observed price while this call has been tracked.",
+  "DYNAMIC / EXTREME LOW":"Lowest observed price while this call has been tracked.",
+  "TIME TO HIGH":"Elapsed time from alert to the tracked high.",
+  "TIME TO LOW":"Elapsed time from alert to the tracked low.",
+  "CURRENT / FINAL":"Latest tracked price, or final price after the observation window closes.",
+  "CURRENT / FINAL CHANGE":"Price change from the alert datum to the current or final observation.",
+  "STRONGEST GREEK":"Greek with the strongest directional contribution at this call state.",
+  "WEAKEST GREEK":"Greek with the weakest directional contribution at this call state.",
+  "INTENSITY":"Model strength score at the time of the signal.",
+  "PRESSURE":"Signed directional pressure produced by the model.",
+  "EVENT ID":"Unique identifier for this event; click its button to copy it.",
 };
 function interfaceHoverLabel(element){
   const text=(element.getAttribute("aria-label")||element.textContent||"").replace(/\s+/g," ").trim();
+  if(/ @ STRIKE · RAW$/.test(text))return `${text.replace(" @ STRIKE · RAW","")} exposure at the alert strike, in its original stored units.`;
+  if(/ @ STRIKE · NORM$/.test(text))return `${text.replace(" @ STRIKE · NORM","")} exposure at the alert strike, normalized against its rolling history.`;
+  if(/ (HIGH|LOW)$/.test(text)&&["ZOMMA","COLOR","SPEED","GAMMA","VOMMA","ULTIMA","DELTA"].some(name=>text.startsWith(name)))return `${text.replace(/ (HIGH|LOW)$/,"")} value at the call’s observed $1 price extreme.`;
   return UI_HOVER_LABELS[text]||text;
 }
 
