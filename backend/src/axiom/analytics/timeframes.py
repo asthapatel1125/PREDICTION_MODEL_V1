@@ -31,15 +31,28 @@ class MultiTimeframeEngine:
         self.history: dict[tuple[str,int], deque[MarketBar]] = defaultdict(lambda: deque(maxlen=max_bars))
         self._buckets: dict[tuple[str,int,int], _Bucket] = {}
 
+    @staticmethod
+    def _cache_bar(bar: MarketBar) -> MarketBar:
+        """Keep rolling calculations compact; full chain snapshots are persisted separately.
+
+        A five-second chain can contain thousands of strike records.  Retaining
+        it in every in-memory timeframe bucket would exceed a small Render
+        instance long before the trading session ends.  Gamma 2.0 only needs
+        the compact chain metrics for its rolling calculations; ``gamma_ticks``
+        are saved by the engine before this cache is discarded.
+        """
+        return bar.model_copy(update={"gamma_ticks": []})
+
     def update(self, bar: MarketBar) -> dict[int, MarketBar]:
         completed: dict[int, MarketBar] = {}
+        cached_bar = self._cache_bar(bar)
         for seconds in self.timeframes:
-            epoch = int(bar.timestamp.timestamp()); bucket_id = epoch // seconds
-            key = (bar.symbol, seconds, bucket_id); bucket = self._buckets.setdefault(key, _Bucket([])); bucket.bars.append(bar)
-            previous_key = (bar.symbol, seconds, bucket_id - 1)
+            epoch = int(cached_bar.timestamp.timestamp()); bucket_id = epoch // seconds
+            key = (cached_bar.symbol, seconds, bucket_id); bucket = self._buckets.setdefault(key, _Bucket([])); bucket.bars.append(cached_bar)
+            previous_key = (cached_bar.symbol, seconds, bucket_id - 1)
             if previous_key in self._buckets:
                 complete = self._buckets.pop(previous_key).aggregate(seconds)
-                self.history[(bar.symbol, seconds)].append(complete); completed[seconds] = complete
+                self.history[(cached_bar.symbol, seconds)].append(complete); completed[seconds] = complete
         return completed
 
     def bars(self, symbol: str, timeframe: int) -> list[MarketBar]:
