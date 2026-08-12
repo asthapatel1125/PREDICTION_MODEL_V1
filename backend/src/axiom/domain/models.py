@@ -52,7 +52,10 @@ class MarketBar(FrozenModel):
     open_interest: float = Field(default=0, ge=0)
     # Contract-level Gamma Dynamics 2.0 measurements calculated before the
     # adapter reduces an option chain to a single aggregate Greeks snapshot.
-    gamma_metrics: dict[str, float] = Field(default_factory=dict)
+    # Numeric chain measurements plus structured wall metadata.  The latter
+    # includes the top-five strike list and the textual pin-state, so this
+    # cannot be restricted to float values.
+    gamma_metrics: dict[str, Any] = Field(default_factory=dict)
     # The aggregate bar remains the common engine input, but Gamma Dynamics
     # 2.0 also retains every contract in the observed chain for persistence.
     gamma_ticks: list[dict[str, Any]] = Field(default_factory=list)
