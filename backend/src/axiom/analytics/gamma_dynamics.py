@@ -78,14 +78,16 @@ class GammaDynamicsSix:
         return max(-3.0, min(3.0, (float(current) - mean) / standard_deviation)) / 3.0
 
     def calculate(self, greeks: Greeks, history: Sequence[Greeks], source_symbol: str,
-                  chain_metrics: dict[str, float] | None = None,
-                  metric_history: Sequence[dict[str, float]] = (),
+                  chain_metrics: dict[str, object] | None = None,
+                  metric_history: Sequence[dict[str, object]] = (),
                   timestamp: datetime | None = None) -> GammaDynamics:
         inputs = {name: float(getattr(greeks, name)) for name in GAMMA_DYNAMICS_V2_GREEKS}
         samples = list(history)
         percentiles = {name: self._absolute_percentile(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
         normalized = {name: self._scaled(value, [getattr(item, name) for item in samples]) for name, value in inputs.items()}
-        metrics = {name: float(value) for name, value in (chain_metrics or {}).items()}
+        # Preserve structured per-strike wall records alongside numeric chain
+        # features; only arithmetic fields are converted at their use sites.
+        metrics = dict(chain_metrics or {})
         metric_samples = list(metric_history)
         # Primary bars are one minute, so five earlier observations represent
         # the specification's t - 300 second ATM-IV reference point.

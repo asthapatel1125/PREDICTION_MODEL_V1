@@ -315,7 +315,7 @@ class ThetaDataV3Client(MarketDataPort):
                     row["color"] = -cls._number(row.get("theta")) * cls._number(row.get("gamma")) / max(spot, 1e-12)
 
     @classmethod
-    def _gamma_metrics(cls, rows: list[dict[str, Any]], spot: float, observed_at: datetime) -> dict[str, float]:
+    def _gamma_metrics(cls, rows: list[dict[str, Any]], spot: float, observed_at: datetime) -> dict[str, Any]:
         """Calculate Gamma Dynamics 2.0 features from one option-chain snapshot."""
         dated = [row for row in rows if cls._expiration_date(row.get("expiration")) is not None]
         contracts = [row for row in dated if cls._expiration_date(row.get("expiration")) == observed_at.date()] if dated else rows
@@ -370,6 +370,19 @@ class ThetaDataV3Client(MarketDataPort):
         gamma_oi = sum(abs(cls._number(row.get("gamma"))) * cls._number(row.get("open_interest")) for row in contracts)
         max_flow = max((abs(value) for value in net_gex.values()), default=0.0)
         zero_gamma = sum(value * strike for strike, value in net_gex.items()) / gex_total if abs(gex_total) > 1e-12 else spot
+        strike_oi = {strike: int(sum(cls._number(row.get("open_interest")) for row in items)) for strike, items in by_strike.items()}
+        positive_walls = [strike for strike, gex in net_gex.items() if gex > 0]
+        negative_walls = [strike for strike, gex in net_gex.items() if gex < 0]
+        call_wall = max(positive_walls, key=lambda strike: net_gex[strike]) if positive_walls else None
+        put_wall = min(negative_walls, key=lambda strike: net_gex[strike]) if negative_walls else None
+        gex_walls = [
+            {
+                "strike": float(strike), "gex": float(net_gex[strike]), "abs_gex": float(abs(net_gex[strike])),
+                "side": 1 if net_gex[strike] > 0 else -1, "open_interest": strike_oi[strike],
+                "distance_pct": float((strike - spot) / max(spot, 1e-12) * 100.0),
+            }
+            for strike in sorted(net_gex, key=lambda item: (-abs(net_gex[item]), item))[:5]
+        ]
         exposure = lambda greek, power, scale=1.0: sum(
             cls._right_sign(row.get("right")) * cls._number(row.get(greek)) * cls._number(row.get("open_interest")) * 100.0 * spot ** power * scale
             for row in contracts
@@ -400,6 +413,14 @@ class ThetaDataV3Client(MarketDataPort):
             "gex_density": gex_density,
             "gex_dollar_density": gex_density * spot ** 2 * .01,
             "zero_gamma": zero_gamma,
+            "call_wall_strike": float(call_wall or 0.0),
+            "call_wall_gex": float(net_gex[call_wall]) if call_wall is not None else 0.0,
+            "call_wall_oi": int(strike_oi[call_wall]) if call_wall is not None else 0,
+            "put_wall_strike": float(put_wall or 0.0),
+            "put_wall_gex": float(net_gex[put_wall]) if put_wall is not None else 0.0,
+            "put_wall_oi": int(strike_oi[put_wall]) if put_wall is not None else 0,
+            "gex_walls": gex_walls,
+            "pin_status": "BETWEEN_WALLS" if call_wall is not None and put_wall is not None and put_wall < spot < call_wall else "OUTSIDE",
             "support_level": support,
             "resistance_level": resistance,
             "total_open_interest": total_oi,

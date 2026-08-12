@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -80,6 +81,29 @@ class MicroRange(FrozenModel):
     snapback: bool = False
 
 
+@dataclass(frozen=True)
+class GexWall:
+    """Typed representation of one signed, strike-level Gamma exposure wall."""
+    strike: float
+    gex: float
+    abs_gex: float
+    side: int
+    open_interest: int
+    distance_pct: float
+
+
+class GammaDynamicsMetrics(FrozenModel):
+    """Typed Gamma 2.0 wall fields embedded in the flexible chain-metric payload."""
+    call_wall_strike: float = 0.0
+    call_wall_gex: float = 0.0
+    call_wall_oi: int = 0
+    put_wall_strike: float = 0.0
+    put_wall_gex: float = 0.0
+    put_wall_oi: int = 0
+    gex_walls: list[GexWall] = Field(default_factory=list)
+    pin_status: str = "OUTSIDE"
+
+
 class GammaDynamics(FrozenModel):
     """Normalized six-Greek Gamma dynamics with volatility-curvature context."""
     decision: Direction = Direction.NEUTRAL
@@ -98,7 +122,7 @@ class GammaDynamics(FrozenModel):
     # the chain-level model inputs and decisions used to produce the signal.
     # Most chain metrics are numeric; Gamma Dynamics 2.0 also records the
     # selected execution regime (WAIT / FADE / AMP) alongside them.
-    chain_metrics: dict[str, float | str] = Field(default_factory=dict)
+    chain_metrics: dict[str, Any] = Field(default_factory=dict)
     normalized_features: dict[str, float] = Field(default_factory=dict)
     squeeze_score: float = 0.0
     probability: float = Field(default=0.5, ge=0, le=0.95)

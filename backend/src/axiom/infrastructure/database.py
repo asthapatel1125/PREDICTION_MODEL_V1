@@ -116,6 +116,9 @@ class ConfluenceRow(Base):
     zg:Mapped[float]=mapped_column(Float);ksup_t10:Mapped[float]=mapped_column(Float);kres_t10:Mapped[float]=mapped_column(Float)
     fade_score:Mapped[float]=mapped_column(Float);amp_score:Mapped[float]=mapped_column(Float);final_score_clean:Mapped[float]=mapped_column(Float)
     regime:Mapped[str]=mapped_column(String(16));edge:Mapped[float]=mapped_column(Float);liq_score:Mapped[float]=mapped_column(Float)
+    call_wall_strike:Mapped[float]=mapped_column(Float,default=0.0);call_wall_gex:Mapped[float]=mapped_column(Float,default=0.0)
+    put_wall_strike:Mapped[float]=mapped_column(Float,default=0.0);put_wall_gex:Mapped[float]=mapped_column(Float,default=0.0)
+    gex_walls:Mapped[list[dict[str,Any]]]=mapped_column(JSON,default=list)
     payload:Mapped[dict[str,Any]]=mapped_column(JSON,default=dict)
     __table_args__=(UniqueConstraint("timestamp","symbol","strike",name="uq_confluence_snapshot"),)
 
@@ -202,6 +205,9 @@ class SqlAlchemyRepository:
             "fade_score":float(metric.get("fade_score",0.0)),"amp_score":float(metric.get("amp_score",0.0)),
             "final_score_clean":float(metric.get("final_score_clean",0.0)),"regime":str(metric.get("regime","WAIT")),
             "edge":float(metric.get("edge",0.0)),"liq_score":float(metric.get("liquidity_score",0.0)),
+            "call_wall_strike":float(metric.get("call_wall_strike",0.0)),"call_wall_gex":float(metric.get("call_wall_gex",0.0)),
+            "put_wall_strike":float(metric.get("put_wall_strike",0.0)),"put_wall_gex":float(metric.get("put_wall_gex",0.0)),
+            "gex_walls":self._json_ready(metric.get("gex_walls",[])),
             "payload":self._json_ready(metric),
         }
         async with self.sessions() as s:
@@ -493,5 +499,19 @@ async def create_database(url:str)->tuple[async_sessionmaker[AsyncSession],SqlAl
             """))).scalars().all()
             for name,ddl in index_ddls.items():
                 if name not in indexes:
+                    await connection.execute(text(ddl))
+            confluence_columns=(await connection.execute(text("""
+                select column_name from information_schema.columns
+                where table_schema=current_schema() and table_name='confluence'
+            """))).scalars().all()
+            confluence_ddls={
+                "call_wall_strike":"alter table confluence add column call_wall_strike double precision not null default 0",
+                "call_wall_gex":"alter table confluence add column call_wall_gex double precision not null default 0",
+                "put_wall_strike":"alter table confluence add column put_wall_strike double precision not null default 0",
+                "put_wall_gex":"alter table confluence add column put_wall_gex double precision not null default 0",
+                "gex_walls":"alter table confluence add column gex_walls json not null default '[]'::json",
+            }
+            for name,ddl in confluence_ddls.items():
+                if name not in confluence_columns:
                     await connection.execute(text(ddl))
     factory=async_sessionmaker(engine,expire_on_commit=False);return factory,SqlAlchemyRepository(factory)

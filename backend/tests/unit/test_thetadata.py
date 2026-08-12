@@ -45,6 +45,27 @@ def test_snapshot_calculates_zero_dte_gamma_dynamics_chain_metrics():
     assert metrics["weighted_charm"]==pytest.approx(2000)
 
 
+def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
+    client=ThetaDataV3Client(api_key="test")
+    timestamp=datetime(2026,8,11,18,58,56,tzinfo=timezone.utc)
+    common={"timestamp":timestamp,"expiration":"20260811","underlying_price":722,"bid":1,"ask":1.1,
+            "bid_size":100,"ask_size":100,"theta":-.2,"vega":.4,"rho":.1,"vanna":.1,"charm":.1,
+            "vomma":.3,"veta":.1,"speed":.1,"zomma":.1,"color":-.1,"ultima":.1,"delta":.5}
+    rows=[
+        {**common,"strike":728,"right":"call","open_interest":1200,"gamma":.20},
+        {**common,"strike":716,"right":"put","open_interest":1100,"gamma":.18},
+        {**common,"strike":722,"right":"call","open_interest":300,"gamma":.08},
+    ]
+    metrics=client._aggregate(rows,"QQQ",5)[0].gamma_metrics
+    assert metrics["call_wall_strike"]==728
+    assert metrics["call_wall_gex"]>0
+    assert metrics["put_wall_strike"]==716
+    assert metrics["put_wall_gex"]<0
+    assert metrics["pin_status"]=="BETWEEN_WALLS"
+    assert len(metrics["gex_walls"])==3
+    assert metrics["gex_walls"]==sorted(metrics["gex_walls"],key=lambda wall:-wall["abs_gex"])
+
+
 def test_missing_speed_and_color_use_specification_fallbacks():
     client=ThetaDataV3Client(api_key="test")
     timestamp=datetime(2026,7,16,14,0,tzinfo=timezone.utc)
