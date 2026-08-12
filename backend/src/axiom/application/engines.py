@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime,timezone,time
-from zoneinfo import ZoneInfo
+from datetime import datetime,timezone
 
 try:
     from axiom.adapters.twelvedata import TwelveDataPriceClient
@@ -23,7 +22,6 @@ except ModuleNotFoundError:
         def process(self,*args,**kwargs)->list[dict]:return []
         def finalize_active(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline
-from axiom.analytics.daily_microstructure import DailyMicrostructure
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
 from axiom.ports.interfaces import EventPublisherPort, MarketDataPort, RepositoryPort
@@ -49,7 +47,6 @@ class _EngineRunner:
         self.attribution=OutcomeAttributionTracker(
             outcome_horizon_minutes,outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq
         )
-        self._daily_microstructure_dates:set[tuple[str,str]]=set()
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
