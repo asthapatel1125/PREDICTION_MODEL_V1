@@ -786,24 +786,24 @@ function GammaDynamicsV2Metrics({model}){
   const compact=value=>{const numeric=optionalNumber(value);if(!Number.isFinite(numeric))return "—";const absolute=Math.abs(numeric);if(absolute>=1e9)return `${numeric<0?"-":""}${(absolute/1e9).toFixed(2)}B`;if(absolute>=1e6)return `${numeric<0?"-":""}${(absolute/1e6).toFixed(2)}M`;if(absolute>=1e3)return `${numeric<0?"-":""}${(absolute/1e3).toFixed(1)}K`;return numeric.toFixed(3)};
   const priceMetric=value=>{const numeric=optionalNumber(value);return Number.isFinite(numeric)?numeric.toFixed(2):"—"};
   const cards=[
-    ["REGIME",metrics.regime??"WAIT","FADE = hedge reversion; AMP = directional hedge expansion",checks.regime],
-    ["WARM-UP",`${number(model?.history_points)} / 720`,`Five-second chain snapshots required before Gamma 2.0 can qualify`,checks.baseline],
-    ["FINAL CLEAN",compact(metrics.final_score_clean),"Filtered setup score; logged for comparison, not a ranking gate",null],
-    ["SPOT",priceMetric(metrics.spot),"Underlying price used in chain exposure calculations",null],
-    ["GEX REAL",compact(metrics.gex_real),"Raw GEX adjusted with the inferred OI-delay flow",checks.density],
-    ["GEX $ DENSITY",compact(metrics.gex_dollar_density),"Local net GEX density inside plus/minus 0.5 percent of spot",checks.density],
-    ["TW GEX",compact(metrics.tw_gex),"Mean of the latest 12 GEX-density readings",checks.persistence],
-    ["SPOOF",compact(metrics.spoof_score),"dGEX divided by inferred volume; must be below 2",checks.spoof],
-    ["RR T+10",compact(metrics.rr_t10),"Projected positive-to-negative inferred flow ratio",checks.flow_ratio],
-    ["DR T+10",compact(metrics.dr_t10),"Projected negative inferred-flow pressure ratio",checks.flow_ratio],
-    ["EDGE",compact(metrics.edge),"Projected support-to-resistance width divided by ATM spread",checks.edge],
-    ["LIQ SCORE",compact(metrics.liquidity_score),"ATM spread divided by key-level displayed depth",checks.liquidity],
-    ["ZERO GAMMA",priceMetric(metrics.zero_gamma),"Open-interest-weighted real zero-gamma level",null],
-    ["K SUP T+10",priceMetric(metrics.ksup_t10),"Support projected ten minutes forward using Charm exposure",null],
-    ["K RES T+10",priceMetric(metrics.kres_t10),"Resistance projected ten minutes forward using Charm exposure",null],
-    ["ENTRY",priceMetric(metrics.entry),"Model entry level for the active FADE or AMP regime",checks.regime],
+    ["REGIME",metrics.regime??"WAIT","FADE = hedge reversion; AMP = directional hedge expansion","IDEAL · FADE OR AMP",checks.regime],
+    ["WARM-UP",`${number(model?.history_points)} / 720`,`Five-second chain snapshots required before Gamma 2.0 can qualify`,`IDEAL · 720 SNAPSHOTS`,checks.baseline],
+    ["FINAL CLEAN",compact(metrics.final_score_clean),"Filtered setup score; logged for comparison, not a ranking gate","EXPECTED · LOGGED, NOT A GATE",null],
+    ["SPOT",priceMetric(metrics.spot),"Underlying price used in chain exposure calculations","EXPECTED · LIVE UNDERLYING",null],
+    ["GEX REAL",compact(metrics.gex_real),"Raw GEX adjusted with the inferred OI-delay flow","EXPECTED · CONTEXT ONLY",checks.density],
+    ["GEX $ DENSITY",compact(metrics.gex_dollar_density),"Local net GEX density inside plus/minus 0.5 percent of spot","FADE IDEAL · > 100M",checks.density],
+    ["TW GEX",compact(metrics.tw_gex),"Mean of the latest 12 GEX-density readings","FADE IDEAL · > 0.700",checks.persistence],
+    ["SPOOF",compact(metrics.spoof_score),"dGEX divided by inferred volume; must be below 2","IDEAL · < 2.000",checks.spoof],
+    ["RR T+10",compact(metrics.rr_t10),"Projected positive-to-negative inferred flow ratio","FADE IDEAL · > 1.200",checks.flow_ratio],
+    ["DR T+10",compact(metrics.dr_t10),"Projected negative inferred-flow pressure ratio","AMP IDEAL · > 0.700",checks.flow_ratio],
+    ["EDGE",compact(metrics.edge),"Projected support-to-resistance width divided by ATM spread","IDEAL · > 4.000",checks.edge],
+    ["LIQ SCORE",compact(metrics.liquidity_score),"ATM spread divided by key-level displayed depth","IDEAL · < 0.600",checks.liquidity],
+    ["ZERO GAMMA",priceMetric(metrics.zero_gamma),"Open-interest-weighted real zero-gamma level","FADE TARGET · Zg",null],
+    ["K SUP T+10",priceMetric(metrics.ksup_t10),"Support projected ten minutes forward using Charm exposure","FADE ENTRY · PROJECTED",null],
+    ["K RES T+10",priceMetric(metrics.kres_t10),"Resistance projected ten minutes forward using Charm exposure","AMP ENTRY · PROJECTED",null],
+    ["ENTRY",priceMetric(metrics.entry),"Model entry level for the active FADE or AMP regime","EXPECTED · ACTIVE REGIME LEVEL",checks.regime],
   ];
-  return <section className="gamma-v2-metrics" aria-label="Gamma Dynamics 2.0 live hedge-flow metrics"><header><div><span>LIVE HEDGE-FLOW METRICS</span><small>Current chain confluence · updates every observed snapshot</small></div><b className={`gamma-v2-regime ${(metrics.regime??"WAIT").toLowerCase()}`}>{metrics.regime??"WAIT"}</b></header><div>{cards.map(([label,value,description,passed])=><article className={passed===true?"passed":passed===false?"failed":"neutral"} key={label} title={description}><span>{label}</span><b>{value}</b><small>{passed===true?"PASS":passed===false?"WAIT":description}</small></article>)}</div></section>;
+  return <section className="gamma-v2-metrics" aria-label="Gamma Dynamics 2.0 live hedge-flow metrics"><header><div><span>LIVE HEDGE-FLOW METRICS</span><small>Current chain confluence · updates every observed snapshot</small></div><b className={`gamma-v2-regime ${(metrics.regime??"WAIT").toLowerCase()}`}>{metrics.regime??"WAIT"}</b></header><div>{cards.map(([label,value,description,expected,passed])=><article className={passed===true?"passed":passed===false?"failed":"neutral"} key={label} title={description}><span>{label}</span><b>{value}</b><small><em>{passed===true?"PASS":passed===false?"WAIT":"INFO"}</em>{expected}</small></article>)}</div></section>;
 }
 
 function GammaDynamicsModule({state,history,symbol,engine,version=1}){
