@@ -127,20 +127,15 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,"count":len(rows),"rows":rows}
 
     @api.get("/dynamics-history/{symbol}")
-    async def dynamics_history(symbol:str,limit:int=Query(500_000,ge=1,le=500_000)):
-        """Return retained Dynamics states from the beginning of the stream.
+    async def dynamics_history(symbol:str,limit:int=Query(5_000,ge=1,le=5_000)):
+        """Return a bounded chart window ordered from the first retained tick.
 
-        All three Dynamics models are embedded in each persisted state, so one
-        chronological feed preserves Gamma 1.0, Gamma 2.0, and Delta together.
+        The full archive remains in Supabase.  Returning an unbounded archive
+        on every browser load can deserialize hundreds of thousands of nested
+        market-state payloads and exhaust small production instances.
         """
-        rows=await container.repository.latest_states(symbol,limit)
-        return {"symbol":symbol.upper(),"count":len(rows),"rows":list(reversed(rows))}
-
-    @api.get("/dynamics-history/{symbol}")
-    async def dynamics_history(symbol:str,limit:int=Query(100_000,ge=1,le=100_000)):
-        """Full retained Dynamics archive, ordered from the first stream tick."""
         rows=await container.repository.stream_archive(symbol,limit)
-        return {"symbol":symbol.upper(),"source":"PERSISTED_LIVE_STREAM_ARCHIVE","count":len(rows),"rows":rows}
+        return {"symbol":symbol.upper(),"source":"PERSISTED_LIVE_STREAM_ARCHIVE","bounded":True,"count":len(rows),"rows":rows}
 
     @api.get("/daily-microstructure/{session_date}")
     async def daily_microstructure(session_date:date,symbol:str=Query("QQQ")):
