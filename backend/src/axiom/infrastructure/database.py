@@ -189,16 +189,13 @@ class SqlAlchemyRepository:
             await s.commit()
 
     async def save_gamma_ticks(self,ticks:list[dict[str,Any]])->None:
-        """Append the unaggregated chain; duplicate snapshot contracts are ignored."""
+        """Append one complete chain using a single bulk database operation."""
         if not ticks:return
         async with self.sessions() as s:
-            for tick in ticks:
-                exists=(await s.execute(select(GammaTickRow.id).where(
-                    GammaTickRow.timestamp==tick["timestamp"],GammaTickRow.symbol==tick["symbol"],
-                    GammaTickRow.expiration==tick["expiration"],GammaTickRow.right==tick["right"],
-                    GammaTickRow.strike==tick["strike"],
-                ).limit(1))).scalar_one_or_none()
-                if exists is None:s.add(GammaTickRow(**tick))
+            # Snapshot timestamps are unique per successful live poll, so a
+            # preflight SELECT for every contract only burns CPU and memory.
+            # One executemany insert keeps a full chain atomic and short-lived.
+            await s.execute(GammaTickRow.__table__.insert(),ticks)
             await s.commit()
 
     async def save_confluence(self,state:MarketState)->None:
@@ -248,6 +245,18 @@ class SqlAlchemyRepository:
                 for key,value in values.items():setattr(row,key,value)
             await s.commit()
         return report
+
+    async def daily_microstructure_report(self,symbol:str,day:datetime)->dict[str,Any]|None:
+        async with self.sessions() as s:
+            row=(await s.execute(select(DailyMicrostructureRow).where(
+                DailyMicrostructureRow.symbol==symbol.upper(),DailyMicrostructureRow.date==day,
+            ))).scalar_one_or_none()
+        if row is None:return None
+        return {"date":row.date.isoformat(),"symbol":row.symbol,"total_levels_count":row.total_levels_count,
+            "call_levels_count":row.call_levels_count,"put_levels_count":row.put_levels_count,"dense_levels_count":row.dense_levels_count,
+            "avg_levels_per_hour":row.avg_levels_per_hour,"call_wall_strike":row.call_wall_strike,"put_wall_strike":row.put_wall_strike,
+            "zero_gamma":row.zero_gamma,"max_oi_strike":row.max_oi_strike,"key_levels":row.key_levels,
+            "paradigm_shift_levels":row.paradigm_shift_levels,"key_levels_count":row.key_levels_count,"paradigm_shift_count":row.paradigm_shift_count}
 
     async def active_system_outcomes(self)->list[dict[str,Any]]:
         """Load unresolved call paths so a restarted live engine can resume them."""

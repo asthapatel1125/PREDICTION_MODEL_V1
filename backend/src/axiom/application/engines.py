@@ -57,17 +57,15 @@ class _EngineRunner:
         # the aggregate market-state row used by the rest of the application.
         if hasattr(self.repository,"save_gamma_ticks"):
             await self.repository.save_gamma_ticks(bar.gamma_ticks)
+        # The persisted source chain is no longer needed after this point.
+        # Clear it before websocket/outcome work so the live generator does
+        # not retain two full option-chain copies between polls.
+        bar.gamma_ticks.clear()
         if hasattr(self.repository,"save_confluence"):
             await self.repository.save_confluence(result.state)
-        eastern=bar.timestamp.astimezone(ZoneInfo("America/New_York"))
-        daily_key=(bar.symbol,eastern.date().isoformat())
-        if eastern.time()>=time(16,0) and daily_key not in self._daily_microstructure_dates and hasattr(self.repository,"daily_microstructure_inputs"):
-            start=eastern.replace(hour=7,minute=0,second=0,microsecond=0).astimezone(timezone.utc)
-            end=eastern.replace(hour=18,minute=0,second=0,microsecond=0).astimezone(timezone.utc)
-            ticks,confluence=await self.repository.daily_microstructure_inputs(bar.symbol,start,end)
-            report=DailyMicrostructure.build(eastern.date(),bar.symbol,ticks,confluence).payload()
-            await self.repository.save_daily_microstructure(report)
-            self._daily_microstructure_dates.add(daily_key)
+        # Daily microstructure is intentionally built off-process/on demand.
+        # Loading an entire day of raw five-second chains into the live worker
+        # creates a predictable out-of-memory path on small Render instances.
         await self.publisher.publish("market_state",result.state.model_dump(mode="json"))
         observation=price_observation or {"price":bar.close,"source":"THETADATA_REPLAY" if mode==EngineMode.TRAINING else "THETADATA_OPTIONS_UNDERLYING",
             "observed_at":datetime.now(timezone.utc),"source_timestamp":bar.timestamp}

@@ -23,7 +23,7 @@ class ThetaDataV3Client(MarketDataPort):
     def __init__(self, base_url: str = "http://127.0.0.1:25503/v3", timeout: float = 60,
                  api_key: str | None = None, transport: str = "python", max_dte: int = 7,
                  strike_range: int = 30, market_timezone: str = "America/New_York",
-                 poll_seconds: float = 5.0):
+                 poll_seconds: float = 5.0, open_interest_cache_seconds: float = 900.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.api_key = api_key
@@ -32,6 +32,11 @@ class ThetaDataV3Client(MarketDataPort):
         self.strike_range = strike_range
         self.market_tz = ZoneInfo(market_timezone)
         self.poll_seconds = poll_seconds
+        # OI is published on a delayed cadence.  Re-fetching a full OI chain
+        # with every five-second Greek snapshot duplicates the largest payload
+        # without making the calculation more current.
+        self.open_interest_cache_seconds = open_interest_cache_seconds
+        self._open_interest_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
         self._client: Any = None
 
     def _python_client(self) -> Any:
@@ -67,16 +72,17 @@ class ThetaDataV3Client(MarketDataPort):
     async def _snapshot_rows(self, symbol: str) -> list[dict[str, Any]]:
         params = {"symbol": symbol.upper(), "expiration": "*", "strike": "*", "right": "both",
                   "max_dte": self.max_dte, "strike_range": self.strike_range}
+        cache_key = symbol.upper()
+        cached_at, cached_oi = self._open_interest_cache.get(cache_key, (datetime.min.replace(tzinfo=timezone.utc), []))
+        oi_is_fresh = cached_oi and (datetime.now(timezone.utc) - cached_at).total_seconds() < self.open_interest_cache_seconds
         if self.transport == "terminal":
-            rows, oi = await asyncio.gather(
-                self._terminal_rows("/option/snapshot/greeks/all", {**params, "use_market_value": True}),
-                self._terminal_rows("/option/snapshot/open_interest", params),
-            )
+            rows = await self._terminal_rows("/option/snapshot/greeks/all", {**params, "use_market_value": True})
+            oi = cached_oi if oi_is_fresh else await self._terminal_rows("/option/snapshot/open_interest", params)
         else:
-            rows, oi = await asyncio.gather(
-                self._python_rows("option_snapshot_greeks_all", **params, use_market_value=True),
-                self._python_rows("option_snapshot_open_interest", **params),
-            )
+            rows = await self._python_rows("option_snapshot_greeks_all", **params, use_market_value=True)
+            oi = cached_oi if oi_is_fresh else await self._python_rows("option_snapshot_open_interest", **params)
+        if not oi_is_fresh:
+            self._open_interest_cache[cache_key] = (datetime.now(timezone.utc), oi)
         self._merge_open_interest(rows, oi)
         self._require_all_greek_orders(rows)
         if rows:
