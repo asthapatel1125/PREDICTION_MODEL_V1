@@ -351,8 +351,11 @@ class SqlAlchemyRepository:
 
     async def outcome_attribution(self,symbol:str,per_group:int=3)->dict[str,Any]:
         async with self.sessions() as s:
+            # Outcome payloads include nested minute-bar histories.  Loading
+            # a thousand at every dashboard refresh is unsafe on a 512 MB
+            # service; the complete archive remains queryable separately.
             rows=(await s.execute(select(SystemOutcomeRow).where(SystemOutcomeRow.symbol==symbol.upper())
-                .order_by(SystemOutcomeRow.alerted_at.desc()).limit(1000))).scalars().all()
+                .order_by(SystemOutcomeRow.alerted_at.desc()).limit(120))).scalars().all()
             changed=False
             now=datetime.now(timezone.utc)
             for row in rows:
@@ -372,7 +375,7 @@ class SqlAlchemyRepository:
             active_calls=[item for item in items if str(item.get("status") or "TRACKING").upper()=="TRACKING"]
             completed_calls=[item for item in items if str(item.get("status") or "TRACKING").upper()!="TRACKING"]
             calls=sorted(
-                [*active_calls,*completed_calls[:100]],
+                [*active_calls,*completed_calls[:20]],
                 key=lambda item:str(item.get("alerted_at") or ""),
                 reverse=True,
             )

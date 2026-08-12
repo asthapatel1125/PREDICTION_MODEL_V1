@@ -192,7 +192,9 @@ class MarketState(FrozenModel):
     gamma_dynamics_v2: GammaDynamics | None = None
     zone_intelligence: ZoneIntelligence | None = None
     session_analysis: dict[str, Any] = Field(default_factory=dict)
-    supporting_indicators: dict[str, float | str | bool]
+    # Indicators include numeric scores, integer counts, flags, and labels.
+    # A homogeneous union produces serializer warnings for valid int values.
+    supporting_indicators: dict[str, Any]
     signal_checks: dict[str, bool] = Field(default_factory=dict)
     active_thresholds: dict[str, float] = Field(default_factory=dict)
     options_bias: Direction = Direction.NEUTRAL
@@ -213,7 +215,7 @@ class Alert(FrozenModel):
     profile: AlertProfile
     micro_range: MicroRange
     reasoning: list[str]
-    supporting_indicators: dict[str, float | str | bool]
+    supporting_indicators: dict[str, Any]
     recommended_action: str
     risk_level: RiskLevel
     price: float
