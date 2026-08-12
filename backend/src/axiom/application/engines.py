@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime,timezone
+from datetime import datetime,timezone,time
+from zoneinfo import ZoneInfo
 
 try:
     from axiom.adapters.twelvedata import TwelveDataPriceClient
@@ -22,6 +23,7 @@ except ModuleNotFoundError:
         def process(self,*args,**kwargs)->list[dict]:return []
         def finalize_active(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline
+from axiom.analytics.daily_microstructure import DailyMicrostructure
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
 from axiom.ports.interfaces import EventPublisherPort, MarketDataPort, RepositoryPort
@@ -47,6 +49,7 @@ class _EngineRunner:
         self.attribution=OutcomeAttributionTracker(
             outcome_horizon_minutes,outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq
         )
+        self._daily_microstructure_dates:set[tuple[str,str]]=set()
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
@@ -56,6 +59,15 @@ class _EngineRunner:
             await self.repository.save_gamma_ticks(bar.gamma_ticks)
         if hasattr(self.repository,"save_confluence"):
             await self.repository.save_confluence(result.state)
+        eastern=bar.timestamp.astimezone(ZoneInfo("America/New_York"))
+        daily_key=(bar.symbol,eastern.date().isoformat())
+        if eastern.time()>=time(16,0) and daily_key not in self._daily_microstructure_dates and hasattr(self.repository,"daily_microstructure_inputs"):
+            start=eastern.replace(hour=7,minute=0,second=0,microsecond=0).astimezone(timezone.utc)
+            end=eastern.replace(hour=18,minute=0,second=0,microsecond=0).astimezone(timezone.utc)
+            ticks,confluence=await self.repository.daily_microstructure_inputs(bar.symbol,start,end)
+            report=DailyMicrostructure.build(eastern.date(),bar.symbol,ticks,confluence).payload()
+            await self.repository.save_daily_microstructure(report)
+            self._daily_microstructure_dates.add(daily_key)
         await self.publisher.publish("market_state",result.state.model_dump(mode="json"))
         observation=price_observation or {"price":bar.close,"source":"THETADATA_REPLAY" if mode==EngineMode.TRAINING else "THETADATA_OPTIONS_UNDERLYING",
             "observed_at":datetime.now(timezone.utc),"source_timestamp":bar.timestamp}

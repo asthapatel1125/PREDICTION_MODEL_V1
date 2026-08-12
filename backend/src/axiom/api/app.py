@@ -16,6 +16,7 @@ from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
 from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
+from axiom.analytics.daily_microstructure import DailyMicrostructure
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -140,6 +141,13 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         """Full retained Dynamics archive, ordered from the first stream tick."""
         rows=await container.repository.stream_archive(symbol,limit)
         return {"symbol":symbol.upper(),"source":"PERSISTED_LIVE_STREAM_ARCHIVE","count":len(rows),"rows":rows}
+
+    @api.get("/daily-microstructure/{session_date}")
+    async def daily_microstructure(session_date:date,symbol:str=Query("QQQ")):
+        market_tz=ZoneInfo(cfg.market_timezone);start=datetime.combine(session_date,time(7,0),tzinfo=market_tz);end=datetime.combine(session_date,time(18,0),tzinfo=market_tz)
+        ticks,confluence=await container.repository.daily_microstructure_inputs(symbol,start.astimezone(timezone.utc),end.astimezone(timezone.utc))
+        report=DailyMicrostructure.build(session_date,symbol,ticks,confluence).payload()
+        return await container.repository.save_daily_microstructure(report)
 
     @api.get("/delta-dynamics/history/{symbol}")
     async def delta_dynamics_history(symbol:str,start_date:date=Query(date(2026,8,4)),

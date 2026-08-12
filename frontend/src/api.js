@@ -54,6 +54,8 @@ export const fetchDynamicsSessionHistory = (symbol, sessionDate, signal) =>
 
 export const fetchDynamicsHistory = (symbol, signal) =>
   request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}`, { signal });
+export const fetchDailyMicrostructure = (sessionDate, symbol, signal) =>
+  request(`/api/v1/daily-microstructure/${encodeURIComponent(sessionDate)}?symbol=${encodeURIComponent(symbol)}`, { signal });
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });

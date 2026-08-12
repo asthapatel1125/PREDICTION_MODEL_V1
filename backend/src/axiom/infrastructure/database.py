@@ -123,6 +123,17 @@ class ConfluenceRow(Base):
     __table_args__=(UniqueConstraint("timestamp","symbol","strike",name="uq_confluence_snapshot"),)
 
 
+class DailyMicrostructureRow(Base):
+    __tablename__="daily_microstructure"
+    id:Mapped[int]=mapped_column(primary_key=True);date:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    total_levels_count:Mapped[int]=mapped_column(Integer);call_levels_count:Mapped[int]=mapped_column(Integer);put_levels_count:Mapped[int]=mapped_column(Integer);dense_levels_count:Mapped[int]=mapped_column(Integer)
+    avg_levels_per_hour:Mapped[float]=mapped_column(Float);call_wall_strike:Mapped[float]=mapped_column(Float);put_wall_strike:Mapped[float]=mapped_column(Float);zero_gamma:Mapped[float]=mapped_column(Float);max_oi_strike:Mapped[float]=mapped_column(Float)
+    key_levels:Mapped[list[dict[str,Any]]]=mapped_column(JSON,default=list);paradigm_shift_levels:Mapped[list[dict[str,Any]]]=mapped_column(JSON,default=list)
+    key_levels_count:Mapped[int]=mapped_column(Integer);paradigm_shift_count:Mapped[int]=mapped_column(Integer);created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    __table_args__=(UniqueConstraint("date","symbol",name="uq_daily_microstructure_date_symbol"),)
+
+
 class ModelVersionRow(Base):
     __tablename__="model_versions";id:Mapped[int]=mapped_column(primary_key=True);name:Mapped[str]=mapped_column(String(80));version:Mapped[str]=mapped_column(String(80));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True));formula_hash:Mapped[str]=mapped_column(String(64));parameters:Mapped[dict[str,Any]]=mapped_column(JSON);metrics:Mapped[dict[str,Any]]=mapped_column(JSON);active:Mapped[bool]=mapped_column(default=False)
     __table_args__=(UniqueConstraint("name","version",name="uq_model_name_version"),)
@@ -217,6 +228,26 @@ class SqlAlchemyRepository:
             else:
                 for name,value in values.items():setattr(row,name,value)
             await s.commit()
+
+    async def daily_microstructure_inputs(self,symbol:str,start:datetime,end:datetime)->tuple[list[dict[str,Any]],list[dict[str,Any]]]:
+        async with self.sessions() as s:
+            ticks=(await s.execute(select(GammaTickRow).where(GammaTickRow.symbol==symbol.upper(),GammaTickRow.timestamp>=start,GammaTickRow.timestamp<=end).order_by(GammaTickRow.timestamp))).scalars().all()
+            confluence=(await s.execute(select(ConfluenceRow).where(ConfluenceRow.symbol==symbol.upper(),ConfluenceRow.timestamp>=start,ConfluenceRow.timestamp<=end).order_by(ConfluenceRow.timestamp))).scalars().all()
+        tick_rows=[{name:getattr(row,name) for name in ("timestamp","symbol","expiration","right","strike","open_interest","gamma","delta","speed","color","charm","underlying_price","bid","ask","bid_size","ask_size","depth")} for row in ticks]
+        conf_rows=[{"timestamp":row.timestamp,"strike":row.strike,"fade_score":row.fade_score,"amp_score":row.amp_score} for row in confluence]
+        return tick_rows,conf_rows
+
+    async def save_daily_microstructure(self,report:dict[str,Any])->dict[str,Any]:
+        day=datetime.fromisoformat(str(report["date"])).replace(tzinfo=timezone.utc)
+        values={key:report[key] for key in ("total_levels_count","call_levels_count","put_levels_count","dense_levels_count","avg_levels_per_hour","call_wall_strike","put_wall_strike","zero_gamma","max_oi_strike","key_levels","paradigm_shift_levels","key_levels_count","paradigm_shift_count")}
+        values["created_at"]=datetime.now(timezone.utc)
+        async with self.sessions() as s:
+            row=(await s.execute(select(DailyMicrostructureRow).where(DailyMicrostructureRow.date==day,DailyMicrostructureRow.symbol==report["symbol"]))).scalar_one_or_none()
+            if row is None:s.add(DailyMicrostructureRow(date=day,symbol=report["symbol"],**values))
+            else:
+                for key,value in values.items():setattr(row,key,value)
+            await s.commit()
+        return report
 
     async def active_system_outcomes(self)->list[dict[str,Any]]:
         """Load unresolved call paths so a restarted live engine can resume them."""

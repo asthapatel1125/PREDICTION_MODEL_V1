@@ -104,6 +104,23 @@ class GammaDynamicsMetrics(FrozenModel):
     pin_status: str = "OUTSIDE"
 
 
+@dataclass(frozen=True)
+class KeyLevel:
+    type: str; strike: float; gex_dollar: float; oi: int; distance_pct: float; side: int
+
+
+@dataclass(frozen=True)
+class ParadigmShiftLevel:
+    strike: float; type: str; cumulative_gex_before: float; cumulative_gex_after: float; time_first_seen: datetime | None
+
+
+@dataclass(frozen=True)
+class DailyMicrostructureReport:
+    date: datetime; symbol: str; total_levels_count: int; call_levels_count: int; put_levels_count: int
+    dense_levels_count: int; avg_levels_per_hour: float; call_wall_strike: float; put_wall_strike: float
+    zero_gamma: float; max_oi_strike: float; key_levels: list[KeyLevel]; paradigm_shift_levels: list[ParadigmShiftLevel]
+
+
 class GammaDynamics(FrozenModel):
     """Normalized six-Greek Gamma dynamics with volatility-curvature context."""
     decision: Direction = Direction.NEUTRAL
