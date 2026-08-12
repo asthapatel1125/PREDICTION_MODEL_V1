@@ -1,22 +1,21 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchDailyMicrostructure, fetchDynamicsHistory, fetchInstruments, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchInstruments, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem,
   startReplay, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["System scorecard", "system-scorecard"], ["One-screen focus", "decision"], ["Daily microstructure", "daily-microstructure"], ["Gamma dynamics 1.0", "gamma-dynamics"], ["Gamma dynamics 2.0", "gamma-dynamics-v2"], ["Delta dynamics", "six-greek-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
+  ["System scorecard", "system-scorecard"], ["One-screen focus", "decision"], ["Gamma dynamics 1.0", "gamma-dynamics"], ["Gamma dynamics 2.0", "gamma-dynamics-v2"], ["Delta dynamics", "six-greek-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
   ["Custom Greek graphs", "custom-greeks"], ["Live alerts", "live-alerts"],
 ];
-const DEFAULT_MODULE_ORDER=["daily-microstructure","gamma-dynamics","gamma-dynamics-v2","six-greek-dynamics","forecast","score-modules","greek-orders","custom-greeks","live-alerts"];
+const DEFAULT_MODULE_ORDER=["gamma-dynamics","gamma-dynamics-v2","six-greek-dynamics","forecast","score-modules","greek-orders","custom-greeks","live-alerts"];
 const OVERVIEW_LABELS=Object.fromEntries(OVERVIEW_SECTIONS.map(([label,id])=>[id,label]));
 const OVERVIEW_NUMBERS=Object.fromEntries(OVERVIEW_SECTIONS.map(([,id],index)=>[id,String(index+1).padStart(2,"0")]));
 const OVERVIEW_CATEGORIES={
   "system-scorecard":"OUTCOME BRIEFING",
   decision:"DECISION",
   "gamma-dynamics":"SIGNAL MODEL",
-  "daily-microstructure":"DAILY ANALYTICS",
   "gamma-dynamics-v2":"SIGNAL MODEL",
   "six-greek-dynamics":"SIGNAL MODEL",
   forecast:"RESEARCH",
@@ -1573,7 +1572,7 @@ function interfaceHoverLabel(element){
 export default function Home() {
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
-  const [chartHistory,setChartHistory]=useState([]),[dailyMicrostructure,setDailyMicrostructure]=useState(null);
+  const [chartHistory,setChartHistory]=useState([]);
   const [attribution,setAttribution]=useState({systems:{}});
   const [connected,setConnected]=useState(false), [toast,setToast]=useState(""), [replay,setReplay]=useState(null);
   const [instruments,setInstruments]=useState(FALLBACK_INSTRUMENTS);
@@ -1585,7 +1584,6 @@ export default function Home() {
   const refresh=async(signal)=>{try{const [dash,sys,cfg,outcomes]=await Promise.all([fetchDashboard(symbol,signal),fetchSystem(signal),fetchConfiguration(signal),fetchOutcomeAttribution(symbol,signal).catch(error=>{if(error.name==="AbortError")throw error;return {symbol,systems:{},unavailable:true,error:error.message}})]);setDashboard(dash);setAttribution(outcomes);setChartHistory(current=>[...new Map([...current,...(dash.history??[])].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-500000));setSystem(sys);setConfig(cfg);setConnected(true)}catch(error){if(error.name!=="AbortError"){setConnected(false);notify(error.message)}}};
   useEffect(()=>{const controller=new AbortController();refresh(controller.signal);const id=window.setInterval(()=>refresh(controller.signal),5000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchDynamicsHistory(symbol,controller.signal).then(result=>setChartHistory(result.rows??[])).catch(error=>{if(error.name!=="AbortError")setChartHistory([])});return()=>controller.abort()},[symbol]);
-  useEffect(()=>{const controller=new AbortController(),date=state?.timestamp?logDate(state.timestamp):logDate(new Date());fetchDailyMicrostructure(date,symbol,controller.signal).then(setDailyMicrostructure).catch(()=>setDailyMicrostructure(null));return()=>controller.abort()},[symbol,state?.timestamp?.slice(0,10)]);
   useEffect(()=>{const controller=new AbortController();fetchInstruments(controller.signal).then(setInstruments).catch(()=>{});return()=>controller.abort()},[]);
   useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(id)},[]);
   const orderedOverviewSections=[...OVERVIEW_SECTIONS.slice(0,2),...moduleOrder.map(id=>[OVERVIEW_LABELS[id],id])];
@@ -1620,7 +1618,6 @@ export default function Home() {
     <OverviewSectionHeading number="02" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
-    <DraggableOverviewModule id="daily-microstructure" index={moduleOrder.indexOf("daily-microstructure")} {...draggableProps}><OverviewDisclosure id="daily-microstructure" title="Daily Microstructure" description="Shared daily call / put wall, GEX, and paradigm-shift map"><DailyMicrostructureModule report={dailyMicrostructure} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics 1.0 · Four-Greek Engine" description="Zomma · Color · Speed · Gamma" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]}/>}> <GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={1}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={1}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]} version={1}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="gamma-dynamics-v2" index={moduleOrder.indexOf("gamma-dynamics-v2")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics-v2" title="Gamma Dynamics 2.0 · Six-Greek Engine" description="Zomma · Color · Speed · Gamma · Vomma · Ultima" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]}/>}> <GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={2}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={2}/></article><GammaDynamicsV2FlowLog history={visualHistory} state={state} symbol={symbol}/><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]} version={2}/><OutcomeAttributionMini system="GAMMA_DYNAMICS_V2" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="six-greek-dynamics" index={moduleOrder.indexOf("six-greek-dynamics")} {...draggableProps}><OverviewDisclosure id="six-greek-dynamics" title="Delta Dynamics" description="Normalized Ultima · Zomma · Gamma · Speed · Color · Delta zone formulas" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.DELTA_DYNAMICS?.calls??[]}/>}> <SixGreekDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} deltaMode/></article><DeltaDynamicsEventLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.DELTA_DYNAMICS?.calls??[]}/><OutcomeAttributionMini system="DELTA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>

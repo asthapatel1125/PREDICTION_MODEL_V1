@@ -1,4 +1,11 @@
-const baseUrl = () => (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const PRODUCTION_API_URL = "https://prediction-model-v1.onrender.com";
+const baseUrl = () => {
+  const configured = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+  if (configured && !configured.includes("localhost")) return configured;
+  // A Vercel build must not inherit the local development endpoint.  Keep
+  // localhost for local development, but use the deployed API in production.
+  return import.meta.env.DEV ? configured : PRODUCTION_API_URL;
+};
 
 async function request(path, options = {}) {
   if (!baseUrl()) throw new Error("VITE_API_URL is not configured");
@@ -54,8 +61,6 @@ export const fetchDynamicsSessionHistory = (symbol, sessionDate, signal) =>
 
 export const fetchDynamicsHistory = (symbol, signal) =>
   request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}`, { signal });
-export const fetchDailyMicrostructure = (sessionDate, symbol, signal) =>
-  request(`/api/v1/daily-microstructure/${encodeURIComponent(sessionDate)}?symbol=${encodeURIComponent(symbol)}`, { signal });
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });

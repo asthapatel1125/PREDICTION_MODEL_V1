@@ -273,7 +273,11 @@ class ThetaDataV3Client(MarketDataPort):
                 contract_count=len(group),
                 open_interest=sum(self._number(row.get("open_interest")) for row in group),
                 gamma_metrics=self._gamma_metrics(group, price, ts),
-                gamma_ticks=self._gamma_ticks(group, symbol, price, ts)))
+                # Do not duplicate the entire raw chain into another Python
+                # object graph.  The live Gamma models use the compact
+                # aggregate and wall metrics above; raw-chain persistence was
+                # part of the removed Daily Microstructure feature.
+                gamma_ticks=[]))
         return result
 
     @classmethod
