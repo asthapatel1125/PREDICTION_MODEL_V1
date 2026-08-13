@@ -58,7 +58,7 @@ def detect_break(previous_spot:float,current_spot:float,previous_strike:float)->
 class WallIntelligenceService:
     """Independent market observer; it never changes any strategy decision."""
     def __init__(self,history_len:int=720,volume_sma:int=20):
-        self.history=defaultdict(lambda:deque(maxlen=history_len));self.previous={};self.volumes=deque(maxlen=volume_sma)
+        self.history=defaultdict(lambda:deque(maxlen=history_len));self.previous={};self.volumes=deque(maxlen=volume_sma);self.last_summary_epoch=0.0
     @staticmethod
     def _z(value:float,values:list[float])->float:
         if len(values)<2:return 0.0
@@ -80,3 +80,16 @@ class WallIntelligenceService:
         self.volumes.append(float(volume))
         point={"timestamp":timestamp,"symbol":symbol,"spot":spot,"walls":walls,"dex":float(metrics.get("dex",0)),"vol_hack":float(metrics.get("vol_hack",0)),"dealer_flow":float(metrics.get("dealer_flow",0)),"pos_inventory":float(metrics.get("pos_inventory",0)),"neg_inventory":float(metrics.get("neg_inventory",0)),"tw_gex":tw,"gex_density":float(metrics.get("gex_density",0)),"gex_dollar_density":float(metrics.get("gex_dollar_density",0)),"spoof_score":spoof,"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True,"disclaimer":WALL_INTELLIGENCE_DISCLAIMER}
         return point,breaks
+
+    def summary_due(self,timestamp:Any,interval_seconds:int=30)->bool:
+        epoch=float(timestamp.timestamp()) if hasattr(timestamp,"timestamp") else 0.0
+        if epoch-self.last_summary_epoch<interval_seconds:return False
+        self.last_summary_epoch=epoch;return True
+
+    @staticmethod
+    def summarize(point:dict[str,Any],breaks:list[dict[str,Any]])->dict[str,Any]:
+        walls=point.get("walls",{});spot=float(point.get("spot",0));call=walls.get("CALL_WALL",{});put=walls.get("PUT_WALL",{})
+        strongest=max(walls.items(),key=lambda item:float(item[1].get("dollar",0)),default=("WAITING",{}))[0]
+        pin=bool(float(put.get("strike",0))<spot<float(call.get("strike",0)))
+        flow=float(point.get("dealer_flow",0));bias="BUYING" if flow>0 else "SELLING" if flow<0 else "NEUTRAL"
+        return {"timestamp":point["timestamp"],"symbol":point["symbol"],"spot":spot,"strongest_wall":strongest,"pin_status":"BETWEEN_WALLS" if pin else "OUTSIDE_WALLS","bias":bias,"wall_summary":{"walls":walls,"last_break":breaks[-1] if breaks else None},"dealerflow_summary":{"dealer_flow":flow,"pos_inventory":point.get("pos_inventory",0),"neg_inventory":point.get("neg_inventory",0),"tw_gex":point.get("tw_gex",0),"spoof_score":point.get("spoof_score",0),"edge":point.get("edge",0)}}

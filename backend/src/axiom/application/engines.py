@@ -50,6 +50,7 @@ class _EngineRunner:
         )
         wall_cfg=getattr(pipeline.config,"wall_intel",{})
         self.wall_intelligence=WallIntelligenceService(int(wall_cfg.get("history_len",720)),int(wall_cfg.get("volume_sma",20)))
+        self.wall_summary_log_sec=int(wall_cfg.get("summary_log_sec",30))
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
@@ -63,6 +64,8 @@ class _EngineRunner:
         if metrics.get("chain_available") and hasattr(self.repository,"save_wall_intelligence"):
             point,breaks=self.wall_intelligence.observe(bar.timestamp,bar.symbol,float(bar.close),metrics,result.state.regime.value,float(bar.volume))
             await self.repository.save_wall_intelligence(point,breaks)
+            if self.wall_intelligence.summary_due(bar.timestamp,self.wall_summary_log_sec) and hasattr(self.repository,"save_wall_summary"):
+                await self.repository.save_wall_summary(self.wall_intelligence.summarize(point,breaks))
             await self.publisher.publish("wall_intelligence",_event_json(point))
             for event in breaks:await self.publisher.publish("wall_break",_event_json(event))
         # Daily microstructure is intentionally built off-process/on demand.

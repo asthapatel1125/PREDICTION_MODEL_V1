@@ -235,6 +235,11 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         rows=[row for row in rows if float(row.get("volume_surge",0))>=min_volume_surge and float(row.get("edge",0))>=edge_min]
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":rows,"edge_min":edge_min,"is_point_in_time":True,"is_estimated_oi_delayed":True}
 
+    @api.get("/walls/summary-history")
+    async def wall_summary_history(symbol:str="QQQ"):
+        rows=await container.repository.wall_summary_history(symbol,240)
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"cadence_seconds":30,"rows":rows,"is_point_in_time":True,"is_estimated_oi_delayed":True}
+
     async def execute_replay(run_id:str,request:ReplayRequest)->None:
         try:
             result=await container.training.replay(request);container.replay_runs[run_id]={"id":run_id,"status":"completed",**result}

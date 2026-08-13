@@ -67,6 +67,8 @@ export const fetchWallBreaks = (symbol, signal) =>
   request(`/api/v1/walls/breaks?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallDealerFlow = (symbol, signal) =>
   request(`/api/v1/walls/dealerflow?symbol=${encodeURIComponent(symbol)}`, { signal });
+export const fetchWallSummaryHistory = (symbol, signal) =>
+  request(`/api/v1/walls/summary-history?symbol=${encodeURIComponent(symbol)}`, { signal });
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });

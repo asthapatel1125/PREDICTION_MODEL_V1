@@ -146,6 +146,18 @@ class WallBreakRow(Base):
     payload:Mapped[dict[str,Any]]=mapped_column(JSON)
 
 
+class WallSummaryRow(Base):
+    """Low-frequency Wall Intelligence interpretation history (not raw ticks)."""
+    __tablename__="wall_summary_history"
+    id:Mapped[int]=mapped_column(primary_key=True)
+    timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    strongest_wall:Mapped[str]=mapped_column(String(24),default="WAITING")
+    pin_status:Mapped[str]=mapped_column(String(24),default="UNKNOWN")
+    bias:Mapped[str]=mapped_column(String(24),default="NEUTRAL")
+    payload:Mapped[dict[str,Any]]=mapped_column(JSON)
+
+
 class DailyMicrostructureRow(Base):
     __tablename__="daily_microstructure"
     id:Mapped[int]=mapped_column(primary_key=True);date:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
@@ -277,6 +289,18 @@ class SqlAlchemyRepository:
             if tiers:statement=statement.where(WallBreakRow.tier.in_(tiers))
             rows=(await s.execute(statement.order_by(WallBreakRow.timestamp.desc()).limit(limit))).scalars().all()
             return [dict(row.payload) for row in rows]
+
+    async def save_wall_summary(self,summary:dict[str,Any])->None:
+        async with self.sessions() as s:
+            s.add(WallSummaryRow(timestamp=summary["timestamp"],symbol=summary["symbol"],
+                strongest_wall=str(summary.get("strongest_wall","WAITING")),pin_status=str(summary.get("pin_status","UNKNOWN")),
+                bias=str(summary.get("bias","NEUTRAL")),payload=self._json_ready(summary)))
+            await s.commit()
+
+    async def wall_summary_history(self,symbol:str,limit:int=240)->list[dict[str,Any]]:
+        async with self.sessions() as s:
+            rows=(await s.execute(select(WallSummaryRow).where(WallSummaryRow.symbol==symbol.upper()).order_by(WallSummaryRow.timestamp.desc()).limit(limit))).scalars().all()
+            return list(reversed([dict(row.payload) for row in rows]))
 
     async def daily_microstructure_inputs(self,symbol:str,start:datetime,end:datetime)->tuple[list[dict[str,Any]],list[dict[str,Any]]]:
         async with self.sessions() as s:
