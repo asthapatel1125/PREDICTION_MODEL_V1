@@ -50,14 +50,8 @@ class _EngineRunner:
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
-        # Persist the source chain and its derived confluence independently of
-        # the aggregate market-state row used by the rest of the application.
-        if hasattr(self.repository,"save_gamma_ticks"):
-            await self.repository.save_gamma_ticks(bar.gamma_ticks)
-        # The persisted source chain is no longer needed after this point.
-        # Clear it before websocket/outcome work so the live generator does
-        # not retain two full option-chain copies between polls.
-        bar.gamma_ticks.clear()
+        # Raw per-contract chain persistence was removed with Daily
+        # Microstructure. The live models use compact aggregate chain metrics.
         if hasattr(self.repository,"save_confluence"):
             await self.repository.save_confluence(result.state)
         # Daily microstructure is intentionally built off-process/on demand.
