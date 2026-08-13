@@ -1598,11 +1598,15 @@ function WallIntelligenceRefined({symbol}){
 }
 
 function WallIntelligenceChart({id,rows,traces,colors,valueFor,title}){
-  const [hover,setHover]=useState(null);const width=900,height=270;
+  const [hover,setHover]=useState(null);const height=270,width=Math.max(900,Math.max(rows.length,1)*9),leftPad=54,rightPad=24,top=16,bottom=38,plotHeight=height-top-bottom;
   const values=name=>rows.map(row=>valueFor(row,name));
-  const line=name=>{const data=values(name),low=Math.min(...data,0),high=Math.max(...data,1),range=high-low||1;return data.map((value,index)=>`${45+index*830/Math.max(data.length-1,1)},${height-28-(value-low)/range*210}`).join(" ")};
-  const row=hover===null?null:rows[hover],left=hover!==null&&hover/Math.max(rows.length-1,1)>.56;
-  return <div className="wi-chart" id={id} onPointerMove={event=>{const r=event.currentTarget.getBoundingClientRect();setHover(Math.round(Math.max(0,Math.min(1,(event.clientX-r.left)/r.width))*Math.max(rows.length-1,0)))}} onPointerLeave={()=>setHover(null)}><svg viewBox={`0 0 ${width} ${height}`}><text x="450" y="264" textAnchor="middle">Time (ET) · 5-second cadence</text>{traces.map(name=><polyline key={name} fill="none" stroke={colors[name]} strokeWidth="2.5" points={line(name)}/>)}</svg>{row&&<aside className={`wi-hover ${left?"left":"right"}`}><b>{logTime(row.timestamp)}</b>{traces.map(name=><span style={{color:colors[name]}} key={name}>{name}: {valueFor(row,name).toFixed(3)}</span>)}</aside>}</div>;
+  // 0–100 relative-range normalization keeps unlike units comparable without
+  // implying that a metric has a literal percentage return.
+  const normalized=name=>{const data=values(name),low=Math.min(...data),high=Math.max(...data),range=high-low||1;return data.map(value=>(value-low)/range*100)};
+  const x=index=>leftPad+index*(width-leftPad-rightPad)/Math.max(rows.length-1,1),y=value=>top+(100-value)/100*plotHeight;
+  const line=name=>normalized(name).map((value,index)=>`${x(index)},${y(value)}`).join(" ");
+  const row=hover===null?null:rows[hover],left=hover!==null&&hover/Math.max(rows.length-1,1)>.56,ticks=rows.length?Array.from({length:Math.min(6,rows.length)},(_,i)=>Math.round(i*(rows.length-1)/Math.max(Math.min(6,rows.length)-1,1))):[];
+  return <div className="wi-chart-scroll"><div className="wi-chart" id={id} style={{minWidth:width}} onPointerMove={event=>{const r=event.currentTarget.getBoundingClientRect();setHover(Math.round(Math.max(0,Math.min(1,(event.clientX-r.left)/r.width))*Math.max(rows.length-1,0)))}} onPointerLeave={()=>setHover(null)}><svg viewBox={`0 0 ${width} ${height}`}><text x={width/2} y="264" textAnchor="middle">Time (ET) · scroll horizontally for earlier data · 5-second cadence</text><text x="13" y={height/2} transform={`rotate(-90 13 ${height/2})`}>Relative scale (%)</text>{[0,25,50,75,100].map(level=><g key={level}><line className="wi-grid" x1={leftPad} x2={width-rightPad} y1={y(level)} y2={y(level)}/><text x={leftPad-8} y={y(level)+4} textAnchor="end">{level}%</text></g>)}{ticks.map(index=><g key={index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={top} y2={height-bottom}/><text x={x(index)} y={height-23} textAnchor="middle">{logTime(rows[index].timestamp)}</text></g>)}{hover!==null&&<line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={top} y2={height-bottom}/>} {traces.map(name=><polyline key={name} fill="none" stroke={colors[name]} strokeWidth="2.5" points={line(name)}/>)}</svg>{row&&<aside className={`wi-hover ${left?"left":"right"}`}><b>{logTime(row.timestamp)} · actual values</b>{traces.map(name=><span style={{color:colors[name]}} key={name}>{name}: {valueFor(row,name).toFixed(3)} · {normalized(name)[hover].toFixed(1)}%</span>)}</aside>}</div></div>;
 }
 
 function WallIntelligenceRefinedV2({symbol}){
