@@ -393,6 +393,16 @@ class ThetaDataV3Client(MarketDataPort):
             }
             for strike in sorted(net_gex, key=lambda item: (-abs(net_gex[item]), item))[:5]
         ]
+        # A compact, point-in-time market-structure snapshot.  These are
+        # observations only; Gamma Dynamics continues to use its own features.
+        zero_gamma_nearest = min(net_gex, key=lambda strike: abs(strike - zero_gamma))
+        wall_estimates = {
+            "CALL_WALL": {"strike": float(call_wall or 0.0), "gex": float(net_gex[call_wall]) if call_wall is not None else 0.0},
+            "PUT_WALL": {"strike": float(put_wall or 0.0), "gex": float(net_gex[put_wall]) if put_wall is not None else 0.0},
+            "ZERO_GAMMA": {"strike": float(zero_gamma), "gex": float(net_gex[zero_gamma_nearest])},
+            "SUPPORT": {"strike": float(support), "gex": float(net_gex.get(support, 0.0))},
+            "RESISTANCE": {"strike": float(resistance), "gex": float(net_gex.get(resistance, 0.0))},
+        }
         exposure = lambda greek, power, scale=1.0: sum(
             cls._right_sign(row.get("right")) * cls._number(row.get(greek)) * cls._number(row.get("open_interest")) * 100.0 * spot ** power * scale
             for row in contracts
@@ -430,6 +440,7 @@ class ThetaDataV3Client(MarketDataPort):
             "put_wall_gex": float(net_gex[put_wall]) if put_wall is not None else 0.0,
             "put_wall_oi": int(strike_oi[put_wall]) if put_wall is not None else 0,
             "gex_walls": gex_walls,
+            "wall_estimates": wall_estimates,
             "pin_status": "BETWEEN_WALLS" if call_wall is not None and put_wall is not None and put_wall < spot < call_wall else "OUTSIDE",
             "support_level": support,
             "resistance_level": resistance,

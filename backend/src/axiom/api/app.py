@@ -207,6 +207,34 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         "outcome_qqq_points_per_50_nq":cfg.outcome_qqq_points_per_50_nq,
         "outcome_target_note":"Estimated QQQ proxy until a synchronized licensed NQ feed is connected."}
 
+    def _wall_time(value:datetime|None)->datetime|None:
+        return value.astimezone(timezone.utc) if value else None
+
+    @api.get("/walls/spectrum")
+    async def wall_spectrum(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None,wall_type:str|None=None,tiers:str|None=None):
+        rows=await container.repository.wall_intelligence_points(symbol,_wall_time(start),_wall_time(end),720)
+        requested_types={item.strip().upper() for item in wall_type.split(",")} if wall_type else None
+        requested_tiers={item.strip().upper() for item in tiers.split(",")} if tiers else None
+        # Filter individual walls without discarding their shared market point.
+        for row in rows:
+            row["walls"]={name:value for name,value in row.get("walls",{}).items()
+                if (not requested_types or name in requested_types) and (not requested_tiers or str(value.get("tier","")) in requested_tiers)}
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":rows,"is_point_in_time":True,"is_estimated_oi_delayed":True,
+            "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
+
+    @api.get("/walls/dealerflow")
+    async def wall_dealerflow(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None):
+        rows=await container.repository.wall_intelligence_points(symbol,_wall_time(start),_wall_time(end),720)
+        fields=("timestamp","spot","dex","vol_hack","dealer_flow","pos_inventory","neg_inventory","tw_gex","gex_density","gex_dollar_density","spoof_score","edge","liquidity","vix","regime","is_point_in_time","is_estimated_oi_delayed")
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":[{key:row.get(key) for key in fields} for row in rows],"is_point_in_time":True,"is_estimated_oi_delayed":True}
+
+    @api.get("/walls/breaks")
+    async def wall_breaks(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None,wall_type:str|None=None,tiers:str|None=None,min_volume_surge:float=0,edge_min:float=0):
+        types=[item.strip().upper() for item in wall_type.split(",")] if wall_type else None;requested_tiers=[item.strip().upper() for item in tiers.split(",")] if tiers else None
+        rows=await container.repository.wall_break_events(symbol,_wall_time(start),_wall_time(end),types,requested_tiers)
+        rows=[row for row in rows if float(row.get("volume_surge",0))>=min_volume_surge and float(row.get("edge",0))>=edge_min]
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":rows,"edge_min":edge_min,"is_point_in_time":True,"is_estimated_oi_delayed":True}
+
     async def execute_replay(run_id:str,request:ReplayRequest)->None:
         try:
             result=await container.training.replay(request);container.replay_runs[run_id]={"id":run_id,"status":"completed",**result}

@@ -29,6 +29,9 @@ class StrategyConfig(BaseModel):
     regime_thresholds: dict[str, dict[str, float]]
     score_weights: dict[str, dict[str, float]]
     risk_limits: dict[str, float]
+    # Separate market-structure module settings. These do not affect the
+    # existing Primary, Gamma 1.0, Gamma 2.0, or Delta decision paths.
+    wall_intel: dict[str, Any] = Field(default_factory=dict)
     session_model: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod

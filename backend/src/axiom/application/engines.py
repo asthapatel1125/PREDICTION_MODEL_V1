@@ -22,6 +22,7 @@ except ModuleNotFoundError:
         def process(self,*args,**kwargs)->list[dict]:return []
         def finalize_active(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline
+from axiom.analytics.wall_intelligence import WallIntelligenceService
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
 from axiom.ports.interfaces import EventPublisherPort, MarketDataPort, RepositoryPort
@@ -47,6 +48,8 @@ class _EngineRunner:
         self.attribution=OutcomeAttributionTracker(
             outcome_horizon_minutes,outcome_signal_cooldown_seconds,outcome_qqq_points_per_50_nq
         )
+        wall_cfg=getattr(pipeline.config,"wall_intel",{})
+        self.wall_intelligence=WallIntelligenceService(int(wall_cfg.get("history_len",720)),int(wall_cfg.get("volume_sma",20)))
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
@@ -54,6 +57,14 @@ class _EngineRunner:
         # Microstructure. The live models use compact aggregate chain metrics.
         if hasattr(self.repository,"save_confluence"):
             await self.repository.save_confluence(result.state)
+        # Standalone Wall Intelligence observes the completed point-in-time
+        # chain metrics. It neither mutates nor gates any existing system.
+        metrics=result.state.gamma_dynamics_v2.chain_metrics if result.state.gamma_dynamics_v2 else {}
+        if metrics.get("chain_available") and hasattr(self.repository,"save_wall_intelligence"):
+            point,breaks=self.wall_intelligence.observe(bar.timestamp,bar.symbol,float(bar.close),metrics,result.state.regime.value,float(bar.volume))
+            await self.repository.save_wall_intelligence(point,breaks)
+            await self.publisher.publish("wall_intelligence",_event_json(point))
+            for event in breaks:await self.publisher.publish("wall_break",_event_json(event))
         # Daily microstructure is intentionally built off-process/on demand.
         # Loading an entire day of raw five-second chains into the live worker
         # creates a predictable out-of-memory path on small Render instances.

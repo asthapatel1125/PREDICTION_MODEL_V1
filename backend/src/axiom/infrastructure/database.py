@@ -123,6 +123,29 @@ class ConfluenceRow(Base):
     __table_args__=(UniqueConstraint("timestamp","symbol","strike",name="uq_confluence_snapshot"),)
 
 
+class WallIntelligenceRow(Base):
+    """Independent, compact wall market-structure point at a live snapshot."""
+    __tablename__="wall_intelligence"
+    id:Mapped[int]=mapped_column(primary_key=True)
+    timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    spot:Mapped[float]=mapped_column(Float)
+    regime:Mapped[str]=mapped_column(String(40),index=True)
+    payload:Mapped[dict[str,Any]]=mapped_column(JSON)
+    __table_args__=(UniqueConstraint("timestamp","symbol",name="uq_wall_intelligence_time_symbol"),)
+
+
+class WallBreakRow(Base):
+    __tablename__="wall_break_events"
+    id:Mapped[int]=mapped_column(primary_key=True)
+    timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    wall_type:Mapped[str]=mapped_column(String(24),index=True)
+    tier:Mapped[str]=mapped_column(String(16),index=True)
+    regime:Mapped[str]=mapped_column(String(40),index=True)
+    payload:Mapped[dict[str,Any]]=mapped_column(JSON)
+
+
 class DailyMicrostructureRow(Base):
     __tablename__="daily_microstructure"
     id:Mapped[int]=mapped_column(primary_key=True);date:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
@@ -225,6 +248,35 @@ class SqlAlchemyRepository:
             else:
                 for name,value in values.items():setattr(row,name,value)
             await s.commit()
+
+    async def save_wall_intelligence(self,point:dict[str,Any],breaks:list[dict[str,Any]])->None:
+        """Persist standalone market structure without changing strategy tables."""
+        async with self.sessions() as s:
+            row=(await s.execute(select(WallIntelligenceRow).where(WallIntelligenceRow.timestamp==point["timestamp"],WallIntelligenceRow.symbol==point["symbol"]))).scalar_one_or_none()
+            values={"spot":float(point["spot"]),"regime":str(point.get("regime","CALM")),"payload":self._json_ready(point)}
+            if row is None:s.add(WallIntelligenceRow(timestamp=point["timestamp"],symbol=point["symbol"],**values))
+            else:
+                for key,value in values.items():setattr(row,key,value)
+            for event in breaks:s.add(WallBreakRow(timestamp=event["timestamp"],symbol=event["symbol"],wall_type=event["wall_type"],tier=event["tier"],regime=event["regime"],payload=self._json_ready(event)))
+            await s.commit()
+
+    async def wall_intelligence_points(self,symbol:str,start:datetime|None=None,end:datetime|None=None,limit:int=720)->list[dict[str,Any]]:
+        async with self.sessions() as s:
+            statement=select(WallIntelligenceRow).where(WallIntelligenceRow.symbol==symbol.upper())
+            if start:statement=statement.where(WallIntelligenceRow.timestamp>=start)
+            if end:statement=statement.where(WallIntelligenceRow.timestamp<=end)
+            rows=(await s.execute(statement.order_by(WallIntelligenceRow.timestamp.desc()).limit(limit))).scalars().all()
+            return list(reversed([dict(row.payload) for row in rows]))
+
+    async def wall_break_events(self,symbol:str,start:datetime|None=None,end:datetime|None=None,wall_types:list[str]|None=None,tiers:list[str]|None=None,limit:int=1000)->list[dict[str,Any]]:
+        async with self.sessions() as s:
+            statement=select(WallBreakRow).where(WallBreakRow.symbol==symbol.upper())
+            if start:statement=statement.where(WallBreakRow.timestamp>=start)
+            if end:statement=statement.where(WallBreakRow.timestamp<=end)
+            if wall_types:statement=statement.where(WallBreakRow.wall_type.in_(wall_types))
+            if tiers:statement=statement.where(WallBreakRow.tier.in_(tiers))
+            rows=(await s.execute(statement.order_by(WallBreakRow.timestamp.desc()).limit(limit))).scalars().all()
+            return [dict(row.payload) for row in rows]
 
     async def daily_microstructure_inputs(self,symbol:str,start:datetime,end:datetime)->tuple[list[dict[str,Any]],list[dict[str,Any]]]:
         async with self.sessions() as s:
