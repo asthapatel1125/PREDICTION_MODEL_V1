@@ -93,8 +93,8 @@ class WallIntelligenceService:
         pin=bool(float(put.get("strike",0))<spot<float(call.get("strike",0)))
         flow=float(point.get("dealer_flow",0));bias="BUYING" if flow>0 else "SELLING" if flow<0 else "NEUTRAL"
         spoof=float(point.get("spoof_score",0));tw=float(point.get("tw_gex",0));edge=float(point.get("edge",0))
-        location="between the put and call walls" if pin else "outside the current wall range"
-        flow_note="estimated dealer buying is present" if flow>0 else "estimated dealer selling is present" if flow<0 else "dealer-flow proxy is neutral"
+        location="between the put and call walls, which increases pinning pressure while price remains inside that range" if pin else "outside the current wall range, so wall pinning is less reliable"
+        flow_note="estimated dealer buying is cushioning downside pressure" if flow>0 else "estimated dealer selling is reinforcing downside pressure" if flow<0 else "the dealer-flow proxy is neutral, so the wall map is the main context"
         quality="spoof risk is elevated" if spoof>=2 else "spoof risk is low" if spoof>0 else "spoof score is not yet populated"
-        narrative=f"QQQ is {location}; {strongest.replace('_',' ').title()} is the largest observed wall. {flow_note}, while TW GEX is {tw:.2f}, Edge is {edge:.2f}, and {quality}."
+        narrative=f"QQQ is {location}. {strongest.replace('_',' ').title()} is the dominant nearby constraint, so price is more likely to react there than at weaker levels. {flow_note}; TW GEX {tw:.2f}, Edge {edge:.2f}, and {quality} determine how dependable that interpretation is."
         return {"timestamp":point["timestamp"],"symbol":point["symbol"],"spot":spot,"strongest_wall":strongest,"pin_status":"BETWEEN_WALLS" if pin else "OUTSIDE_WALLS","bias":bias,"narrative":narrative,"wall_summary":{"walls":walls,"last_break":breaks[-1] if breaks else None},"dealerflow_summary":{"dealer_flow":flow,"pos_inventory":point.get("pos_inventory",0),"neg_inventory":point.get("neg_inventory",0),"tw_gex":tw,"spoof_score":spoof,"edge":edge}}
