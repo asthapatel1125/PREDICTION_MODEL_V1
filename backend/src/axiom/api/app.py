@@ -72,8 +72,10 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
             cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
-        # Resume the persisted minute bars and active-call lifecycles after a
-        # Render restart. Browser refreshes already read these same records.
+        # Rehydrate compact Greek/chain histories before the automatic stream
+        # begins. This preserves the model warm-up through a Render restart.
+        container.live.pipeline.restore_history(await container.repository.stream_archive("QQQ",9_000))
+        # Resume persisted active-call lifecycles after a Render restart.
         container.live.attribution.restore_active(await container.repository.active_system_outcomes())
         container.replay_runs={};container.replay_tasks=set()
         async def automatic_live_stream()->None:

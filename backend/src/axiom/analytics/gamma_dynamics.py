@@ -102,15 +102,26 @@ class GammaDynamicsSix:
         spot = metrics.get("spot", 0.0)
         prior_spot = previous.get("spot", spot)
         delta_spot = spot - prior_spot
+        spot_return = delta_spot / max(abs(prior_spot), 1.0)
         dt_seconds = max(0.0, metrics.get("observed_epoch", 0.0) - previous.get("observed_epoch", 0.0)) if previous else 0.0
         # A historical provider can omit observation epochs; retain the live
         # engine's five-second cadence rather than treating the interval as 0.
         dt_seconds = dt_seconds or (5.0 if previous else 0.0)
-        flow_hack = (
-            metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0))
-            - metrics.get("color_ex", 0.0) * dt_seconds - metrics.get("speed_ex", 0.0) * delta_spot
-        ) if previous else 0.0
+        gex_change = metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0)) if previous else 0.0
+        # Color is a calendar-time sensitivity. Convert the poll interval from
+        # seconds to a fraction of a day before combining it with exposure.
+        color_dt_days = dt_seconds / 86_400.0
+        color_flow = metrics.get("color_ex", 0.0) * color_dt_days
+        # SpeedEx includes S^3. Pair it with fractional spot movement rather
+        # than raw price points so the subtraction remains exposure-scaled.
+        speed_flow = metrics.get("speed_ex", 0.0) * spot_return
+        flow_hack = gex_change - color_flow - speed_flow if previous else 0.0
         metrics["flow_dt_seconds"] = dt_seconds
+        metrics["flow_color_dt_days"] = color_dt_days
+        metrics["gex_change"] = gex_change
+        metrics["flow_color_component"] = color_flow
+        metrics["flow_speed_component"] = speed_flow
+        metrics["flow_spot_return"] = spot_return
         metrics["flow_hack"] = flow_hack
         metrics["gex_real"] = metrics.get("gex_raw", 0.0) + flow_hack * 15.0
         gamma_denominator = abs(metrics.get("gamma_open_interest", 0.0) * spot ** 2 * .01 * 100.0) + 1.0
@@ -136,7 +147,9 @@ class GammaDynamicsSix:
         metrics["neg_inventory"] = min(0.0, dealer_flow) * 720.0
         density_samples = [item.get("gex_density", 0.0) for item in metric_samples[-11:]] + [metrics.get("gex_density", 0.0)]
         metrics["tw_gex"] = sum(density_samples) / max(len(density_samples), 1)
-        metrics["spoof_score"] = abs(metrics.get("gex_raw", 0.0) - previous.get("gex_raw", metrics.get("gex_raw", 0.0))) / (abs(metrics["vol_hack"]) + 1.0)
+        # VolHack is normalized by gamma exposure; normalize dGEX by the same
+        # denominator before applying the dimensionless spoof threshold.
+        metrics["spoof_score"] = abs(gex_change / gamma_denominator) / (abs(metrics["vol_hack"]) + 1.0)
         metrics["damping"] = 1.0 + metrics.get("gex_dollar_density", 0.0) / max(metrics.get("market_depth", 0.0), 1.0)
         distance_support = abs(spot - metrics.get("support_level", spot)) + .001 * max(spot, 1.0)
         metrics["fade_score"] = metrics.get("gex_dollar_density", 0.0) * metrics["pos_inventory"] * metrics["rr_t10"] / distance_support

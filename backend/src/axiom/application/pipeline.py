@@ -94,6 +94,46 @@ class DecisionPipeline:
     def set_events(self,events:list[datetime])->None:self._events=events
     def set_performance(self,performance:PerformanceWindow)->None:self._performance=performance
 
+    def restore_history(self,states:Sequence[MarketState])->int:
+        """Rehydrate compact rolling bars after a process restart.
+
+        Gamma 2.0 only needs compact chain metrics, while Gamma 1.0 and Delta
+        need one completed Greek observation per primary-timeframe minute.
+        Raw contract lists are intentionally not loaded into memory here.
+        """
+        ordered=sorted((state for state in states if state.symbol),key=lambda state:state.timestamp)
+        native:dict[str,list[MarketBar]]=defaultdict(list)
+        minutes:dict[tuple[str,datetime],MarketState]={}
+        for state in ordered:
+            price=float(state.supporting_indicators.get("price",0.0) or 0.0)
+            if price<=0:continue
+            native[state.symbol].append(MarketBar(
+                timestamp=state.timestamp,symbol=state.symbol,timeframe_seconds=5,
+                open=price,high=price,low=price,close=price,
+                volume=float(state.supporting_indicators.get("volume",0.0) or 0.0),
+                bid_ask_spread=float(state.supporting_indicators.get("spread",0.0) or 0.0),
+                greeks=state.greeks,contract_count=int(state.supporting_indicators.get("contract_count",0) or 0),
+                open_interest=float(state.supporting_indicators.get("open_interest_total",0.0) or 0.0),
+                gamma_metrics=dict(state.gamma_dynamics_v2.chain_metrics) if state.gamma_dynamics_v2 else {},
+            ))
+            minutes[(state.symbol,state.timestamp.replace(second=0,microsecond=0))]=state
+        for symbol,bars in native.items():
+            self.mtf.history[(symbol,5)].extend(bars[-self.mtf.max_bars:])
+        restored=0
+        for (_, _),state in sorted(minutes.items(),key=lambda item:item[0][1]):
+            price=float(state.supporting_indicators.get("price",0.0) or 0.0)
+            if price<=0:continue
+            self.mtf.history[(state.symbol,self.config.primary_timeframe_seconds)].append(MarketBar(
+                timestamp=state.timestamp,symbol=state.symbol,timeframe_seconds=self.config.primary_timeframe_seconds,
+                open=price,high=price,low=price,close=price,
+                volume=float(state.supporting_indicators.get("volume",0.0) or 0.0),
+                bid_ask_spread=float(state.supporting_indicators.get("spread",0.0) or 0.0),
+                greeks=state.greeks,contract_count=int(state.supporting_indicators.get("contract_count",0) or 0),
+                open_interest=float(state.supporting_indicators.get("open_interest_total",0.0) or 0.0),
+            ))
+            restored+=1
+        return restored
+
     @staticmethod
     def _display_id(timestamp:datetime,stream:int=0)->str:
         eastern=timestamp.astimezone(ZoneInfo("America/New_York"))

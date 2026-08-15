@@ -51,11 +51,17 @@ class _EngineRunner:
         wall_cfg=getattr(pipeline.config,"wall_intel",{})
         self.wall_intelligence=WallIntelligenceService(int(wall_cfg.get("history_len",720)),int(wall_cfg.get("volume_sma",20)))
         self.wall_summary_log_sec=int(wall_cfg.get("summary_log_sec",30))
+        self._last_gamma_tick_persist_at:dict[str,datetime]={}
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
-        # Raw per-contract chain persistence was removed with Daily
-        # Microstructure. The live models use compact aggregate chain metrics.
+        # Retain an audit-quality raw chain once per minute. The decision
+        # engine remains five-second; this cap avoids the old memory/IO path.
+        last=self._last_gamma_tick_persist_at.get(bar.symbol)
+        if (bar.gamma_ticks and hasattr(self.repository,"save_gamma_ticks")
+                and (last is None or (bar.timestamp-last).total_seconds() >= 60)):
+            await self.repository.save_gamma_ticks(bar.gamma_ticks)
+            self._last_gamma_tick_persist_at[bar.symbol]=bar.timestamp
         if hasattr(self.repository,"save_confluence"):
             await self.repository.save_confluence(result.state)
         # Standalone Wall Intelligence observes the completed point-in-time

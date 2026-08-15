@@ -2,7 +2,8 @@ version: 1.0.0
 timeframes_seconds: [5, 10, 30, 60, 180, 300, 900]
 primary_timeframe_seconds: 60
 regime_timeframe_seconds: 300
-score_history: 250
+# Gamma Dynamics 1.0 requires 720 completed one-minute observations.
+score_history: 720
 evaluation_horizon_bars: 12
 max_lead_seconds: 600
 profiles:
