@@ -128,9 +128,16 @@ class GammaDynamicsSix:
         metrics["vol_hack"] = flow_hack / gamma_denominator
         flow_samples = []
         for earlier, later in zip(metric_samples[-720:-1], metric_samples[-719:]):
-            change_spot = later.get("spot", 0.0) - earlier.get("spot", 0.0)
-            interval=max(0.0,later.get("observed_epoch",0.0)-earlier.get("observed_epoch",0.0)) or 5.0
-            flow_samples.append(later.get("gex_raw", 0.0) - earlier.get("gex_raw", 0.0) - later.get("color_ex", 0.0) * interval - later.get("speed_ex", 0.0) * change_spot)
+            earlier_spot = float(earlier.get("spot", 0.0))
+            later_spot = float(later.get("spot", 0.0))
+            interval_seconds = max(0.0, later.get("observed_epoch", 0.0) - earlier.get("observed_epoch", 0.0)) or 5.0
+            historical_spot_return = (later_spot - earlier_spot) / max(abs(earlier_spot), 1.0)
+            historical_color_days = interval_seconds / 86_400.0
+            flow_samples.append(
+                later.get("gex_raw", 0.0) - earlier.get("gex_raw", 0.0)
+                - later.get("color_ex", 0.0) * historical_color_days
+                - later.get("speed_ex", 0.0) * historical_spot_return
+            )
         flow_samples.append(flow_hack)
         positive_flow = sum(value for value in flow_samples if value > 0)
         negative_flow = sum(-value for value in flow_samples if value < 0)

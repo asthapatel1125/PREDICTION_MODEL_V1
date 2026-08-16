@@ -77,8 +77,17 @@ def metric_history(count=20):
 def test_gamma_dynamics_v2_enforces_ten_minute_cooldown():
     # Keep this test focused on cooldown rather than the production warm-up.
     engine = GammaDynamicsSix(minimum_history=20)
-    first = engine.calculate(Greeks(), history(), "QQQ", chain_metrics(), metric_history(), active_time())
-    second = engine.calculate(Greeks(), history(), "QQQ", chain_metrics(), metric_history(), active_time() + timedelta(minutes=1))
+    qualifying = chain_metrics(
+        gex_raw=1_000_000_000, gamma_open_interest=1, color_ex=0, speed_ex=0,
+        gex_density=1, gex_dollar_density=200_000_000, support_level=499,
+        resistance_level=501, dex=-1_000, charm_ex=1_000, liquidity_score=.1,
+    )
+    history_metrics = [
+        {"gex_raw": 0, "spot": 500, "observed_epoch": 5, "gex_density": 1, "atm_iv": .20}
+        for _ in range(20)
+    ]
+    first = engine.calculate(Greeks(), history(), "QQQ", qualifying, history_metrics, active_time())
+    second = engine.calculate(Greeks(), history(), "QQQ", qualifying, history_metrics, active_time() + timedelta(minutes=1))
     assert first.qualified is True
     assert second.qualified is False
     assert second.alert_checks["cooldown"] is False

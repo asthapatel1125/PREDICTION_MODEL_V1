@@ -22,7 +22,7 @@ class StrategyConfig(BaseModel):
     timeframes_seconds: list[int] = [5, 10, 30, 60, 180, 300, 900]
     primary_timeframe_seconds: int = 60
     regime_timeframe_seconds: int = 300
-    score_history: int = 250
+    score_history: int = 720
     evaluation_horizon_bars: int = 12
     max_lead_seconds: int = 600
     profiles: dict[str, ProfileThresholds]

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import date,datetime,time,timezone
+from datetime import date,datetime,time,timedelta,timezone
 from pathlib import Path
+from statistics import median
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -128,7 +129,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,"count":len(rows),"rows":rows}
 
     @api.get("/dynamics-history/{symbol}")
-    async def dynamics_history(symbol:str,limit:int=Query(5_000,ge=1,le=5_000)):
+    async def dynamics_history(symbol:str,limit:int=Query(720,ge=1,le=5_000)):
         """Return a bounded chart window ordered from the first retained tick.
 
         The full archive remains in Supabase.  Returning an unbounded archive
@@ -223,6 +224,51 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 if (not requested_types or name in requested_types) and (not requested_tiers or str(value.get("tier","")) in requested_tiers)}
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":rows,"is_point_in_time":True,"is_estimated_oi_delayed":True,
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
+
+    @api.get("/walls/day-levels")
+    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None):
+        """Return the compact Wall Intelligence stream for one 07:00-18:00 ET session.
+
+        This purpose-built endpoint avoids loading nested MarketState payloads
+        just to draw a price-and-level chart. The browser reduces the 5-second
+        observations to one-minute display bars while retaining the original
+        full-day stream in the database.
+        """
+        market_tz=ZoneInfo(cfg.market_timezone)
+        day=session_date or datetime.now(market_tz).date()
+        start=datetime.combine(day,time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
+        end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
+        rows=await container.repository.wall_intelligence_points(symbol,start,end,8_000)
+        # Preserve every five-second observation, but derive a stable reference
+        # for each market phase from the first five minutes of that phase.  A
+        # median is deliberately used instead of a single tick so a transient
+        # chain/OI update does not redraw the day's reference level.
+        phase_specs=(
+            ("PREMARKET",time(7,0),time(9,30)),
+            ("OPENING",time(9,30),time(10,0)),
+            ("MORNING",time(10,0),time(12,0)),
+            ("MIDDAY",time(12,0),time(14,0)),
+            ("AFTERNOON",time(14,0),time(15,0)),
+            ("POWER_HOUR",time(15,0),time(16,0)),
+            ("AFTER_HOURS",time(16,0),time(18,0)),
+        )
+        phase_anchors=[]
+        for name,phase_start,phase_end in phase_specs:
+            anchor_start=datetime.combine(day,phase_start,tzinfo=market_tz)
+            anchor_end=min(anchor_start.replace(second=0,microsecond=0)+timedelta(minutes=5),datetime.combine(day,phase_end,tzinfo=market_tz))
+            sample=[row for row in rows if anchor_start<=datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)<anchor_end]
+            if not sample:
+                continue
+            def wall_median(key:str)->float|None:
+                values=[float(row.get("walls",{}).get(key,{}).get("strike")) for row in sample if row.get("walls",{}).get(key,{}).get("strike") is not None]
+                return float(median(values)) if values else None
+            phase_anchors.append({"phase":name,"start":anchor_start,"end":datetime.combine(day,phase_end,tzinfo=market_tz),
+                "sample_start":sample[0].get("timestamp"),"sample_count":len(sample),
+                "levels":{key:wall_median(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}})
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,
+            "count":len(rows),"rows":rows,"cadence_seconds":5,"display_bucket_seconds":60,
+            "phase_anchor_window_seconds":300,"phase_anchors":phase_anchors,
+            "disclaimer":"Solid phase levels use the median of the first five minutes of each market phase. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
 
     @api.get("/walls/dealerflow")
     async def wall_dealerflow(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None):
