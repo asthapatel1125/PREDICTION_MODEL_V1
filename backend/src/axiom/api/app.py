@@ -239,6 +239,24 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         start=datetime.combine(day,time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
         end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
         rows=await container.repository.wall_intelligence_points(symbol,start,end,8_000)
+        def observed_at(row:dict[str,Any])->datetime:
+            return datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)
+
+        # The database retains each 5-second observation.  The chart receives
+        # only one compact row per minute so it remains responsive for a full
+        # 07:00–18:00 session instead of shipping thousands of nested records.
+        minute_buckets:dict[str,dict[str,Any]]={}
+        for row in rows:
+            observed=observed_at(row)
+            bucket_key=observed.strftime("%Y-%m-%dT%H:%M")
+            wall_subset={key:row.get("walls",{}).get(key,{}) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}
+            existing=minute_buckets.get(bucket_key)
+            compact_row={"timestamp":row.get("timestamp"),"spot":row.get("spot"),"walls":wall_subset,"volume":float(row.get("volume") or 0.0)}
+            if existing is None:
+                minute_buckets[bucket_key]=compact_row
+            else:
+                compact_row["volume"]=float(existing.get("volume") or 0.0)+compact_row["volume"]
+                minute_buckets[bucket_key]=compact_row
         # Preserve every five-second observation, but derive a stable reference
         # for each market phase from the first five minutes of that phase.  A
         # median is deliberately used instead of a single tick so a transient
@@ -256,7 +274,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         for name,phase_start,phase_end in phase_specs:
             anchor_start=datetime.combine(day,phase_start,tzinfo=market_tz)
             anchor_end=min(anchor_start.replace(second=0,microsecond=0)+timedelta(minutes=5),datetime.combine(day,phase_end,tzinfo=market_tz))
-            sample=[row for row in rows if anchor_start<=datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)<anchor_end]
+            sample=[row for row in rows if anchor_start<=observed_at(row)<anchor_end]
             if not sample:
                 continue
             def wall_median(key:str)->float|None:
@@ -266,7 +284,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 "sample_start":sample[0].get("timestamp"),"sample_count":len(sample),
                 "levels":{key:wall_median(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}})
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,
-            "count":len(rows),"rows":rows,"cadence_seconds":5,"display_bucket_seconds":60,
+            "count":len(rows),"display_count":len(minute_buckets),"rows":list(minute_buckets.values()),"cadence_seconds":5,"display_bucket_seconds":60,
             "phase_anchor_window_seconds":300,"phase_anchors":phase_anchors,
             "disclaimer":"Solid phase levels use the median of the first five minutes of each market phase. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
 
