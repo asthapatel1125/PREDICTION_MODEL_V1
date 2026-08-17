@@ -943,3 +943,15 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .hedge-live-scale header{left:5px;right:5px;padding:6px}.hedge-live-scale header b{font-size:10px}.hedge-live-scale>span{left:4px;right:4px;grid-template-columns:6px 1fr auto;gap:3px;padding:2px 3px;font-size:9px}.hedge-live-scale>span strong{font-size:9px}
 .hedge-plot-canvas .wi-hover{position:sticky!important;left:10px!important;right:auto!important;top:12px!important;z-index:40;max-width:220px;box-shadow:0 8px 22px rgba(0,0,0,.45)}
 .hedge-plot-canvas svg text{font-size:8px}
+
+.hedge-y-zoom-buttons{display:flex;gap:4px;margin-top:5px}.hedge-y-zoom-buttons button{width:22px;height:20px;border:1px solid #41718b;border-radius:3px;background:#0d2433;color:#75ddff;font:700 15px/16px var(--font-mono,monospace);cursor:pointer}.hedge-y-zoom-buttons button:hover{background:#16425b;color:#d9f6ff}.hedge-y-zoom-buttons button:active{transform:translateY(1px)}
+
+/* Daily hedge map: same precise grid/readout treatment as the live Greek charts. */
+.hedge-map-frame{background:#040a0f;box-shadow:inset 0 1px 0 rgba(94,200,255,.12)}
+.hedge-plot-canvas{background:#040a0f;cursor:crosshair}
+.hedge-plot-canvas svg{background:linear-gradient(180deg,rgba(8,24,36,.24),transparent 40%)}
+.hedge-plot-canvas .wi-grid{stroke:#18364b;stroke-width:1.15;opacity:.95}
+.hedge-plot-canvas .wi-grid.vertical{stroke:#1d435b;stroke-dasharray:2 5;opacity:.9}
+.hedge-plot-canvas .wi-crosshair{stroke:#c7dde9;stroke-width:1.2;stroke-dasharray:5 5;opacity:.9}
+.hedge-plot-canvas .wi-hover{top:16px!important;padding:12px 14px;border:1px solid #2d6687;border-radius:8px;background:linear-gradient(145deg,rgba(6,20,31,.98),rgba(7,15,24,.96));font:11px/1.72 var(--font-mono,monospace);box-shadow:0 10px 24px rgba(0,0,0,.46)}
+.hedge-plot-canvas .wi-hover b{padding-bottom:5px;margin-bottom:4px;border-bottom:1px solid #1d4258;color:#e7f6ff;letter-spacing:.02em}.hedge-plot-canvas .wi-hover span{display:flex;justify-content:space-between;gap:18px;min-width:186px}.hedge-plot-canvas .wi-hover span::before{content:"●";font-size:7px;align-self:center;color:currentColor}.hedge-map-frame svg text{letter-spacing:.01em}.hedge-y-axis{background:linear-gradient(90deg,#061019,#08141e)}
