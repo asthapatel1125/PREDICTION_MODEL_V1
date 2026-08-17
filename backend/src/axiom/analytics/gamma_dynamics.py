@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, time
-from math import sqrt
+from math import isfinite, sqrt
 from zoneinfo import ZoneInfo
 
 from axiom.domain.enums import Direction
@@ -126,52 +126,103 @@ class GammaDynamicsSix:
         metrics["gex_real"] = metrics.get("gex_raw", 0.0) + flow_hack * 15.0
         gamma_denominator = abs(metrics.get("gamma_open_interest", 0.0) * spot ** 2 * .01 * 100.0) + 1.0
         metrics["vol_hack"] = flow_hack / gamma_denominator
-        flow_samples = []
-        for earlier, later in zip(metric_samples[-720:-1], metric_samples[-719:]):
+        # FlowHack is denominated in GEX dollars.  Convert every historical
+        # sample to the same VolHack proxy before comparing it with open
+        # interest; mixing GEX dollars and contracts was the source of the
+        # impossible RR/DR values in the live log.
+        flow_samples: list[float] = []
+        vol_samples: list[float] = []
+        dealer_flow_samples: list[float] = []
+        interval_seconds_samples: list[float] = []
+        recent_metric_samples = metric_samples[-720:]
+        for earlier, later in zip(recent_metric_samples, recent_metric_samples[1:]):
             earlier_spot = float(earlier.get("spot", 0.0))
             later_spot = float(later.get("spot", 0.0))
             interval_seconds = max(0.0, later.get("observed_epoch", 0.0) - earlier.get("observed_epoch", 0.0)) or 5.0
             historical_spot_return = (later_spot - earlier_spot) / max(abs(earlier_spot), 1.0)
             historical_color_days = interval_seconds / 86_400.0
-            flow_samples.append(
+            historical_flow = (
                 later.get("gex_raw", 0.0) - earlier.get("gex_raw", 0.0)
                 - later.get("color_ex", 0.0) * historical_color_days
                 - later.get("speed_ex", 0.0) * historical_spot_return
             )
+            later_denominator = abs(float(later.get("gamma_open_interest", 0.0)) * later_spot ** 2 * .01 * 100.0) + 1.0
+            historical_vol = historical_flow / later_denominator
+            if isfinite(historical_flow) and isfinite(historical_vol):
+                flow_samples.append(historical_flow)
+                vol_samples.append(historical_vol)
+                dealer_flow_samples.append(-historical_vol * float(later.get("dex", 0.0)))
+                interval_seconds_samples.append(interval_seconds)
         flow_samples.append(flow_hack)
-        positive_flow = sum(value for value in flow_samples if value > 0)
-        negative_flow = sum(-value for value in flow_samples if value < 0)
+        vol_samples.append(metrics["vol_hack"])
+        dealer_flow = -metrics["vol_hack"] * metrics.get("dex", 0.0)
+        dealer_flow_samples.append(dealer_flow)
+        interval_seconds_samples.append(dt_seconds or 5.0)
+        positive_flow = sum(value for value in vol_samples if value > 0)
+        negative_flow = sum(-value for value in vol_samples if value < 0)
         total_oi = max(metrics.get("total_open_interest", 0.0), 1.0)
         metrics["rr"] = positive_flow / (negative_flow + 1.0)
-        metrics["dr"] = -negative_flow / total_oi
-        outflow_average = negative_flow / max(len(flow_samples), 1)
-        flow_change = flow_samples[-1] - flow_samples[-2] if len(flow_samples) > 1 else 0.0
-        metrics["rr_t10"] = metrics["rr"] + (flow_change * 10.0) / max(outflow_average, 1.0)
-        metrics["dr_t10"] = metrics["dr"] + (negative_flow - positive_flow) / total_oi * 10.0
-        dealer_flow = -metrics["vol_hack"] * metrics.get("dex", 0.0)
+        # Depletion is a positive fraction of OI.  The former negative sign
+        # inverted the meaning of sell-side outflow and made AMP scores
+        # negative.  Forecast ten minutes using the actual observation
+        # cadence, not a magic multiplier of ten five-second samples.
+        metrics["dr"] = negative_flow / total_oi
+        observed_window_seconds = max(sum(interval_seconds_samples), 1.0)
+        outflow_rate = negative_flow / observed_window_seconds
+        inflow_rate = positive_flow / observed_window_seconds
+        vol_change_rate = ((vol_samples[-1] - vol_samples[-2]) / max(interval_seconds_samples[-1], 1.0)) if len(vol_samples) > 1 else 0.0
+        projected_outflow = outflow_rate * 600.0
+        raw_rr_t10 = metrics["rr"] + (vol_change_rate * 600.0) / max(projected_outflow, 1.0)
+        raw_dr_t10 = metrics["dr"] + (outflow_rate - inflow_rate) * 600.0 / total_oi
+        # Ratios below zero and depletion above 100% are invalid forecast
+        # states.  Preserve them for audit, but do not let them contaminate a
+        # trading decision or an on-screen score.
+        metrics["rr_t10_raw"] = raw_rr_t10
+        metrics["dr_t10_raw"] = raw_dr_t10
+        metrics["rr_t10"] = max(0.0, raw_rr_t10) if isfinite(raw_rr_t10) else 0.0
+        metrics["dr_t10"] = min(1.0, max(0.0, raw_dr_t10)) if isfinite(raw_dr_t10) else 0.0
         metrics["dealer_flow"] = dealer_flow
-        metrics["pos_inventory"] = max(0.0, dealer_flow) * 720.0
-        metrics["neg_inventory"] = min(0.0, dealer_flow) * 720.0
+        # Inventory is a rolling 60-minute aggregate of the same inferred
+        # DealerFlow proxy.  Multiplying the latest five-second observation
+        # by 720 fabricated inventory and magnified a single bad tick.
+        metrics["pos_inventory"] = sum(max(0.0, value) for value in dealer_flow_samples[-720:] if isfinite(value))
+        metrics["neg_inventory"] = sum(min(0.0, value) for value in dealer_flow_samples[-720:] if isfinite(value))
         density_samples = [item.get("gex_density", 0.0) for item in metric_samples[-11:]] + [metrics.get("gex_density", 0.0)]
         metrics["tw_gex"] = sum(density_samples) / max(len(density_samples), 1)
         # VolHack is normalized by gamma exposure; normalize dGEX by the same
         # denominator before applying the dimensionless spoof threshold.
         metrics["spoof_score"] = abs(gex_change / gamma_denominator) / (abs(metrics["vol_hack"]) + 1.0)
-        metrics["damping"] = 1.0 + metrics.get("gex_dollar_density", 0.0) / max(metrics.get("market_depth", 0.0), 1.0)
+        metrics["damping"] = 1.0 + abs(metrics.get("gex_dollar_density", 0.0)) / max(metrics.get("market_depth", 0.0), 1.0)
         distance_support = abs(spot - metrics.get("support_level", spot)) + .001 * max(spot, 1.0)
-        metrics["fade_score"] = metrics.get("gex_dollar_density", 0.0) * metrics["pos_inventory"] * metrics["rr_t10"] / distance_support
-        metrics["amp_score"] = abs(metrics.get("gex_dollar_density", 0.0)) * abs(metrics["neg_inventory"]) * metrics["dr_t10"] * abs(metrics.get("speed_ex", 0.0))
-        theta_boost = 3.0 if timestamp and timestamp.astimezone(self.market_tz).time() >= time(15, 30) else 1.0
+        # Scores are dimensionless, gate-aligned strength measures.  The
+        # original product of dollar GEX, dollar inventory, and SpeedEx had
+        # no stable unit and overflowed into e+30.  Each component is now
+        # measured against the gate it represents.
+        distance_scale = distance_support / max(.001 * max(spot, 1.0), 1e-12)
+        positive_density = max(metrics.get("gex_dollar_density", 0.0), 0.0)
+        metrics["fade_score"] = 100.0 * (positive_density / 100_000_000.0) * (metrics["pos_inventory"] / 300_000_000.0) * (metrics["rr_t10"] / 1.2) / distance_scale
+        speed_baseline = sum(abs(float(item.get("speed_ex", 0.0))) for item in metric_samples[-720:]) / max(len(metric_samples[-720:]), 1)
+        speed_ratio = abs(metrics.get("speed_ex", 0.0)) / max(speed_baseline, 1.0)
+        metrics["amp_score"] = 100.0 * (abs(metrics.get("gex_dollar_density", 0.0)) / 100_000_000.0) * (abs(metrics["neg_inventory"]) / 300_000_000.0) * (metrics["dr_t10"] / .7) * speed_ratio
+        # Support and resistance are executable *observed chain strikes*.
+        # Charm has a time sensitivity, not a validated dollar-per-strike
+        # projection.  Applying CharmEx/GEX as an absolute strike shift
+        # created the negative-million "T+10" levels in the export.  Keep it
+        # as a diagnostic pressure ratio and refresh the actual levels from
+        # each live chain snapshot.
         gex_real = metrics["gex_real"]
-        charm_shift = metrics.get("charm_ex", 0.0) / (gex_real if abs(gex_real) > 1e-12 else 1.0) * spot * 10.0 * theta_boost
-        metrics["ksup_t10"] = metrics.get("support_level", spot) + charm_shift
-        metrics["kres_t10"] = metrics.get("resistance_level", spot) + charm_shift
+        metrics["charm_to_gex_ratio"] = metrics.get("charm_ex", 0.0) / max(abs(gex_real), 1.0)
+        metrics["level_projection_mode"] = "OBSERVED_CHAIN_STRIKE"
+        metrics["ksup_t10"] = metrics.get("support_level", spot)
+        metrics["kres_t10"] = metrics.get("resistance_level", spot)
         metrics["edge"] = abs(metrics["kres_t10"] - metrics["ksup_t10"]) / max(metrics.get("atm_spread", 0.0), .01)
         metrics["urgency_minutes"] = abs(metrics.get("dex", 0.0)) / max(abs(metrics.get("charm_ex", 0.0)), 1.0)
-        metrics["final_score_clean"] = (
+        raw_final_score = (
             (metrics["fade_score"] - metrics["amp_score"]) * metrics.get("concentration", 0.0) * metrics["edge"] / 4.0
             * metrics["tw_gex"] / (abs(metrics.get("gex_density", 0.0)) + .1) / (metrics["spoof_score"] + .5)
         )
+        metrics["score_integrity"] = float(isfinite(raw_final_score) and isfinite(metrics["fade_score"]) and isfinite(metrics["amp_score"]))
+        metrics["final_score_clean"] = raw_final_score if metrics["score_integrity"] else 0.0
         normalized_features = {
             name: self._scaled(metrics.get(name, 0.0), [item.get(name, 0.0) for item in metric_samples])
             for name in self.feature_weights
@@ -197,6 +248,7 @@ class GammaDynamicsSix:
         metrics["stop_loss"] = metrics["entry"] * (.998 if fade else 1.002) if metrics["entry"] else 0.0
         checks = {
             "chain_available": metrics.get("chain_available", 0.0) > 0,
+            "score_integrity": metrics["score_integrity"] > 0,
             "baseline": warmed,
             "regime": regime != "WAIT",
             "density": metrics.get("gex_dollar_density", 0.0) > 100_000_000.0 if fade else True,

@@ -64,6 +64,12 @@ def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
     assert metrics["pin_status"]=="BETWEEN_WALLS"
     assert len(metrics["gex_walls"])==3
     assert metrics["gex_walls"]==sorted(metrics["gex_walls"],key=lambda wall:-wall["abs_gex"])
+    # Only the ATM 722 call is inside the +/-0.5% local-density band.  The
+    # dollar metric must be its signed GEX, not the dimensionless density
+    # multiplied by spot a second time.
+    expected_near_gex=300*.08*100*722**2*.01
+    assert metrics["gex_dollar_density"]==pytest.approx(expected_near_gex)
+    assert metrics["gex_abs_dollar_density"]==pytest.approx(expected_near_gex)
 
 
 def test_missing_speed_and_color_use_specification_fallbacks():

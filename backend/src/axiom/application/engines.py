@@ -67,7 +67,13 @@ class _EngineRunner:
         # Standalone Wall Intelligence observes the completed point-in-time
         # chain metrics. It neither mutates nor gates any existing system.
         metrics=result.state.gamma_dynamics_v2.chain_metrics if result.state.gamma_dynamics_v2 else {}
-        if metrics.get("chain_available") and hasattr(self.repository,"save_wall_intelligence"):
+        # Wall Intelligence is an observer, not a strategy gate.  Persist a
+        # valid wall map even when a compatibility adapter omits the numeric
+        # ``chain_available`` flag; requiring that flag alone left the panel
+        # empty despite a complete set of chain-derived wall estimates.
+        wall_estimates=metrics.get("wall_estimates",{})
+        wall_observable=bool(wall_estimates) and any(float(value.get("strike",0) or 0)>0 for value in wall_estimates.values() if isinstance(value,dict))
+        if wall_observable and hasattr(self.repository,"save_wall_intelligence"):
             point,breaks=self.wall_intelligence.observe(bar.timestamp,bar.symbol,float(bar.close),metrics,result.state.regime.value,float(bar.volume))
             await self.repository.save_wall_intelligence(point,breaks)
             if self.wall_intelligence.summary_due(bar.timestamp,self.wall_summary_log_sec) and hasattr(self.repository,"save_wall_summary"):

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from math import isfinite
 
 import pytest
 
@@ -78,7 +79,10 @@ def test_gamma_dynamics_v2_enforces_ten_minute_cooldown():
     # Keep this test focused on cooldown rather than the production warm-up.
     engine = GammaDynamicsSix(minimum_history=20)
     qualifying = chain_metrics(
-        gex_raw=1_000_000_000, gamma_open_interest=1, color_ex=0, speed_ex=0,
+        # This produces a 400M rolling DealerFlow proxy from the same
+        # unit-consistent VolHack calculation; a 1B GEX change only produces
+        # ~4M here and should correctly fail the 300M inventory gate.
+        gex_raw=100_000_000_000, gamma_open_interest=1, color_ex=0, speed_ex=0,
         gex_density=1, gex_dollar_density=200_000_000, support_level=499,
         resistance_level=501, dex=-1_000, charm_ex=1_000, liquidity_score=.1,
     )
@@ -91,6 +95,32 @@ def test_gamma_dynamics_v2_enforces_ten_minute_cooldown():
     assert first.qualified is True
     assert second.qualified is False
     assert second.alert_checks["cooldown"] is False
+
+
+def test_gamma_dynamics_v2_keeps_live_chain_levels_and_scores_finite():
+    """Charm exposure must never turn discrete chain strikes into e+6 levels."""
+    engine=GammaDynamicsSix(minimum_history=2)
+    current=chain_metrics(
+        gex_raw=1_174_000_000, gamma_open_interest=1_000_000, color_ex=500,
+        speed_ex=2_000, gex_density=.084, gex_dollar_density=425_000_000,
+        support_level=730, resistance_level=735, dex=-1_000, charm_ex=-5e12,
+        total_open_interest=2_000_000, concentration=.5, liquidity_score=.1,
+    )
+    previous=[
+        {"gex_raw":1_170_000_000,"spot":732,"observed_epoch":5,"gex_density":.08,"gamma_open_interest":1_000_000,"dex":-900,"color_ex":500,"speed_ex":2_000,"atm_iv":.2},
+        {"gex_raw":1_172_000_000,"spot":732.1,"observed_epoch":10,"gex_density":.082,"gamma_open_interest":1_000_000,"dex":-950,"color_ex":500,"speed_ex":2_000,"atm_iv":.2},
+    ]
+    result=engine.calculate(Greeks(),history(),"QQQ",current,previous,active_time())
+    metrics=result.chain_metrics
+    assert metrics["ksup_t10"]==730
+    assert metrics["kres_t10"]==735
+    assert metrics["amp_score"]>=0
+    assert metrics["dr"]>=0
+    assert 0<=metrics["dr_t10"]<=1
+    assert isfinite(metrics["fade_score"])
+    assert isfinite(metrics["amp_score"])
+    assert isfinite(metrics["final_score_clean"])
+    assert metrics["score_integrity"]==1
 
 
 def test_gamma_dynamics_qualifies_downward_relative_pressure():

@@ -369,6 +369,7 @@ class ThetaDataV3Client(MarketDataPort):
         abs_gex_total = sum(abs(value) for value in net_gex.values())
         near_strikes = [strike for strike in net_gex if abs(strike - spot) <= spot * .005]
         near_gex = sum(net_gex[strike] for strike in near_strikes)
+        near_abs_gex = sum(abs(net_gex[strike]) for strike in near_strikes)
         gex_density = near_gex / max(abs_gex_total, 1.0) / max(spot * .01, 1e-12)
         support_candidates = [strike for strike, value in net_gex.items() if strike <= spot and value > 0]
         resistance_candidates = [strike for strike, value in net_gex.items() if strike >= spot and value < 0]
@@ -429,7 +430,13 @@ class ThetaDataV3Client(MarketDataPort):
             "gex_raw": gex_total,
             "gex_abs_total": abs_gex_total,
             "gex_density": gex_density,
-            "gex_dollar_density": gex_density * spot ** 2 * .01,
+            # ``gex_density`` is a dimensionless local concentration.  It
+            # must not be multiplied by spot again and presented as dollars:
+            # that produced values in the hundreds and made the $100M gate
+            # impossible to pass.  The signed near-spot GEX is the actual
+            # dollar exposure inside the specified +/-0.5% band.
+            "gex_dollar_density": near_gex,
+            "gex_abs_dollar_density": near_abs_gex,
             "zero_gamma": zero_gamma,
             "call_wall_strike": float(call_wall or 0.0),
             "call_wall_gex": float(net_gex[call_wall]) if call_wall is not None else 0.0,
