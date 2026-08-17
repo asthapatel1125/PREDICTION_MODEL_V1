@@ -913,3 +913,9 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 /* Keep native wheel gestures inside Wall Intelligence charts rather than chaining to the page. */
 .hedge-map-plot-scroll,.dealer-lane-scroll{overscroll-behavior:contain}
 .hedge-map-plot,.dealer-lane-chart{overscroll-behavior:contain;touch-action:none}
+
+/* SVG does not inherit the application text colour consistently across browsers. */
+.hedge-map-plot svg text{fill:#a9c2d2;font:9px var(--font-mono,monospace)}
+.hedge-map-plot svg .hedge-price-text{fill:#071018;font-weight:800}
+.hedge-map-plot .wi-hover{z-index:20;width:228px;color:#d7e6ef;background:rgba(7,17,27,.97);border-color:#416780}
+.hedge-map-plot .wi-hover b{color:#eaf6fc;white-space:nowrap}
