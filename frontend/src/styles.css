@@ -985,6 +985,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .hedge-plot-canvas>.wi-hover{display:block!important;position:sticky!important;left:12px!important;right:auto!important;top:12px!important;width:214px;max-width:calc(100% - 24px);padding:10px 12px;z-index:90;overflow:visible!important;clip-path:none!important;background:rgba(5,17,27,.98);border-color:#337098;color:#d9eaf3}
 .hedge-plot-canvas>.wi-hover b{display:block;color:#edf8ff;white-space:nowrap}.hedge-plot-canvas>.wi-hover span{display:flex;justify-content:space-between;gap:10px;min-width:0}.hedge-plot-canvas>.wi-hover span::before{display:none}
 
+/* Hover never changes chart scale; it only positions the value readout. */
+.hedge-plot-canvas>.wi-hover.left{left:12px!important;right:auto!important}.hedge-plot-canvas>.wi-hover.right{left:auto!important;right:12px!important}
+.dealer-flow-canvas .wi-hover.left{left:12px!important;right:auto!important}.dealer-flow-canvas .wi-hover.right{left:auto!important;right:12px!important}
+
 /* QQQ is the primary price path; hedge references should remain visually secondary. */
 .hedge-plot-canvas svg polyline:first-of-type{stroke-width:3px!important}
 .hedge-plot-canvas svg polyline:not(:first-of-type){stroke-width:1.25px!important}
+
+/* Category-driven custom graph builder: one deliberate analytical view per row. */
+.category-workspace .dealer-flow-grid{grid-template-columns:1fr}.category-add{display:flex;align-items:end;gap:8px}.category-add label{display:grid;gap:4px;color:#74cfee;font:9px var(--font-mono,monospace)}.category-add select{min-width:176px;padding:6px;border:1px solid #315e78;background:#081722;color:#d5e6ee;font:10px var(--font-mono,monospace)}.category-add button{font:10px var(--font-mono,monospace);color:#74dcff;background:#0c2030;border:1px solid #34617b;padding:7px 9px}.category-add button:disabled{opacity:.45}.dealer-flow-canvas .wi-hover.left{left:12px;right:auto}.dealer-flow-canvas .wi-hover.right{right:12px;left:auto}.dealer-flow-canvas .wi-hover{pointer-events:none}
