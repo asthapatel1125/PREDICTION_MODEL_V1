@@ -929,7 +929,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .daily-levels-panel .hedge-map-plot-scroll::-webkit-scrollbar-thumb:hover{background:#78b7d8}
 
 /* Fixed axes and labels; only the centre coordinate canvas moves horizontally. */
-.hedge-map-frame{display:grid;grid-template-columns:82px minmax(0,1fr) 176px;min-height:330px;background:#060d14;border-top:1px solid #1c4058;border-bottom:1px solid #1c4058}
+.hedge-map-frame{position:relative;display:grid;grid-template-columns:82px minmax(0,1fr) 176px;min-height:330px;background:#060d14;border-top:1px solid #1c4058;border-bottom:1px solid #1c4058}
 .hedge-y-axis{position:relative;border-right:1px solid #1c4058;background:#07111b;color:#a9c2d2;font:10px var(--font-mono,monospace)}
 .hedge-y-axis span{position:absolute;right:9px;transform:translateY(-50%);white-space:nowrap}
 .hedge-plot-viewport{min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior:contain;scrollbar-color:#5c86a2 #07111b;scrollbar-width:thin;background:#060d14}
@@ -959,3 +959,9 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 /* Never remove the live controls: compress them on narrow screens instead. */
 @media(max-width:850px){.hedge-map-frame{grid-template-columns:48px minmax(0,1fr) 118px}.hedge-live-scale{display:block!important}.hedge-live-scale header{left:3px;right:3px;top:5px;padding:5px}.hedge-live-scale header b{font-size:9px}.hedge-live-scale header small{font-size:7px}.hedge-live-scale>span{left:2px;right:2px;font-size:8px}.hedge-live-scale>span strong{font-size:8px}.hedge-y-zoom-buttons button{width:19px;height:18px;font-size:13px}.hedge-y-axis span{right:3px;font-size:8px}}
 .hedge-plot-canvas .wi-hover{position:absolute!important;left:12px!important;right:auto!important;top:14px!important;max-width:min(228px,calc(100% - 24px));overflow:visible!important;clip-path:none!important}
+
+/* Place timeframe controls before the color legend without disturbing the chart frame. */
+.daily-levels-panel{display:flex;flex-direction:column}.daily-levels-panel>header{order:0}.daily-levels-panel>.hedge-map{display:contents}.daily-levels-panel .hedge-map-controls{order:1}.daily-levels-panel .daily-levels-legend{order:2}.daily-levels-panel .hedge-map-frame{order:3}.daily-levels-panel .hedge-map-controls{border-top:1px solid #1d4057;border-bottom:1px solid #1d4057}.hedge-control-extra{margin-left:2px}.hedge-control-extra:nth-last-child(-n+2){color:#71dfff!important;border-color:#3d7895!important}
+
+/* Viewport-level hover overlay: it never scrolls away with the historical canvas. */
+.hedge-plot-canvas>.wi-hover{display:none!important}.hedge-hover-popup{position:absolute;z-index:80;width:228px;padding:11px 13px;border:1px solid #317098;border-radius:8px;background:linear-gradient(145deg,rgba(5,18,29,.98),rgba(7,15,24,.97));box-shadow:0 10px 26px rgba(0,0,0,.5);pointer-events:none;font:10px/1.65 var(--font-mono,monospace);color:#dbeaf2}.hedge-hover-popup[hidden]{display:none}.hedge-hover-popup>b{display:block;padding-bottom:5px;margin-bottom:5px;border-bottom:1px solid #1d435a;color:#eefaff;white-space:nowrap}.hedge-hover-popup span{display:flex;align-items:center;justify-content:space-between;gap:14px}.hedge-hover-popup em{font-style:normal}.hedge-hover-popup strong{font-size:11px;color:currentColor}
