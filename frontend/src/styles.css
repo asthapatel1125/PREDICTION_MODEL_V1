@@ -990,10 +990,20 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .dealer-flow-canvas .wi-hover.left{left:12px!important;right:auto!important}.dealer-flow-canvas .wi-hover.right{left:auto!important;right:12px!important}
 .dealer-flow-canvas-v2{padding-bottom:2px}.dealer-flow-canvas-v2 .dealer-y-tick{fill:#9db8c8!important;font-size:8px!important}.dealer-flow-canvas-v2 .dealer-x-tick{fill:#9dc8df!important;font-size:9px!important}.dealer-flow-canvas-v2 .dealer-axis-title{fill:#6dbbdc!important;font-size:9px!important}.dealer-flow-canvas-v2 .wi-grid.vertical{stroke:#214b64!important;stroke-dasharray:3 5}.dealer-flow-canvas-v2 .dealer-lane-bg{fill:#08131d}.dealer-flow-canvas-v2 .wi-hover{max-width:230px;box-shadow:0 10px 26px rgba(0,0,0,.42)}
 
+/* Fixed value rail + independently scrolling time canvas for Wall Intelligence. */
+.dealer-lanes-layout{display:grid;grid-template-columns:128px minmax(0,1fr);min-width:0;border-top:1px solid #1a3b50;background:#050c12}
+.dealer-static-axis{position:relative;overflow:hidden;border-right:1px solid #24485f;background:linear-gradient(90deg,#07131d,#08141e);font:9px var(--font-mono,monospace);color:#9db8c8}
+.dealer-static-title{position:absolute;left:7px;top:50%;writing-mode:vertical-rl;transform:translateY(-50%) rotate(180deg);letter-spacing:.08em;color:#6dbbdc}
+.dealer-static-axis section{position:absolute;left:31px;right:7px;display:grid;grid-template-columns:1fr;grid-template-rows:18px 14px repeat(3,1fr);align-items:center;border-bottom:1px solid rgba(36,72,95,.36)}
+.dealer-static-axis section b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.dealer-static-axis section small{color:#78a2b8;font-size:8px}.dealer-static-axis section em{font-style:normal;color:#b8cad5;font-size:8px}.dealer-flow-canvas-static .dealer-x-tick{fill:#a7cde0!important;font-size:9px!important}.dealer-flow-canvas-static .dealer-axis-title{fill:#6dbbdc!important;font-size:9px!important;letter-spacing:.08em}.dealer-flow-canvas-static .wi-grid.vertical{stroke:#214b64!important;stroke-dasharray:3 5}
+@media(max-width:760px){.dealer-lanes-layout{grid-template-columns:102px minmax(0,1fr)}.dealer-static-axis section{left:20px;right:4px}.dealer-static-title{display:none}}
+
 /* A custom graph expands above the dashboard without changing its data state. */
 .dealer-custom-card.is-expanded{position:fixed!important;z-index:1200;inset:18px;display:flex;max-width:none!important;max-height:calc(100vh - 36px);overflow:auto!important;background:#06111b;border:1px solid #4381a2;box-shadow:0 24px 70px rgba(0,0,0,.7)}
 .dealer-custom-card.is-expanded .dealer-flow-viewport{min-height:min(62vh,680px);flex:1}
 .dealer-custom-card.is-expanded .dealer-flow-canvas{min-height:100%}
+.chart-modal-backdrop>.dealer-custom-expanded{position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;margin:0!important;padding:18px 22px!important;border:0!important;border-radius:0!important;background:#06111b!important;overflow:hidden!important}
+.chart-modal-backdrop>.dealer-custom-expanded .dealer-lanes-layout{flex:1;min-height:0}.chart-modal-backdrop>.dealer-custom-expanded .dealer-flow-viewport{min-height:0;overflow:auto}.chart-modal-backdrop>.dealer-custom-expanded .dealer-flow-canvas{min-height:100%}.chart-modal-backdrop>.dealer-custom-expanded .dealer-variable-dropdown>div{max-height:38vh;overflow:auto}.chart-modal-backdrop>.dealer-custom-expanded .dealer-lanes-layout{min-height:480px}
 
 /* QQQ is the primary price path; hedge references should remain visually secondary. */
 .hedge-plot-canvas svg polyline:first-of-type{stroke-width:3px!important}
