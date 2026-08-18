@@ -991,7 +991,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .dealer-flow-canvas-v2{padding-bottom:2px}.dealer-flow-canvas-v2 .dealer-y-tick{fill:#9db8c8!important;font-size:8px!important}.dealer-flow-canvas-v2 .dealer-x-tick{fill:#9dc8df!important;font-size:9px!important}.dealer-flow-canvas-v2 .dealer-axis-title{fill:#6dbbdc!important;font-size:9px!important}.dealer-flow-canvas-v2 .wi-grid.vertical{stroke:#214b64!important;stroke-dasharray:3 5}.dealer-flow-canvas-v2 .dealer-lane-bg{fill:#08131d}.dealer-flow-canvas-v2 .wi-hover{max-width:230px;box-shadow:0 10px 26px rgba(0,0,0,.42)}
 
 /* Fixed value rail + independently scrolling time canvas for Wall Intelligence. */
-.dealer-lanes-layout{display:grid;grid-template-columns:128px minmax(0,1fr);min-width:0;border-top:1px solid #1a3b50;background:#050c12}
+.dealer-lanes-layout{position:relative;display:grid;grid-template-columns:128px minmax(0,1fr);min-width:0;border-top:1px solid #1a3b50;background:#050c12}
 .dealer-static-axis{position:relative;overflow:hidden;border-right:1px solid #24485f;background:linear-gradient(90deg,#07131d,#08141e);font:9px var(--font-mono,monospace);color:#9db8c8}
 .dealer-static-title{position:absolute;left:7px;top:50%;writing-mode:vertical-rl;transform:translateY(-50%) rotate(180deg);letter-spacing:.08em;color:#6dbbdc}
 .dealer-static-axis section{position:absolute;left:31px;right:7px;display:grid;grid-template-columns:1fr;grid-template-rows:18px 14px repeat(3,1fr);align-items:center;border-bottom:1px solid rgba(36,72,95,.36)}
