@@ -1771,7 +1771,7 @@ function DealerFlowLanes({rows,traces,colors,valueFor}){
   if(!rows.length)return <p className="wall-empty-state">Waiting for live dealer-flow observations.</p>;
   const units={"QQQ Price":"USD",DealerFlow:"USD",DEX:"USD",VolHack:"contracts","Pos Inventory":"USD","Neg Inventory":"USD","GEX Density":"USD","TW GEX":"ratio","Spoof Score":"ratio",Edge:"points",Liquidity:"ratio",VIX:"index"};
   const format=(value,unit)=>{const n=number(value),absolute=Math.abs(n);if(!Number.isFinite(n))return "—";if(unit==="USD"){if(absolute>=1e9)return `${(n/1e9).toFixed(2)}B`;if(absolute>=1e6)return `${(n/1e6).toFixed(2)}M`;if(absolute>=1e3)return `${(n/1e3).toFixed(1)}K`}return absolute&&absolute<.01?n.toExponential(2):n.toFixed(3)};
-  const lane=112,top=10,bottom=48,height=top+lane*traces.length+bottom,width=Math.max(900,rows.length*xZoom),x=index=>index*width/Math.max(rows.length-1,1),series=name=>rows.map(row=>number(valueFor(row,name)));
+  const lane=76,top=10,bottom=44,height=top+lane*traces.length+bottom,width=Math.max(780,rows.length*xZoom),x=index=>index*width/Math.max(rows.length-1,1),series=name=>rows.map(row=>number(valueFor(row,name)));
   const range=name=>{const values=series(name).filter(Number.isFinite),min=Math.min(...values),max=Math.max(...values),raw=Math.max(max-min,Math.abs((max+min)/2)*.01,1e-9),padding=raw*(.12/yZoom);return {min:min-padding,max:max+padding,span:raw+padding*2}};
   const y=(value,index)=>{const r=range(traces[index]),laneTop=top+index*lane+22;return laneTop+(r.max-value)/r.span*(lane-34)};
   const path=(name,index)=>series(name).map((value,i)=>`${x(i)},${y(value,index)}`).join(" ");
