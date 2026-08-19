@@ -13,7 +13,7 @@ SYSTEM_GREEKS = {
     "PRIMARY_OPTIONS": ("gamma", "vanna", "charm", "speed", "zomma", "color", "ultima"),
     "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma"),
     "GAMMA_DYNAMICS_V2": ("zomma", "color", "speed", "gamma", "vomma", "ultima"),
-    "GAMMA_DYNAMICS_V3": ("gamma", "speed", "color", "charm", "delta"),
+    "GAMMA_DYNAMICS_V3": ("gamma", "speed", "vomma", "charm", "delta"),
     "DELTA_DYNAMICS": ("ultima", "zomma", "gamma", "speed", "color", "delta"),
 }
 GAMMA_SYSTEMS = {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2", "GAMMA_DYNAMICS_V3"}
@@ -552,12 +552,12 @@ class OutcomeAttributionTracker:
                 metrics=gamma.chain_metrics
                 return [
                     f"Gamma 3.0 selected strike {metrics.get('selected_strike',0):.2f} after a quiet five-minute coil and ${abs(metrics.get('net_gex_strike',0))/1e9:.2f}B signed GEX.",
-                    f"Speed and Color supplied {side} directional pressure while short-dated Charm was negative and accelerating lower.",
+                    f"Speed supplied {side} directional pressure while Vomma expanded and short-dated Charm was negative and accelerating lower.",
                     "The call tracks a 1.25-point QQQ target over five minutes; its hedge-impulse score is a pre-calibration proxy, not a guaranteed point forecast.",
                 ]
             inputs = gamma.inputs
             version = "2.0" if system == "GAMMA_DYNAMICS_V2" else "3.0" if system == "GAMMA_DYNAMICS_V3" else "1.0"
-            intensity_terms = "Zomma/Color/Vomma/Ultima" if system == "GAMMA_DYNAMICS_V2" else "Gamma/Speed/Color/Charm/Delta" if system == "GAMMA_DYNAMICS_V3" else "Zomma/Color"
+            intensity_terms = "Zomma/Color/Vomma/Ultima" if system == "GAMMA_DYNAMICS_V2" else "Gamma/Speed/Vomma/Charm/Delta" if system == "GAMMA_DYNAMICS_V3" else "Zomma/Color"
             greek_count = "six" if system == "GAMMA_DYNAMICS_V2" else "five" if system == "GAMMA_DYNAMICS_V3" else "four"
             return [
                 f"Speed {inputs.get('speed', 0):+.4g} supplies the {side} direction while Gamma magnitude {abs(inputs.get('gamma', 0)):.4g} supplies the active curvature base.",
