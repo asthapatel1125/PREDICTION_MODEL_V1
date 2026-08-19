@@ -491,12 +491,12 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .dynamics-scorecard-grid article>div.dynamics-live-summary{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:8px}.dynamics-live-summary span{min-height:45px}.dynamics-live-summary span>b{font-size:10px}.dynamics-live-summary .bias.upward b,.dynamics-live-summary .target-time.within-target b{color:#5ee1b8}.dynamics-live-summary .bias.downward b,.dynamics-live-summary .target-time.over-target b{color:#ff8292}.dynamics-live-summary .bias.wait b{color:#e7c65e}.dynamics-live-summary .open-calls b{color:#8bd7ff}.dynamics-live-summary .open-calls i{color:#5ee1b8}.dynamics-live-summary .open-calls strong{color:#ff8292;font:inherit}
 
 /* Gamma 3.0 is visually distinct from the existing green, pink and purple systems. */
-#gamma-dynamics-v3.overview-disclosure{border:2px solid #d94e5a;box-shadow:0 0 0 1px rgba(255,93,104,.14),0 16px 38px rgba(0,0,0,.22)}
-#gamma-dynamics-v3 .overview-disclosure>summary{border-bottom-color:rgba(255,93,104,.34)}
-#gamma-dynamics-v3 .overview-disclosure>summary::before{background:#ff5d68}
-#gamma-dynamics-v3 .overview-disclosure>summary span{color:#ff8c95}
-#gamma-dynamics-v3 .gamma-dynamics{border-color:#a84651}
-#gamma-dynamics-v3 .gamma-dynamics .panel-head span,#gamma-dynamics-v3 .gamma-dynamics-chart .panel-head span,#gamma-dynamics-v3 .gamma-dynamics-log .panel-head span{color:#ff8c95}
+#gamma-dynamics-v3.overview-disclosure{border:2px solid #c99a24;box-shadow:0 0 0 1px rgba(255,210,76,.16),0 16px 38px rgba(0,0,0,.22)}
+#gamma-dynamics-v3 .overview-disclosure>summary{border-bottom-color:rgba(255,210,76,.36)}
+#gamma-dynamics-v3 .overview-disclosure>summary::before{background:#ffd24c}
+#gamma-dynamics-v3 .overview-disclosure>summary span{color:#ffe28a}
+#gamma-dynamics-v3 .gamma-dynamics{border-color:#a57d1d}
+#gamma-dynamics-v3 .gamma-dynamics .panel-head span,#gamma-dynamics-v3 .gamma-dynamics-chart .panel-head span,#gamma-dynamics-v3 .gamma-dynamics-log .panel-head span{color:#ffe28a}
 #gamma-dynamics-v3 .gamma-four-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
 #gamma-dynamics-v3 .gamma-v3-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
 #wall-intelligence.overview-disclosure{border:2px solid #347b91;box-shadow:0 0 0 1px rgba(102,217,255,.13),0 16px 38px rgba(0,0,0,.22)}
