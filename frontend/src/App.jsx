@@ -61,6 +61,7 @@ const FALLBACK_INSTRUMENTS = ["SPY", "QQQ", "NDX", "NQ", "ES", "YM"].map(symbol 
 }));
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const optionalNumber = (value) => value === null || value === undefined || value === "" ? NaN : number(value, NaN);
+const compactNumber = value => {const numeric=optionalNumber(value);if(!Number.isFinite(numeric))return "—";const absolute=Math.abs(numeric);if(absolute>=1e9)return `${numeric<0?"-":""}${(absolute/1e9).toFixed(2)}B`;if(absolute>=1e6)return `${numeric<0?"-":""}${(absolute/1e6).toFixed(2)}M`;if(absolute>=1e3)return `${numeric<0?"-":""}${(absolute/1e3).toFixed(1)}K`;return numeric.toFixed(3)};
 const greekValue = (row, name) => optionalNumber(row?.greeks?.[name] ?? row?.supporting_indicators?.[`greek_${name}`]);
 const pct = (value) => `${(number(value) * 100).toFixed(1)}%`;
 const pretty = (value = "") => String(value).replaceAll("_", " ");
@@ -836,7 +837,7 @@ function DailyMicrostructureModule({report,symbol}){
 
 function GammaDynamicsV3Metrics({model}){
   const metrics=model.chain_metrics??{};
-  const cells=[["STRIKE",number(metrics.selected_strike).toFixed(2)],["NET GEX",compact(metrics.net_gex_strike)],["COIL · 5M",`${number(metrics.realized_range_5m).toFixed(3)} pts`],["REALIZED VOL",pct(metrics.realized_vol_5m)],["Δ SCORE · 5M",number(metrics.dscore).toFixed(3)],["HEDGE IMPULSE",number(metrics.hedge_impulse).toFixed(3)],["SPOT MOMENTUM · 1M",`${number(metrics.spot_momentum_1m)>=0?"+":""}${number(metrics.spot_momentum_1m).toFixed(3)} pts`],["TARGET",`${number(metrics.target_points,1.25).toFixed(2)} pts / ${number(metrics.target_horizon_minutes,5).toFixed(0)}m`]];
+  const cells=[["STRIKE",number(metrics.selected_strike).toFixed(2)],["NET GEX",compactNumber(metrics.net_gex_strike)],["COIL · 5M",`${number(metrics.realized_range_5m).toFixed(3)} pts`],["REALIZED VOL",pct(metrics.realized_vol_5m)],["Δ SCORE · 5M",number(metrics.dscore).toFixed(3)],["HEDGE IMPULSE",number(metrics.hedge_impulse).toFixed(3)],["SPOT MOMENTUM · 1M",`${number(metrics.spot_momentum_1m)>=0?"+":""}${number(metrics.spot_momentum_1m).toFixed(3)} pts`],["TARGET",`${number(metrics.target_points,1.25).toFixed(2)} pts / ${number(metrics.target_horizon_minutes,5).toFixed(0)}m`]];
   return <section className="gamma-v3-metrics">{cells.map(([label,value])=><span key={label}><small>{label}</small><b>{value}</b></span>)}</section>;
 }
 
@@ -1106,7 +1107,7 @@ function GammaDynamicsLog({history,state,symbol,calls=[],version=1}){
     ["BASELINE",Boolean(current.alert_checks?.baseline),`${number(current.history_points).toFixed(0)} / 31 observations`],
     ["COIL",Boolean(current.alert_checks?.coil_range&&current.alert_checks?.coil_volatility),`${number(current.chain_metrics?.realized_range_5m).toFixed(3)} pt / 5m`],
     ["BUILD",Boolean(current.alert_checks?.pressure_score&&current.alert_checks?.speed_acceleration&&current.alert_checks?.color_transition),`Δ score ${number(current.chain_metrics?.dscore).toFixed(3)}`],
-    ["FUEL",Boolean(current.alert_checks?.net_gex&&current.alert_checks?.hedge_fuel),`${compact(current.chain_metrics?.net_gex_strike)} GEX`],
+    ["FUEL",Boolean(current.alert_checks?.net_gex&&current.alert_checks?.hedge_fuel),`${compactNumber(current.chain_metrics?.net_gex_strike)} GEX`],
     ["EARLY",Boolean(current.alert_checks?.early),`${number(current.chain_metrics?.spot_momentum_1m)>=0?"+":""}${number(current.chain_metrics?.spot_momentum_1m).toFixed(3)} pt / 1m`],
   ]:v2?[
     ["BASELINE",Boolean(current.alert_checks?.baseline),`${number(current.history_points).toFixed(0)} / 20 observations`],
