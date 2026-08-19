@@ -13,8 +13,10 @@ SYSTEM_GREEKS = {
     "PRIMARY_OPTIONS": ("gamma", "vanna", "charm", "speed", "zomma", "color", "ultima"),
     "GAMMA_DYNAMICS": ("zomma", "color", "speed", "gamma"),
     "GAMMA_DYNAMICS_V2": ("zomma", "color", "speed", "gamma", "vomma", "ultima"),
+    "GAMMA_DYNAMICS_V3": ("gamma", "speed", "color", "charm", "delta"),
     "DELTA_DYNAMICS": ("ultima", "zomma", "gamma", "speed", "color", "delta"),
 }
+GAMMA_SYSTEMS = {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2", "GAMMA_DYNAMICS_V3"}
 
 
 class OutcomeAttributionTracker:
@@ -97,7 +99,16 @@ class OutcomeAttributionTracker:
         """Describe the target without pretending that QQQ and NQ share a point scale."""
         if symbol == "QQQ":
             eastern=timestamp.astimezone(self.eastern)
-            if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
+            if system == "GAMMA_DYNAMICS_V3":
+                return {
+                    "target_points":1.25,
+                    "target_basis":"GAMMA_3_EARLY_MOVE_FIXED_5_MINUTE_TARGET",
+                    "target_nq_points":None,
+                    "target_conversion_method":"OBSERVED_QQQ_PRICE_TARGET",
+                    "target_conversion_quality":"TRACKED_TARGET_NOT_CALIBRATED_FORECAST",
+                    "target_label":"1.25-POINT / 5-MINUTE EARLY-MOVE TARGET",
+                }
+            if system in GAMMA_SYSTEMS:
                 morning=eastern.weekday()<5 and time(9,30)<=eastern.time()<time(12,0)
                 target_points=1.25 if morning else .75
                 return {
@@ -216,6 +227,9 @@ class OutcomeAttributionTracker:
         gamma_v2 = getattr(state,"gamma_dynamics_v2",None)
         if gamma_v2 and gamma_v2.qualified and gamma_v2.decision != Direction.NEUTRAL:
             systems.append(("GAMMA_DYNAMICS_V2", gamma_v2.decision))
+        gamma_v3 = getattr(state,"gamma_dynamics_v3",None)
+        if gamma_v3 and gamma_v3.qualified and gamma_v3.decision != Direction.NEUTRAL:
+            systems.append(("GAMMA_DYNAMICS_V3", gamma_v3.decision))
         zone = getattr(state,"zone_intelligence",None)
         if zone and zone.qualified and zone.direction != Direction.NEUTRAL:
             systems.append(("DELTA_DYNAMICS", zone.direction))
@@ -226,8 +240,8 @@ class OutcomeAttributionTracker:
         if greeks is None:
             return {}
         direction_sign = self._direction_sign(direction)
-        if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
-            model = getattr(state,"gamma_dynamics_v2",None) if system == "GAMMA_DYNAMICS_V2" else state.gamma_dynamics
+        if system in GAMMA_SYSTEMS:
+            model = (getattr(state,"gamma_dynamics_v2",None) if system == "GAMMA_DYNAMICS_V2" else getattr(state,"gamma_dynamics_v3",None) if system == "GAMMA_DYNAMICS_V3" else state.gamma_dynamics)
             if model:
                 normalized=getattr(model,"normalized",{})
                 return {
@@ -253,8 +267,8 @@ class OutcomeAttributionTracker:
             # strike/moneyness and IV-change surface.
             scores[name] = (
                 direction_sign * sign * percentile
-                if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} and name == "speed"
-                else percentile if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}
+                if system in GAMMA_SYSTEMS and name == "speed"
+                else percentile if system in GAMMA_SYSTEMS
                 else direction_sign * sign * percentile
             )
         return scores
@@ -285,7 +299,7 @@ class OutcomeAttributionTracker:
         shortfall = max(0.0, target-final_price if is_long else final_price-target)
         favorable = max(0.0, float(record.get("favorable_points", 0.0)))
         partial_threshold = float(record.get("partial_target_points", float(record["target_points"]) * 0.6))
-        directional_success = record.get("system") in {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2"} and (
+        directional_success = record.get("system") in GAMMA_SYSTEMS and (
             final_price > float(record["entry_price"]) if is_long else final_price < float(record["entry_price"])
         )
         record.update(
@@ -311,7 +325,7 @@ class OutcomeAttributionTracker:
         """Close live calls at their last real tick when their stream ends."""
         updates: list[dict[str, Any]] = []
         for signal_id, record in list(self._active.items()):
-            if record.get("system") not in {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2"}:
+            if record.get("system") not in GAMMA_SYSTEMS:
                 continue
             last_observed = record.get("current_price_at") or record.get("price_observed_at") or record["alerted_at"]
             final_at = min(ended_at, last_observed) if ended_at and last_observed else (ended_at or last_observed)
@@ -348,7 +362,7 @@ class OutcomeAttributionTracker:
         return updates
 
     def _call_id(self,timestamp:datetime,system:str)->str:
-        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3,"DELTA_DYNAMICS":4,"GAMMA_DYNAMICS_V2":5}[system]
+        stream={"PRIMARY_OPTIONS":1,"GAMMA_DYNAMICS":3,"DELTA_DYNAMICS":4,"GAMMA_DYNAMICS_V2":5,"GAMMA_DYNAMICS_V3":6}[system]
         eastern=timestamp.astimezone(self.eastern)
         milliseconds=eastern.microsecond//1000
         return f"{eastern:%Y%m%d%H%M%S}{milliseconds:03d}{stream:02d}"
@@ -401,7 +415,7 @@ class OutcomeAttributionTracker:
         parent=float(record["entry_price"])
         is_long=record["direction"]==Direction.UP.value
         adverse=max(0.0,parent-price if is_long else price-parent)
-        gamma_family=record.get("system") in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}
+        gamma_family=record.get("system") in GAMMA_SYSTEMS
         thresholds=[float(value) for value in record.get(
             "family_trigger_levels",
             [0.0,2.0,4.0,6.0,8.0] if gamma_family else [0.0,4.0,6.0,8.0],
@@ -411,7 +425,7 @@ class OutcomeAttributionTracker:
         for leg_number,threshold in enumerate(thresholds[1:],start=2):
             if adverse<threshold or threshold in active_thresholds:
                 continue
-            gamma=(getattr(state,"gamma_dynamics_v2",None) if record.get("system")=="GAMMA_DYNAMICS_V2" else state.gamma_dynamics) if gamma_family else None
+            gamma=(getattr(state,"gamma_dynamics_v2",None) if record.get("system")=="GAMMA_DYNAMICS_V2" else getattr(state,"gamma_dynamics_v3",None) if record.get("system")=="GAMMA_DYNAMICS_V3" else state.gamma_dynamics) if gamma_family else None
             requires_recheck=gamma_family and threshold>=4.0
             direction_match=bool(gamma and gamma.decision.value==record["direction"])
             qualified=bool(gamma and gamma.qualified and direction_match)
@@ -524,8 +538,8 @@ class OutcomeAttributionTracker:
     def _decision_reasons(system: str, state: MarketState, direction: Direction) -> list[str]:
         side = "bullish" if direction == Direction.UP else "bearish"
         sign_word = "positive" if direction == Direction.UP else "negative"
-        if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
-            gamma = getattr(state,"gamma_dynamics_v2",None) if system=="GAMMA_DYNAMICS_V2" else state.gamma_dynamics
+        if system in GAMMA_SYSTEMS:
+            gamma = getattr(state,"gamma_dynamics_v2",None) if system=="GAMMA_DYNAMICS_V2" else getattr(state,"gamma_dynamics_v3",None) if system=="GAMMA_DYNAMICS_V3" else state.gamma_dynamics
             if not gamma:return []
             if system == "GAMMA_DYNAMICS_V2":
                 metrics = gamma.chain_metrics
@@ -534,10 +548,17 @@ class OutcomeAttributionTracker:
                     f"OI-weighted Charm plus Net Dealer Delta establish the {side} direction; model probability is {gamma.probability:.1%}.",
                     f"Weighted Speed, Color, liquidity, ATM spread, market-time, and cooldown gates passed for Gamma Dynamics 2.0.",
                 ]
+            if system == "GAMMA_DYNAMICS_V3":
+                metrics=gamma.chain_metrics
+                return [
+                    f"Gamma 3.0 selected strike {metrics.get('selected_strike',0):.2f} after a quiet five-minute coil and ${abs(metrics.get('net_gex_strike',0))/1e9:.2f}B signed GEX.",
+                    f"Speed and Color supplied {side} directional pressure while short-dated Charm was negative and accelerating lower.",
+                    "The call tracks a 1.25-point QQQ target over five minutes; its hedge-impulse score is a pre-calibration proxy, not a guaranteed point forecast.",
+                ]
             inputs = gamma.inputs
-            version = "2.0" if system == "GAMMA_DYNAMICS_V2" else "1.0"
-            intensity_terms = "Zomma/Color/Vomma/Ultima" if system == "GAMMA_DYNAMICS_V2" else "Zomma/Color"
-            greek_count = "six" if system == "GAMMA_DYNAMICS_V2" else "four"
+            version = "2.0" if system == "GAMMA_DYNAMICS_V2" else "3.0" if system == "GAMMA_DYNAMICS_V3" else "1.0"
+            intensity_terms = "Zomma/Color/Vomma/Ultima" if system == "GAMMA_DYNAMICS_V2" else "Gamma/Speed/Color/Charm/Delta" if system == "GAMMA_DYNAMICS_V3" else "Zomma/Color"
+            greek_count = "six" if system == "GAMMA_DYNAMICS_V2" else "five" if system == "GAMMA_DYNAMICS_V3" else "four"
             return [
                 f"Speed {inputs.get('speed', 0):+.4g} supplies the {side} direction while Gamma magnitude {abs(inputs.get('gamma', 0)):.4g} supplies the active curvature base.",
                 f"{intensity_terms} normalized intensity is {gamma.intensity:.1%}, against the {gamma.intensity_threshold:.1%} qualification threshold.",
@@ -584,7 +605,11 @@ class OutcomeAttributionTracker:
                 updates.append(dict(record))
                 continue
             scores = self._relative_scores(symbol, record["system"], state, Direction(record["direction"]))
-            greek_values = ({name:float(getattr(state.greeks,name)) for name in SYSTEM_GREEKS[record["system"]]} if state.greeks else {})
+            greek_values = (
+                dict(getattr(state,"gamma_dynamics_v3",None).inputs)
+                if record["system"]=="GAMMA_DYNAMICS_V3" and getattr(state,"gamma_dynamics_v3",None)
+                else {name:float(getattr(state.greeks,name)) for name in SYSTEM_GREEKS[record["system"]]} if state.greeks else {}
+            )
             greek_highs = dict(record.get("greek_values_highest") or record.get("greek_values_at_signal") or greek_values)
             greek_lows = dict(record.get("greek_values_lowest") or record.get("greek_values_at_signal") or greek_values)
             for name,value in greek_values.items():
@@ -748,6 +773,10 @@ class OutcomeAttributionTracker:
             target_points=float(target_spec["target_points"])
             target_price=price+target_points if direction==Direction.UP else price-target_points
             expires_at=now+self.horizon
+            if system=="GAMMA_DYNAMICS_V3":
+                # Gamma 3.0's claim is explicitly a five-minute early move;
+                # a 60-minute outcome would make that claim untestable.
+                expires_at=now+timedelta(minutes=5)
             if system=="GAMMA_DYNAMICS_V2" and state.gamma_dynamics_v2:
                 metrics=state.gamma_dynamics_v2.chain_metrics
                 # The v2 execution model uses the real-zero-gamma take-profit
@@ -832,18 +861,26 @@ class OutcomeAttributionTracker:
                 "greek_scores_current": scores,
                 "greek_scores_at_high": scores,
                 "greek_scores_at_low": scores,
-                "greek_values_at_signal": {
-                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
-                } if state.greeks else {},
-                "greek_values_current": {
-                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
-                } if state.greeks else {},
-                "greek_values_highest": {
-                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
-                } if state.greeks else {},
-                "greek_values_lowest": {
-                    name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]
-                } if state.greeks else {},
+                "greek_values_at_signal": (
+                    dict(getattr(state,"gamma_dynamics_v3",None).inputs)
+                    if system=="GAMMA_DYNAMICS_V3" and getattr(state,"gamma_dynamics_v3",None)
+                    else {name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]} if state.greeks else {}
+                ),
+                "greek_values_current": (
+                    dict(getattr(state,"gamma_dynamics_v3",None).inputs)
+                    if system=="GAMMA_DYNAMICS_V3" and getattr(state,"gamma_dynamics_v3",None)
+                    else {name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]} if state.greeks else {}
+                ),
+                "greek_values_highest": (
+                    dict(getattr(state,"gamma_dynamics_v3",None).inputs)
+                    if system=="GAMMA_DYNAMICS_V3" and getattr(state,"gamma_dynamics_v3",None)
+                    else {name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]} if state.greeks else {}
+                ),
+                "greek_values_lowest": (
+                    dict(getattr(state,"gamma_dynamics_v3",None).inputs)
+                    if system=="GAMMA_DYNAMICS_V3" and getattr(state,"gamma_dynamics_v3",None)
+                    else {name: float(getattr(state.greeks, name)) for name in SYSTEM_GREEKS[system]} if state.greeks else {}
+                ),
                 "gamma_dynamics_at_signal": (
                     state.gamma_dynamics.model_dump(mode="json")
                     if system == "GAMMA_DYNAMICS" and state.gamma_dynamics else None
@@ -851,6 +888,10 @@ class OutcomeAttributionTracker:
                 "gamma_dynamics_v2_at_signal": (
                     state.gamma_dynamics_v2.model_dump(mode="json")
                     if system == "GAMMA_DYNAMICS_V2" and getattr(state,"gamma_dynamics_v2",None) else None
+                ),
+                "gamma_dynamics_v3_at_signal": (
+                    state.gamma_dynamics_v3.model_dump(mode="json")
+                    if system == "GAMMA_DYNAMICS_V3" and getattr(state,"gamma_dynamics_v3",None) else None
                 ),
                 "zone_intelligence_at_signal": (
                     state.zone_intelligence.model_dump(mode="json")
@@ -863,7 +904,7 @@ class OutcomeAttributionTracker:
                 "qqq_price": price if symbol == "QQQ" else None,
                 "family_id":call_id,
                 "family_parent_call_id":f"{call_id}.1",
-                "family_trigger_levels":[0.0,2.0,4.0,6.0,8.0] if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} else [0.0,4.0,6.0,8.0],
+                "family_trigger_levels":[0.0,2.0,4.0,6.0,8.0] if system in GAMMA_SYSTEMS else [0.0,4.0,6.0,8.0],
                 "family_legs":[{
                     "call_id":f"{call_id}.1",
                     "leg_number":1,
@@ -880,8 +921,8 @@ class OutcomeAttributionTracker:
                 "family_total_pl_points":0.0,
                 "family_average_pl_points":0.0,
                 "family_outcome_state":"BREAK_EVEN",
-                "family_stage":"1 OF 5 LEGS" if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} else "1 OF 4 LEGS",
-                "family_next_trigger_points":2.0 if system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} else 4.0,
+                "family_stage":"1 OF 5 LEGS" if system in GAMMA_SYSTEMS else "1 OF 4 LEGS",
+                "family_next_trigger_points":2.0 if system in GAMMA_SYSTEMS else 4.0,
                 "family_last_updated_at":now,
                 "family_gamma_rechecks":{},
             }

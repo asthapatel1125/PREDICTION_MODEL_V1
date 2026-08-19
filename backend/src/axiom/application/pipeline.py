@@ -28,6 +28,7 @@ from axiom.domain.models import Alert, GammaDynamics, Greeks, MarketBar, MarketS
 
 try:
     from axiom.analytics.gamma_dynamics import GammaDynamicsQuartet, GammaDynamicsSix
+    from axiom.analytics.gamma_dynamics_v3 import GammaDynamicsEarlyMove
 except ModuleNotFoundError:
     # Backward-compatible single-file implementations for deployments where
     # the optional analytics modules have not been added to GitHub yet.
@@ -66,6 +67,9 @@ except ModuleNotFoundError:
     class GammaDynamicsSix(GammaDynamicsQuartet):
         def __init__(self,intensity_threshold:float=.65,minimum_history:int=720,zero_tolerance:float=1e-12):
             super().__init__(intensity_threshold,minimum_history,zero_tolerance)
+    class GammaDynamicsEarlyMove:
+        def calculate(self,contracts,spot,timestamp,source_symbol):
+            return GammaDynamicsQuartet().calculate(Greeks(),[],source_symbol)
 
 
 class DecisionPipeline:
@@ -80,6 +84,7 @@ class DecisionPipeline:
         self.profiles=AlertProfileSelector(market_timezone); self.signal=TradeSignalGenerator(); self.explanations=AlertExplanationEngine()
         self.gamma_dynamics=GammaDynamicsQuartet()
         self.gamma_dynamics_v2=GammaDynamicsSix()
+        self.gamma_dynamics_v3=GammaDynamicsEarlyMove()
         self.zone_intelligence=ZoneIntelligenceEngine(market_timezone=market_timezone)
         self.sessions=IntradaySessionClassifier(config.session_model,market_timezone)
         self._explosions:dict[str,deque]=defaultdict(lambda:deque(maxlen=1000)); self._performance=PerformanceWindow(); self._events:list[datetime]=[]
@@ -254,10 +259,16 @@ class DecisionPipeline:
             chain_metrics=v2_metrics,metric_history=gamma_metric_history,
             timestamp=bar.timestamp,
         )
+        # Gamma 3.0 deliberately receives the unreduced contract snapshot.
+        # Its five-minute coil and per-strike pressure gates cannot be
+        # recovered from the aggregate Greek bar used by the earlier engines.
+        gamma_dynamics_v3=self.gamma_dynamics_v3.calculate(
+            bar.gamma_ticks,bar.close,bar.timestamp,bar.symbol,
+        )
         zone_intelligence=self.zone_intelligence.calculate(primary.greeks,[item.greeks for item in sample],bar.timestamp,bar.symbol)
         state=MarketState(timestamp=bar.timestamp,symbol=bar.symbol,regime=regime,profile=profile,explosion=explosion,direction=direction,
             pressure=pressure,dealer_hedging=hedging,momentum=momentum,confidence=confidence,risk=risk,micro_range=micro,
-            timeframe_alignment=alignment,greeks=primary.greeks,gamma_dynamics=gamma_dynamics,gamma_dynamics_v2=gamma_dynamics_v2,zone_intelligence=zone_intelligence,
+            timeframe_alignment=alignment,greeks=primary.greeks,gamma_dynamics=gamma_dynamics,gamma_dynamics_v2=gamma_dynamics_v2,gamma_dynamics_v3=gamma_dynamics_v3,zone_intelligence=zone_intelligence,
             session_analysis=session_analysis,supporting_indicators={"price":primary.close,"realized_vol_ratio":vol_ratio,"regime_confidence":regime_confidence,"spread":bar.bid_ask_spread,"volume":bar.volume,
                 "contract_count":float(bar.contract_count),"open_interest_total":bar.open_interest,
                 "clock_session":session_analysis["clock_session"],

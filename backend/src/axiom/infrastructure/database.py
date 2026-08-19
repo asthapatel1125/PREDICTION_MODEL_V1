@@ -226,11 +226,17 @@ class SqlAlchemyRepository:
     async def save_gamma_ticks(self,ticks:list[dict[str,Any]])->None:
         """Append one complete chain using a single bulk database operation."""
         if not ticks:return
+        # Live analytics may attach transient fields (for example IV, expiry
+        # years, and volume) that are useful to an in-memory signal model but
+        # are not columns in the durable gamma_ticks table. Persist only the
+        # table contract so a new analytic field can never break the stream.
+        columns=set(GammaTickRow.__table__.columns.keys())
+        rows=[{key:value for key,value in tick.items() if key in columns} for tick in ticks]
         async with self.sessions() as s:
             # Snapshot timestamps are unique per successful live poll, so a
             # preflight SELECT for every contract only burns CPU and memory.
             # One executemany insert keeps a full chain atomic and short-lived.
-            await s.execute(GammaTickRow.__table__.insert(),ticks)
+            await s.execute(GammaTickRow.__table__.insert(),rows)
             await s.commit()
 
     async def save_confluence(self,state:MarketState)->None:
@@ -361,7 +367,7 @@ class SqlAlchemyRepository:
         favorable=max(0.0,float(payload.get("favorable_points",0.0)))
         target_points=float(payload.get("target_points",abs(target-entry)))
         partial_threshold=float(payload.get("partial_target_points",target_points*0.6))
-        directional_success=row.system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"} and (
+        directional_success=row.system in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3"} and (
             final_price>entry if row.direction=="UP" else final_price<entry)
         failure_scores=dict(payload.get("greek_scores_current") or {})
         ordered=[name for name,_ in sorted(failure_scores.items(),key=lambda item:(-float(item[1]),item[0]))]
@@ -394,7 +400,7 @@ class SqlAlchemyRepository:
     @staticmethod
     def _reconcile_interrupted_gamma_outcome(row:SystemOutcomeRow,now:datetime,stale_seconds:int=90)->bool:
         """Stop Gamma calls whose persisted stream has stopped advancing."""
-        if row.system not in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2"}:
+        if row.system not in {"GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3"}:
             return False
         payload=dict(row.payload)
         if str(payload.get("status") or row.status or "TRACKING").upper()!="TRACKING":
@@ -442,7 +448,7 @@ class SqlAlchemyRepository:
                 changed=self._reconcile_interrupted_gamma_outcome(row,now) or changed
             if changed:await s.commit()
         systems={}
-        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","DELTA_DYNAMICS"):
+        for system in ("PRIMARY_OPTIONS","GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3","DELTA_DYNAMICS"):
             items=[dict(row.payload) for row in rows if row.system==system]
             # Every database row has a stable primary-key/call ID. Never hide
             # a live call merely because another call shares its direction or

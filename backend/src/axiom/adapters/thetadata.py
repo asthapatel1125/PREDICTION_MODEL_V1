@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import re
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -288,15 +288,26 @@ class ThetaDataV3Client(MarketDataPort):
             if strike is None or strike <= 0:
                 continue
             bid_size=cls._number(row.get("bid_size")); ask_size=cls._number(row.get("ask_size"))
+            expiration=str(row.get("expiration") or "")
+            expiry_date=cls._expiration_date(expiration)
+            # The contract expires at the regular-session close for the
+            # purposes of a short-dated risk gate.  This is deliberately not
+            # an options-pricing clock; it only prevents already-expired data
+            # from entering Gamma 3.0.
+            expiry_at=(datetime.combine(expiry_date,time(16,0),tzinfo=ZoneInfo("America/New_York")) if expiry_date else None)
+            observed_et=observed_at.astimezone(ZoneInfo("America/New_York"))
+            years_to_expiry=max(0.0,(expiry_at-observed_et).total_seconds()/(365.25*24*60*60)) if expiry_at else 0.0
             ticks.append({
-                "timestamp": observed_at, "symbol": symbol.upper(), "expiration": str(row.get("expiration") or ""),
+                "timestamp": observed_at, "symbol": symbol.upper(), "expiration": expiration,
                 "right": str(row.get("right") or "").upper(), "strike": strike,
                 "open_interest": cls._number(row.get("open_interest")), "gamma": cls._number(row.get("gamma")),
                 "delta": cls._number(row.get("delta")), "speed": cls._number(row.get("speed")),
                 "color": cls._number(row.get("color")), "charm": cls._number(row.get("charm")),
                 "bid": cls._number(row.get("bid")), "ask": cls._number(row.get("ask")),
                 "bid_size": bid_size, "ask_size": ask_size, "underlying_price": spot,
-                "depth": bid_size + ask_size,
+                "depth": bid_size + ask_size, "volume": cls._number(row.get("volume")),
+                "implied_volatility": cls._number(row.get("implied_volatility") or row.get("implied_vol") or row.get("iv")),
+                "time_to_expiry_years": years_to_expiry,
             })
         return ticks
 

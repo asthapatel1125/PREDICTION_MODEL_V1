@@ -173,6 +173,9 @@ class MarketState(FrozenModel):
     greeks: Greeks | None = None
     gamma_dynamics: GammaDynamics | None = None
     gamma_dynamics_v2: GammaDynamics | None = None
+    # Gamma 3.0 is intentionally independent from the first two Gamma
+    # systems: it evaluates a per-strike, short-dated early-move setup.
+    gamma_dynamics_v3: GammaDynamics | None = None
     zone_intelligence: ZoneIntelligence | None = None
     session_analysis: dict[str, Any] = Field(default_factory=dict)
     # Indicators include numeric scores, integer counts, flags, and labels.
