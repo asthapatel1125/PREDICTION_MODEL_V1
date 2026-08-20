@@ -1,0 +1,13 @@
+/* Zero Gamma Exposure chart: left-side timeframe rail and an in-viewport hover card. */
+.zero-gamma-frame{grid-template-columns:38px 74px minmax(0,1fr) 146px;isolation:isolate}
+.zero-gamma-time-side-rail{position:relative;grid-column:1;grid-row:1;border-right:1px solid #1b4058;background:#07111b}
+.zero-gamma-time-rail{position:absolute;z-index:8;inset:7px 4px 12px;display:grid;grid-template-columns:1fr;align-content:space-evenly;gap:2px}
+.zero-gamma-time-rail button{min-width:0;height:18px;padding:1px 0;border:1px solid #315b75;border-radius:3px;background:#0b1b29;color:#a9c6d6;font:700 7px var(--font-mono,monospace);cursor:pointer}
+.zero-gamma-time-rail button:hover{background:#16425b;color:#e7f8ff}
+.zero-gamma-time-rail button.active{border-color:#60d9ff;background:#59cbed;color:#07131b}
+.zero-gamma-axis{grid-column:2;grid-row:1}
+.zero-gamma-scroll{position:relative;grid-column:3;grid-row:1}
+.zero-gamma-rail{grid-column:4;grid-row:1}
+.zero-gamma-tooltip{z-index:80;top:16px;max-width:234px;white-space:nowrap}
+.zero-gamma-tooltip.left,.zero-gamma-tooltip.right{transform:none}
+@media(max-width:850px){.zero-gamma-frame{grid-template-columns:32px 54px minmax(0,1fr) 116px}.zero-gamma-time-rail{left:3px;right:3px}.zero-gamma-time-rail button{height:17px;font-size:6px}}
