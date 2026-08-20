@@ -1776,6 +1776,7 @@ function ZeroGammaExposureChart({rows=[]}){
 }
 
 function GammaExposureLevelLog({rows=[]}){
+  const [draftFilters,setDraftFilters]=useState({date:"ALL",tier:"ALL",side:"ALL"}),[filters,setFilters]=useState({date:"ALL",tier:"ALL",side:"ALL"});
   const entries=useMemo(()=>{
     const observations=rows.map(row=>{
       const strike=number(row?.walls?.ZERO_GAMMA?.strike),spot=number(row?.spot),timestamp=Date.parse(row?.timestamp||"");
@@ -1783,7 +1784,7 @@ function GammaExposureLevelLog({rows=[]}){
       const tier=String(row?.walls?.ZERO_GAMMA?.tier||"WEAKEST").toUpperCase();
       // This reports the price position relative to zero gamma, rather than tape flow.
       const gammaState=spot>=strike?"POSITIVE":"NEGATIVE";
-      return {timestamp:row.timestamp,at:timestamp,strike,spot,tier,gammaState};
+      return {timestamp:row.timestamp,at:timestamp,strike,spot,tier,gammaState,date:logDate(row.timestamp)};
     }).filter(Boolean).sort((a,b)=>a.at-b.at);
     const groups=[];
     observations.forEach(observation=>{
@@ -1796,13 +1797,16 @@ function GammaExposureLevelLog({rows=[]}){
     });
     return groups.reverse();
   },[rows]);
+  const dates=useMemo(()=>[...new Set(entries.map(entry=>entry.started.date))],[entries]);
+  const shownEntries=useMemo(()=>entries.filter(entry=>(filters.date==="ALL"||entry.started.date===filters.date)&&(filters.tier==="ALL"||entry.tier===filters.tier)&&(filters.side==="ALL"||entry.gammaState===filters.side)),[entries,filters]);
   const duration=entry=>Math.max(0,entry.final.at-entry.started.at);
   const formatDuration=milliseconds=>{
     const seconds=Math.round(milliseconds/1000),minutes=Math.floor(seconds/60),remaining=seconds%60;
     return minutes?`${minutes}m ${String(remaining).padStart(2,"0")}s`:`${remaining}s`;
   };
-  const copy=()=>navigator.clipboard?.writeText(["TRIGGERED ET","ZERO GAMMA LEVEL","FINAL ET","HELD","STRENGTH","GAMMA REGIME"].join("\t")+"\n"+entries.map(entry=>[`${logDate(entry.started.timestamp)} · ${logTime(entry.started.timestamp)}`,entry.started.strike.toFixed(2),`${logDate(entry.final.timestamp)} · ${logTime(entry.final.timestamp)}`,formatDuration(duration(entry)),entry.tier,`${entry.gammaState} GAMMA`].join("\t")).join("\n"));
-  return <section className="gamma-exposure-level-log" aria-label="Gamma exposure level history"><header><div><span>GAMMA EXPOSURE LEVEL LOG</span><h3>Zero-gamma levels — triggered, held, and changed</h3></div><button type="button" onClick={copy} disabled={!entries.length}>COPY DATA</button></header><p>Each row is one uninterrupted zero-gamma level and regime. Positive means QQQ was at or above zero gamma; negative means it was below.</p><div className="gamma-exposure-level-scroll"><table><thead><tr><th>TRIGGERED · ET</th><th>ZERO Γ LEVEL</th><th>FINAL · ET</th><th>HELD</th><th>STRENGTH</th><th>GAMMA SIDE</th></tr></thead><tbody>{entries.map((entry,index)=>{const live=index===0;return <tr key={`${entry.started.timestamp}-${entry.levelKey}-${entry.tier}-${entry.gammaState}`}><td>{logDate(entry.started.timestamp)} · {logTime(entry.started.timestamp)}</td><td><b className="zero-level-value">{entry.started.strike.toFixed(2)}</b></td><td>{live?<b className="gamma-level-live">LIVE · {logTime(entry.final.timestamp)}</b>:<>{logDate(entry.final.timestamp)} · {logTime(entry.final.timestamp)}</>}</td><td>{formatDuration(duration(entry))}</td><td><b className={`gamma-level-tier ${entry.tier.toLowerCase()}`}>{entry.tier}</b></td><td><b className={`gamma-level-side ${entry.gammaState.toLowerCase()}`}>{entry.gammaState} Γ</b></td></tr>})}</tbody></table>{!entries.length&&<div className="gamma-level-empty">Waiting for the first valid zero-gamma observation.</div>}</div></section>;
+  const copy=()=>navigator.clipboard?.writeText(["STRENGTH","GAMMA SIDE","ZERO GAMMA LEVEL","HELD","TRIGGERED ET","FINAL ET"].join("\t")+"\n"+shownEntries.map(entry=>[entry.tier,`${entry.gammaState} GAMMA`,entry.started.strike.toFixed(2),formatDuration(duration(entry)),`${logDate(entry.started.timestamp)} · ${logTime(entry.started.timestamp)}`,`${logDate(entry.final.timestamp)} · ${logTime(entry.final.timestamp)}`].join("\t")).join("\n"));
+  const updateDraft=(field,value)=>setDraftFilters(current=>({...current,[field]:value}));
+  return <section className="gamma-exposure-level-log" aria-label="Gamma exposure level history"><header><div><span>GAMMA EXPOSURE LEVEL LOG</span><h3>Zero-gamma levels — triggered, held, and changed</h3></div><button type="button" onClick={copy} disabled={!shownEntries.length}>COPY DATA</button></header><p>Each row is one uninterrupted zero-gamma level and regime. Positive means QQQ was at or above zero gamma; negative means it was below.</p><form className="gamma-level-filters" onSubmit={event=>{event.preventDefault();setFilters({...draftFilters})}}><label>DATE<select value={draftFilters.date} onChange={event=>updateDraft("date",event.target.value)}><option value="ALL">ALL DATES</option>{dates.map(date=><option key={date} value={date}>{date}</option>)}</select></label><label>STRENGTH<select value={draftFilters.tier} onChange={event=>updateDraft("tier",event.target.value)}><option value="ALL">ALL STRENGTHS</option>{["STRONGEST","STRONG","NORMAL","WEAK","WEAKEST"].map(tier=><option key={tier} value={tier}>{tier}</option>)}</select></label><label>GAMMA SIDE<select value={draftFilters.side} onChange={event=>updateDraft("side",event.target.value)}><option value="ALL">POSITIVE + NEGATIVE</option><option value="POSITIVE">POSITIVE Γ</option><option value="NEGATIVE">NEGATIVE Γ</option></select></label><button type="submit">FILTER</button><small>{shownEntries.length} {shownEntries.length===1?"LEVEL":"LEVELS"}</small></form><div className="gamma-exposure-level-scroll"><table><thead><tr><th>STRENGTH</th><th>GAMMA SIDE</th><th>ZERO Γ LEVEL</th><th>HELD</th><th>TRIGGERED · ET</th><th>FINAL · ET</th></tr></thead><tbody>{shownEntries.map((entry,index)=>{const live=index===0&&entries[0]===entry;return <tr key={`${entry.started.timestamp}-${entry.levelKey}-${entry.tier}-${entry.gammaState}`}><td><b className={`gamma-level-tier ${entry.tier.toLowerCase()}`}>{entry.tier}</b></td><td><b className={`gamma-level-side ${entry.gammaState.toLowerCase()}`}>{entry.gammaState} Γ</b></td><td><b className="zero-level-value">{entry.started.strike.toFixed(2)}</b></td><td>{formatDuration(duration(entry))}</td><td>{logDate(entry.started.timestamp)} · {logTime(entry.started.timestamp)}</td><td>{live?<b className="gamma-level-live">LIVE · {logTime(entry.final.timestamp)}</b>:<>{logDate(entry.final.timestamp)} · {logTime(entry.final.timestamp)}</>}</td></tr>})}</tbody></table>{!shownEntries.length&&<div className="gamma-level-empty">No zero-gamma levels match these filters.</div>}</div></section>;
 }
 
 function LegacyDealerFlowLanes({rows,traces,colors,valueFor}){
