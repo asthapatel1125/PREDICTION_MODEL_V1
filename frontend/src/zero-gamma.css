@@ -26,10 +26,12 @@
 .zero-gamma-exposure,.zero-gamma-frame{overflow:hidden}
 .zero-gamma-scroll{overscroll-behavior:contain;contain:paint}
 .zero-gamma-canvas{overflow:hidden;contain:paint;touch-action:none}
-.zero-gamma-canvas.is-panning{cursor:grabbing!important;user-select:none}
+.zero-gamma-canvas,.hedge-plot-canvas{cursor:grab}
+.zero-gamma-canvas.is-panning,.hedge-plot-canvas.is-panning{cursor:grabbing!important;user-select:none}
 .zero-gamma-rail{overscroll-behavior:contain;touch-action:none}
 .zero-gamma-spot-point{fill:#e6edf3;stroke:#07111b;stroke-width:1.1px}
 .zero-gamma-wall-point{fill:#b56cff;stroke:#07111b;stroke-width:1.1px}
+.zero-gamma-qqq-line{stroke:#e6edf3;stroke-width:3px;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none}
 
 /* Consolidated zero-gamma-level history. The body deliberately fits five
    readable rows before it becomes independently scrollable. */
