@@ -226,29 +226,33 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/day-levels")
-    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None):
+    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None):
         """Return the compact Wall Intelligence stream for one 07:00-18:00 ET session.
 
         This purpose-built endpoint avoids loading nested MarketState payloads
-        just to draw a price-and-level chart. The browser reduces the 5-second
-        observations to one-minute display bars while retaining the original
-        full-day stream in the database.
+        just to draw a price-and-level chart. It defaults to compact one-minute
+        display bars; the Zero-Gamma chart requests five-second bars and then
+        polls only the observations newer than its last received timestamp.
         """
         market_tz=ZoneInfo(cfg.market_timezone)
         day=session_date or datetime.now(market_tz).date()
-        start=datetime.combine(day,time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
+        session_start=datetime.combine(day,time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
         end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
+        requested_bucket=5 if int(display_bucket_seconds)<=5 else 60
+        requested_since=_wall_time(since)
+        start=max(session_start,requested_since) if requested_since else session_start
         rows=await container.repository.wall_intelligence_points(symbol,start,end,8_000)
         def observed_at(row:dict[str,Any])->datetime:
             return datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)
 
-        # The database retains each 5-second observation.  The chart receives
-        # only one compact row per minute so it remains responsive for a full
-        # 07:00–18:00 session instead of shipping thousands of nested records.
+        # The database retains each five-second observation.  The default
+        # response remains one-minute compact data; callers that need an exact
+        # short-range view can explicitly request the stored five-second bars.
         minute_buckets:dict[str,dict[str,Any]]={}
         for row in rows:
             observed=observed_at(row)
-            bucket_key=observed.strftime("%Y-%m-%dT%H:%M")
+            bucket_second=(observed.second//requested_bucket)*requested_bucket
+            bucket_key=observed.replace(second=bucket_second,microsecond=0).isoformat()
             wall_subset={key:row.get("walls",{}).get(key,{}) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}
             existing=minute_buckets.get(bucket_key)
             compact_row={"timestamp":row.get("timestamp"),"spot":row.get("spot"),"walls":wall_subset,"volume":float(row.get("volume") or 0.0)}
@@ -284,7 +288,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 "sample_start":sample[0].get("timestamp"),"sample_count":len(sample),
                 "levels":{key:wall_median(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}})
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,
-            "count":len(rows),"display_count":len(minute_buckets),"rows":list(minute_buckets.values()),"cadence_seconds":5,"display_bucket_seconds":60,
+            "count":len(rows),"display_count":len(minute_buckets),"rows":list(minute_buckets.values()),"cadence_seconds":5,"display_bucket_seconds":requested_bucket,
             "phase_anchor_window_seconds":300,"phase_anchors":phase_anchors,
             "disclaimer":"Solid phase levels use the median of the first five minutes of each market phase. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
 

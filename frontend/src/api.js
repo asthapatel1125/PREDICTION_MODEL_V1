@@ -69,8 +69,8 @@ export const fetchWallDealerFlow = (symbol, signal) =>
   request(`/api/v1/walls/dealerflow?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallSummaryHistory = (symbol, signal) =>
   request(`/api/v1/walls/summary-history?symbol=${encodeURIComponent(symbol)}`, { signal });
-export const fetchWallDayLevels = (symbol, sessionDate, signal) =>
-  request(`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${sessionDate ? `&session_date=${encodeURIComponent(sessionDate)}` : ""}`, { signal });
+export const fetchWallDayLevels = (symbol, sessionDate, signal, displayBucketSeconds = 60, since = null) =>
+  request(`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${sessionDate ? `&session_date=${encodeURIComponent(sessionDate)}` : ""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}${since ? `&since=${encodeURIComponent(since)}` : ""}`, { signal });
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });
