@@ -21,6 +21,16 @@
    live stream is scrolled all the way to the right. */
 .hedge-plot-canvas>.hedge-x-zoom-buttons,.zero-gamma-canvas>.zero-gamma-x-zoom{position:sticky!important;z-index:120;left:10px;top:10px;width:max-content;height:0;overflow:visible}.zero-gamma-canvas>.zero-gamma-x-zoom{display:flex!important}
 
+/* Zero Gamma uses the same interaction boundaries as the Daily Hedge Map:
+   the plot owns horizontal zoom/pan and the level rail owns vertical zoom. */
+.zero-gamma-exposure,.zero-gamma-frame{overflow:hidden}
+.zero-gamma-scroll{overscroll-behavior:contain;contain:paint}
+.zero-gamma-canvas{overflow:hidden;contain:paint;touch-action:none}
+.zero-gamma-canvas.is-panning{cursor:grabbing!important;user-select:none}
+.zero-gamma-rail{overscroll-behavior:contain;touch-action:none}
+.zero-gamma-spot-point{fill:#e6edf3;stroke:#07111b;stroke-width:1.1px}
+.zero-gamma-wall-point{fill:#b56cff;stroke:#07111b;stroke-width:1.1px}
+
 /* Consolidated zero-gamma-level history. The body deliberately fits five
    readable rows before it becomes independently scrollable. */
 .gamma-level-filters{display:flex;align-items:end;flex-wrap:wrap;gap:8px;padding:9px 15px;border-bottom:1px solid #173348;background:#081520}.gamma-level-filters label{display:grid;gap:4px;color:#76cfee;font:700 8px var(--font-mono,monospace);letter-spacing:.08em}.gamma-level-filters select{min-width:132px;padding:6px 8px;border:1px solid #315d76;border-radius:4px;background:#091b29;color:#d5e9f4;font:700 10px var(--font-mono,monospace);outline:none}.gamma-level-filters select:focus{border-color:#65d4f5;box-shadow:0 0 0 2px rgba(101,212,245,.13)}.gamma-level-filters button{height:29px;padding:0 12px;border:1px solid #4a9fc1;border-radius:4px;background:#0d3850;color:#a8eaff;font:700 10px var(--font-mono,monospace);letter-spacing:.08em;cursor:pointer}.gamma-level-filters button:hover{background:#13506d;color:#effbff}.gamma-level-filters small{align-self:center;margin-left:auto;color:#91aebb;font:9px var(--font-mono,monospace)}
