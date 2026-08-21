@@ -431,7 +431,34 @@ class ThetaDataV3Client(MarketDataPort):
                     fraction = -previous_cumulative / (cumulative_dex - previous_cumulative)
                     zero_delta_candidates.append(float(previous_strike + fraction * (dex_strike - previous_strike)))
             previous_strike, previous_cumulative = dex_strike, cumulative_dex
-        zero_delta = min(zero_delta_candidates, key=lambda value: abs(value - spot)) if zero_delta_candidates else spot
+        # A cumulative crossing is the preferred balance level.  Older code
+        # silently used spot when the chain did not contain a crossing; that
+        # made ZERO_DELTA plot exactly on top of QQQ and looked like a live
+        # signal even though it was only a placeholder.  If the cumulative
+        # curve does not cross, look for a signed per-strike DEX crossing and
+        # finally use the strike with the smallest absolute DEX as an honest
+        # nearest-balance estimate.  Never substitute the underlying price.
+        zero_delta_method = "CUMULATIVE_CROSSING"
+        if zero_delta_candidates:
+            zero_delta = min(zero_delta_candidates, key=lambda value: abs(value - spot))
+        else:
+            direct_candidates: list[float] = []
+            ordered_strikes = sorted(net_dex)
+            for left_strike, right_strike in zip(ordered_strikes, ordered_strikes[1:]):
+                left_dex, right_dex = net_dex[left_strike], net_dex[right_strike]
+                if left_dex == 0.0:
+                    direct_candidates.append(float(left_strike))
+                elif right_dex == 0.0:
+                    direct_candidates.append(float(right_strike))
+                elif (left_dex < 0.0 < right_dex) or (left_dex > 0.0 > right_dex):
+                    fraction = -left_dex / (right_dex - left_dex)
+                    direct_candidates.append(float(left_strike + fraction * (right_strike - left_strike)))
+            if direct_candidates:
+                zero_delta = min(direct_candidates, key=lambda value: abs(value - spot))
+                zero_delta_method = "STRIKE_BALANCE_CROSSING"
+            else:
+                zero_delta = float(min(net_dex, key=lambda strike: abs(net_dex[strike])))
+                zero_delta_method = "NEAREST_BALANCE_STRIKE"
         zero_delta_nearest = min(net_dex, key=lambda strike: abs(strike - zero_delta))
         dex_walls = [
             {
@@ -509,6 +536,8 @@ class ThetaDataV3Client(MarketDataPort):
             "delta_wall_dex": float(net_dex[delta_wall]),
             "zero_delta": float(zero_delta),
             "zero_delta_dex": float(net_dex[zero_delta_nearest]),
+            "zero_delta_method": zero_delta_method,
+            "zero_delta_crossing_available": float(bool(zero_delta_candidates or zero_delta_method == "STRIKE_BALANCE_CROSSING")),
             "call_delta_wall_strike": float(call_delta_wall or 0.0),
             "call_delta_wall_dex": float(net_dex[call_delta_wall]) if call_delta_wall is not None else 0.0,
             "put_delta_wall_strike": float(put_delta_wall or 0.0),

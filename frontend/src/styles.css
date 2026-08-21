@@ -1065,3 +1065,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
    and paint while the live engine updates the visible module. This is a UI
    optimization only; no stream or stored history is removed. */
 .draggable-overview-module { content-visibility: auto; contain-intrinsic-size: 600px; }
+
+/* The daily hedge map now includes the zero-delta balance level. Keep its
+   legend visible without changing the existing compact JSX layout. */
+.daily-levels-legend::after {
+  content: "━ ZERO DELTA";
+  display: inline-flex;
+  align-items: center;
+  color: #62c8ff;
+  white-space: nowrap;
+}

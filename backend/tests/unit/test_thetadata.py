@@ -72,6 +72,24 @@ def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
     assert metrics["gex_abs_dollar_density"]==pytest.approx(expected_near_gex)
 
 
+def test_zero_delta_uses_nearest_balance_strike_when_no_crossing():
+    """A missing cumulative DEX crossing must not be replaced by spot."""
+    client=ThetaDataV3Client(api_key="test")
+    timestamp=datetime(2026,8,11,18,58,56,tzinfo=timezone.utc)
+    common={"timestamp":timestamp,"expiration":"20260811","underlying_price":500,
+            "bid":1,"ask":1.1,"bid_size":100,"ask_size":100,"theta":-.2,
+            "vega":.4,"rho":.1,"vanna":.1,"charm":.1,"vomma":.3,"veta":.1,
+            "speed":.1,"zomma":.1,"color":-.1,"ultima":.1,"right":"call"}
+    rows=[
+        {**common,"strike":490,"open_interest":100,"delta":.01,"gamma":.10},
+        {**common,"strike":500,"open_interest":100,"delta":.60,"gamma":.10},
+    ]
+    metrics=client._aggregate(rows,"QQQ",5)[0].gamma_metrics
+    assert metrics["zero_delta_method"]=="NEAREST_BALANCE_STRIKE"
+    assert metrics["zero_delta"]==pytest.approx(490.0)
+    assert metrics["zero_delta"]!=pytest.approx(500.0)
+
+
 def test_missing_speed_and_color_use_specification_fallbacks():
     client=ThetaDataV3Client(api_key="test")
     timestamp=datetime(2026,7,16,14,0,tzinfo=timezone.utc)
