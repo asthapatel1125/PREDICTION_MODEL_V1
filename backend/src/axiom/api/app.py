@@ -4,7 +4,6 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import date,datetime,time,timedelta,timezone
 from pathlib import Path
-from statistics import median
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -262,9 +261,12 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 compact_row["volume"]=float(existing.get("volume") or 0.0)+compact_row["volume"]
                 minute_buckets[bucket_key]=compact_row
         # Preserve every five-second observation, but derive a stable reference
-        # for each market phase from the first five minutes of that phase.  A
-        # median is deliberately used instead of a single tick so a transient
-        # chain/OI update does not redraw the day's reference level.
+        # for each market phase from its first five minutes.  This is not a
+        # blunt median: the anchor is the weighted median of the most persistent
+        # half-dollar level, with higher-weighted strong walls, higher exposure,
+        # nearby-to-spot levels, and slightly newer observations.  That keeps a
+        # short chain/OI jump from redefining a market-condition reference while
+        # avoiding an average of unrelated wall regimes.
         phase_specs=(
             ("PREMARKET",time(7,0),time(9,30)),
             ("OPENING",time(9,30),time(10,0)),
@@ -281,16 +283,56 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             sample=[row for row in rows if anchor_start<=observed_at(row)<anchor_end]
             if not sample:
                 continue
-            def wall_median(key:str)->float|None:
-                values=[float(row.get("walls",{}).get(key,{}).get("strike")) for row in sample if row.get("walls",{}).get(key,{}).get("strike") is not None]
-                return float(median(values)) if values else None
+            def wall_condition_anchor(key:str)->dict[str,Any]|None:
+                observations=[]
+                tier_weights={"STRONGEST":5.0,"STRONG":3.5,"NORMAL":2.25,"WEAK":1.5,"WEAKEST":1.0}
+                for index,row in enumerate(sample):
+                    wall=row.get("walls",{}).get(key,{}) or {}
+                    try:
+                        strike=float(wall.get("strike"))
+                        spot=float(row.get("spot"))
+                    except (TypeError,ValueError):
+                        continue
+                    if strike<=0 or spot<=0:
+                        continue
+                    tier=str(wall.get("tier") or "WEAKEST").upper()
+                    try:
+                        percentile=max(0.0,min(100.0,float(wall.get("percentile") or 0.0)))
+                        dollar=abs(float(wall.get("dollar") or wall.get("gex_dollar") or 0.0))
+                    except (TypeError,ValueError):
+                        percentile,dollar=0.0,0.0
+                    recency=0.70+0.30*(index/max(len(sample)-1,1))
+                    proximity=1.0/(1.0+abs(strike-spot)/max(spot*0.015,1.0))
+                    exposure=1.0+min(0.35,(dollar/1_000_000_000.0)*0.10)
+                    weight=tier_weights.get(tier,1.0)*(1.0+percentile/400.0)*recency*(0.55+0.45*proximity)*exposure
+                    observations.append((strike,weight))
+                if not observations:
+                    return None
+                buckets:dict[float,float]={}
+                for strike,weight in observations:
+                    bucket=round(strike*2.0)/2.0
+                    buckets[bucket]=buckets.get(bucket,0.0)+weight
+                dominant_bucket,dominant_weight=max(buckets.items(),key=lambda item:item[1])
+                selected=[item for item in observations if abs(item[0]-dominant_bucket)<=0.251] or observations
+                selected.sort(key=lambda item:item[0])
+                total_weight=sum(weight for _,weight in selected)
+                cumulative=0.0
+                anchor=selected[-1][0]
+                for strike,weight in selected:
+                    cumulative+=weight
+                    if cumulative>=total_weight/2.0:
+                        anchor=strike
+                        break
+                return {"value":float(anchor),"method":"dominant_weighted_median","dominant_level":float(dominant_bucket),
+                    "dominant_share":float(dominant_weight/max(sum(buckets.values()),1e-9)),"sample_count":len(observations)}
+            anchor_meta={key:wall_condition_anchor(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}
             phase_anchors.append({"phase":name,"start":anchor_start,"end":datetime.combine(day,phase_end,tzinfo=market_tz),
                 "sample_start":sample[0].get("timestamp"),"sample_count":len(sample),
-                "levels":{key:wall_median(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}})
+                "levels":{key:(anchor_meta[key] or {}).get("value") for key in anchor_meta},"anchor_meta":anchor_meta})
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,
             "count":len(rows),"display_count":len(minute_buckets),"rows":list(minute_buckets.values()),"cadence_seconds":5,"display_bucket_seconds":requested_bucket,
             "phase_anchor_window_seconds":300,"phase_anchors":phase_anchors,
-            "disclaimer":"Solid phase levels use the median of the first five minutes of each market phase. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
+            "disclaimer":"Solid phase levels use a condition-aware weighted median from the first five minutes of each market phase: the dominant persistent level receives more weight when its wall is stronger, larger, nearer spot, and more recent. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
 
     @api.get("/walls/dealerflow")
     async def wall_dealerflow(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None):
