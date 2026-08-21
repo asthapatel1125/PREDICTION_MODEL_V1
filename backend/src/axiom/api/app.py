@@ -253,7 +253,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             observed=observed_at(row)
             bucket_second=(observed.second//requested_bucket)*requested_bucket
             bucket_key=observed.replace(second=bucket_second,microsecond=0).isoformat()
-            wall_subset={key:row.get("walls",{}).get(key,{}) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}
+            wall_subset={key:row.get("walls",{}).get(key,{}) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE","DELTA_WALL")}
             existing=minute_buckets.get(bucket_key)
             compact_row={"timestamp":row.get("timestamp"),"spot":row.get("spot"),"walls":wall_subset,"volume":float(row.get("volume") or 0.0)}
             if existing is None:

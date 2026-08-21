@@ -1,8 +1,8 @@
 /* Zero Gamma Exposure chart: left-side timeframe rail and an in-viewport hover card. */
-.zero-gamma-frame{grid-template-columns:38px 74px minmax(0,1fr) 146px;isolation:isolate}
+.zero-gamma-frame{grid-template-columns:52px 74px minmax(0,1fr) 146px;isolation:isolate}
 .zero-gamma-time-side-rail{position:relative;grid-column:1;grid-row:1;border-right:1px solid #1b4058;background:#07111b}
-.zero-gamma-time-rail{position:absolute;z-index:8;inset:7px 4px 12px;display:grid;grid-template-columns:1fr;align-content:space-evenly;gap:2px}
-.zero-gamma-time-rail button{min-width:0;height:18px;padding:1px 0;border:1px solid #315b75;border-radius:3px;background:#0b1b29;color:#a9c6d6;font:700 7px var(--font-mono,monospace);cursor:pointer}
+.zero-gamma-time-rail{position:absolute;z-index:8;inset:7px 5px 12px;display:grid;grid-template-columns:1fr;align-content:space-evenly;gap:3px}
+.zero-gamma-time-rail button{min-width:0;height:27px;padding:2px 0;border:1px solid #315b75;border-radius:4px;background:#0b1b29;color:#a9c6d6;font:700 10px var(--font-mono,monospace);cursor:pointer}
 .zero-gamma-time-rail button:hover{background:#16425b;color:#e7f8ff}
 .zero-gamma-time-rail button.active{border-color:#60d9ff;background:#59cbed;color:#07131b}
 .zero-gamma-axis{grid-column:2;grid-row:1}
@@ -10,7 +10,7 @@
 .zero-gamma-rail{grid-column:4;grid-row:1}
 .zero-gamma-tooltip{z-index:80;top:16px;max-width:234px;white-space:nowrap}
 .zero-gamma-tooltip.left,.zero-gamma-tooltip.right{transform:none}
-@media(max-width:850px){.zero-gamma-frame{grid-template-columns:32px 54px minmax(0,1fr) 116px}.zero-gamma-time-rail{left:3px;right:3px}.zero-gamma-time-rail button{height:17px;font-size:6px}}
+@media(max-width:850px){.zero-gamma-frame{grid-template-columns:44px 54px minmax(0,1fr) 116px}.zero-gamma-time-rail{left:3px;right:3px}.zero-gamma-time-rail button{height:24px;font-size:8px}}
 
 /* Daily-Hedge-style edge controls.  The horizontal dock is on the plot's
    left; vertical controls stay against the value rail on the right. */
@@ -70,3 +70,39 @@
 .zero-gamma-histogram{margin:12px 146px 0 38px;border:1px solid #1f4b64;border-radius:7px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(112,205,246,.08)}.zero-gamma-histogram-frame{min-height:180px}.zero-gamma-histogram-x-label{fill:#7fd5f4!important;font:700 8px var(--font-mono,monospace)!important;letter-spacing:.09em}@media(max-width:850px){.zero-gamma-histogram{margin-right:116px;margin-left:32px}}
 .zero-gamma-histogram-frame{min-height:208px}.zero-gamma-histogram-canvas,.zero-gamma-histogram-canvas svg{height:208px}
 .zero-gamma-histogram-tooltip{width:190px;padding:7px 9px;font-size:9px}.zero-gamma-histogram-tooltip.top{top:auto;bottom:44px}.zero-gamma-histogram-tooltip.bottom{top:12px;bottom:auto}.zero-gamma-histogram-tooltip b{margin-bottom:4px;padding-bottom:4px}.zero-gamma-histogram-tooltip span{gap:7px}
+
+/* Delta Exposure reuses the proven Zero-Gamma map interaction model, but
+   remains visually and semantically separate.  DEX is an OI-based estimate,
+   not tape-confirmed dealer inventory. */
+.delta-exposure-map{margin:18px 0 16px;border:1px solid #27648a;border-radius:9px;overflow:hidden;background:linear-gradient(145deg,#081520,#061019)}
+.delta-exposure-map>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:14px 16px;border-bottom:1px solid #1e4b67}
+.delta-exposure-map>header span{display:block;color:#62c8ff;font:700 10px var(--font-mono,monospace);letter-spacing:.12em}
+.delta-exposure-map>header h3{margin:4px 0 0;color:#e5eef5;font-size:16px}
+.delta-exposure-map>header small{max-width:330px;color:#a9c2d1;font:9px/1.5 var(--font-mono,monospace);text-align:right}
+.delta-exposure-map>.zero-gamma-exposure{margin:0;border:0;border-radius:0;background:transparent}
+.delta-exposure-map>.zero-gamma-exposure>header{display:none}
+.delta-exposure-map .zero-gamma-level{font-size:0;background:#3289c8;color:#07131b}
+.delta-exposure-map .zero-gamma-level::after{content:"NET DEX";font:700 10px var(--font-mono,monospace)}
+.delta-exposure-map .zero-gamma-level strong{font-size:12px}
+.delta-exposure-map .zero-gamma-wall-point{display:none}
+.delta-exposure-map .zero-gamma-canvas polyline[stroke="#b56cff"]{stroke:#62c8ff!important}
+.delta-exposure-map .zero-gamma-tooltip span:nth-of-type(2){font-size:0;color:#75cfff}
+.delta-exposure-map .zero-gamma-tooltip span:nth-of-type(2)::before{content:"NET DEX WALL";font:10px var(--font-mono,monospace)}
+.delta-exposure-map .zero-gamma-tooltip span:nth-of-type(2) strong{font-size:12px}
+.delta-exposure-map .zero-gamma-tooltip span:nth-of-type(3){font-size:0}
+.delta-exposure-map .zero-gamma-tooltip span:nth-of-type(3) strong{font-size:12px}
+.delta-exposure-map .zero-gamma-tooltip span:nth-of-type(3)::before{content:"QQQ − NET DEX";font:10px var(--font-mono,monospace)}
+.delta-exposure-map .zero-gamma-histogram{margin-bottom:0}
+.delta-exposure-map .zero-gamma-histogram header span,.delta-exposure-map .zero-gamma-histogram header h4{font-size:0}
+.delta-exposure-map .zero-gamma-histogram header span::after{content:"NET DEX DISTANCE HISTOGRAM";font:700 10px var(--font-mono,monospace);letter-spacing:.1em}
+.delta-exposure-map .zero-gamma-histogram header h4::after{content:"QQQ price minus Net DEX Wall";font-size:13px}
+.delta-exposure-map .zero-gamma-histogram header small{font-size:0}
+.delta-exposure-map .zero-gamma-histogram header small::after{content:"Green: Net DEX below QQQ · Red: Net DEX above QQQ";font:9px/1.45 var(--font-mono,monospace)}
+.delta-exposure-level-log{margin:14px 16px 16px;border:1px solid #28516a;border-radius:8px;overflow:hidden;background:#071019}
+.delta-exposure-level-log>header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 15px;border-bottom:1px solid #1c4259}
+.delta-exposure-level-log header span{display:block;color:#62c8ff;font:700 10px var(--font-mono,monospace);letter-spacing:.12em}
+.delta-exposure-level-log h3{margin:4px 0 0;color:#e5eef5;font-size:15px}
+.delta-exposure-level-log>header button{padding:7px 9px;border:1px solid #356481;border-radius:5px;background:#0a2333;color:#7bdaff;font:700 10px var(--font-mono,monospace);cursor:pointer}
+.delta-exposure-level-log>header button:hover:not(:disabled){background:#104057;color:#e0f7ff}.delta-exposure-level-log>header button:disabled{opacity:.42;cursor:not-allowed}
+.delta-exposure-level-log>p{margin:0;padding:8px 15px;color:#99afbd;font:9px/1.45 var(--font-mono,monospace);border-bottom:1px solid #173348}
+@media(max-width:700px){.delta-exposure-map>header{display:block}.delta-exposure-map>header small{display:block;margin-top:7px;text-align:left}.delta-exposure-level-log{margin:10px}.delta-exposure-level-log>header{align-items:flex-start}}

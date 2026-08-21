@@ -347,10 +347,20 @@ class ThetaDataV3Client(MarketDataPort):
         if not by_strike:
             return {"spot": spot, "chain_available": 0.0}
         net_gex: dict[float, float] = {}
+        # Delta exposure is directional rather than convexity exposure.  Do
+        # not apply the call/put GEX side convention here: contract delta is
+        # already positive for calls and negative for puts.  This is the
+        # OI-based stock hedge in dollars implied by each strike.
+        net_dex: dict[float, float] = {}
         for strike, contracts_at_strike in by_strike.items():
             net_gex[strike] = sum(
                 cls._right_sign(row.get("right"))
                 * cls._number(row.get("open_interest")) * 100.0 * cls._number(row.get("gamma")) * spot ** 2 * 0.01
+                for row in contracts_at_strike
+            )
+            net_dex[strike] = sum(
+                cls._number(row.get("delta"))
+                * cls._number(row.get("open_interest")) * 100.0 * spot
                 for row in contracts_at_strike
             )
         key_fault_line = min(net_gex, key=lambda strike: (-abs(net_gex[strike]), strike))
@@ -396,6 +406,19 @@ class ThetaDataV3Client(MarketDataPort):
         negative_walls = [strike for strike, gex in net_gex.items() if gex < 0]
         call_wall = max(positive_walls, key=lambda strike: net_gex[strike]) if positive_walls else None
         put_wall = min(negative_walls, key=lambda strike: net_gex[strike]) if negative_walls else None
+        positive_delta_walls = [strike for strike, dex in net_dex.items() if dex > 0]
+        negative_delta_walls = [strike for strike, dex in net_dex.items() if dex < 0]
+        call_delta_wall = max(positive_delta_walls, key=lambda strike: net_dex[strike]) if positive_delta_walls else None
+        put_delta_wall = min(negative_delta_walls, key=lambda strike: net_dex[strike]) if negative_delta_walls else None
+        delta_wall = max(net_dex, key=lambda strike: (abs(net_dex[strike]), -strike))
+        dex_walls = [
+            {
+                "strike": float(strike), "dex": float(net_dex[strike]), "abs_dex": float(abs(net_dex[strike])),
+                "side": 1 if net_dex[strike] >= 0 else -1, "open_interest": strike_oi[strike],
+                "distance_pct": float((strike - spot) / max(spot, 1e-12) * 100.0),
+            }
+            for strike in sorted(net_dex, key=lambda item: (-abs(net_dex[item]), item))[:5]
+        ]
         gex_walls = [
             {
                 "strike": float(strike), "gex": float(net_gex[strike]), "abs_gex": float(abs(net_gex[strike])),
@@ -413,6 +436,7 @@ class ThetaDataV3Client(MarketDataPort):
             "ZERO_GAMMA": {"strike": float(zero_gamma), "gex": float(net_gex[zero_gamma_nearest])},
             "SUPPORT": {"strike": float(support), "gex": float(net_gex.get(support, 0.0))},
             "RESISTANCE": {"strike": float(resistance), "gex": float(net_gex.get(resistance, 0.0))},
+            "DELTA_WALL": {"strike": float(delta_wall), "dex": float(net_dex[delta_wall])},
         }
         exposure = lambda greek, power, scale=1.0: sum(
             cls._right_sign(row.get("right")) * cls._number(row.get(greek)) * cls._number(row.get("open_interest")) * 100.0 * spot ** power * scale
@@ -457,6 +481,13 @@ class ThetaDataV3Client(MarketDataPort):
             "put_wall_gex": float(net_gex[put_wall]) if put_wall is not None else 0.0,
             "put_wall_oi": int(strike_oi[put_wall]) if put_wall is not None else 0,
             "gex_walls": gex_walls,
+            "dex_walls": dex_walls,
+            "delta_wall_strike": float(delta_wall),
+            "delta_wall_dex": float(net_dex[delta_wall]),
+            "call_delta_wall_strike": float(call_delta_wall or 0.0),
+            "call_delta_wall_dex": float(net_dex[call_delta_wall]) if call_delta_wall is not None else 0.0,
+            "put_delta_wall_strike": float(put_delta_wall or 0.0),
+            "put_delta_wall_dex": float(net_dex[put_delta_wall]) if put_delta_wall is not None else 0.0,
             "wall_estimates": wall_estimates,
             "pin_status": "BETWEEN_WALLS" if call_wall is not None and put_wall is not None and put_wall < spot < call_wall else "OUTSIDE",
             "support_level": support,
