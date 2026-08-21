@@ -1809,7 +1809,7 @@ function QqqMicroMovementChart({points=[],period="SESSION"}){
   return <section className="qqq-micro-movement"><header><div><span>QQQ MOVEMENT DETAIL</span><h4>Actual QQQ price · independent local scale</h4></div><small>Separate scale for readable price movement · {period}</small></header><div className="qqq-micro-frame"><aside className="qqq-micro-axis"><b>QQQ<br/>USD</b>{[0,.5,1].map(ratio=><span key={ratio} style={{top:top+(1-ratio)*(height-top-bottom)}}>{(low+ratio*(high-low)).toFixed(2)}</span>)}</aside><div className="qqq-micro-scroll" ref={scrollRef}><div className="qqq-micro-canvas" style={{width}} onPointerMove={event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(event.clientX-rect.left)/Math.max(rect.width,1)));setHover({index:Math.round(ratio*Math.max(points.length-1,0)),side:ratio>.55?"left":"right"})}} onPointerLeave={()=>setHover(null)}><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="QQQ local price movement">{[0,.25,.5,.75,1].map(ratio=>{const yy=top+(1-ratio)*(height-top-bottom);return <line className="wi-grid" key={ratio} x1={left} x2={width-right} y1={yy} y2={yy}/>})}{ticks.map(index=><g key={index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={top} y2={height-bottom}/><text x={x(index)} y={height-20} textAnchor="middle">{logTime(points[index].timestamp)}</text></g>)}<polyline className="qqq-micro-line" fill="none" points={path}/>{hover!==null&&<line className="wi-crosshair" x1={x(hover.index)} x2={x(hover.index)} y1={top} y2={height-bottom}/>}</svg>{active&&<aside className={`qqq-micro-tooltip ${hover.side}`}><b>{logDate(active.timestamp)} · {logTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)}</strong></span><span className={active.spot-base>=0?"positive":"negative"}>WINDOW CHANGE <strong>{active.spot-base>=0?"+":""}{(active.spot-base).toFixed(2)} pts</strong></span></aside>}</div></div></div></section>;
 }
 
-function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
+function LegacyExposureLevelMap({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
   const [period,setPeriod]=useState("SESSION"),[hover,setHover]=useState(null),[xZoom,setXZoom]=useState(10),[yZoom,setYZoom]=useState(1),[expanded,setExpanded]=useState(false),scrollRef=useRef(null),dragRef=useRef(null);
   const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,SESSION:null};
   const allPoints=useMemo(()=>rows.map(row=>{const spot=number(row?.spot),wall=row?.walls?.[wallKey],level=number(wall?.strike),rawSigned=wall?.signed_exposure,signed=number(rawSigned),signKnown=typeof rawSigned==="number"&&Number.isFinite(rawSigned);return Number.isFinite(spot)&&spot>0&&Number.isFinite(level)&&level>0?{timestamp:row.timestamp,spot,level,signedExposure:signed,signKnown}:null}).filter(Boolean),[rows,wallKey]);
@@ -1831,6 +1831,96 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1);setHover(Math.round(ratio*Math.max(points.length-1,0)));const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.left-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
   const endPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null};
   const sign=point=>!point.signKnown?"unknown":point.signedExposure>=0?"positive":"negative",signColor=point=>sign(point)==="positive"?"#00d084":sign(point)==="negative"?"#ff4f69":"#b56cff",content=<section className={`exposure-level-map ${embedded?"embedded":""} ${expanded?"expanded":""}`}><header><div><span>{title}</span><h3>{heading}</h3></div><small>Top: QQQ local scale · Bottom: exposure-level local scale · Shift + wheel: value zoom</small></header><div className="exposure-level-frame"><aside className="exposure-time-rail"><nav aria-label={`${title} time interval`}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>choosePeriod(name)}>{name}</button>)}</nav></aside><aside className="exposure-axes"><section><b>QQQ<br/>USD</b>{grid([0,.5,1],qqqRange,topTop,topBottom).map(item=><span key={item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}</section><section><b>{wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ"}<br/>USD</b>{grid([0,.5,1],levelRange,bottomTop,bottomBottom).map(item=><span key={item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}</section></aside><div className="exposure-map-scroll" ref={scrollRef}><div className="exposure-map-canvas" style={{width}} onWheel={wheel} onPointerDown={startPan} onPointerMove={move} onPointerUp={endPan} onPointerCancel={endPan} onPointerLeave={()=>{dragRef.current=null;setHover(null)}} onContextMenu={event=>event.preventDefault()}><div className="exposure-map-controls"><button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in on time">X+</button><button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out on time">X−</button><button type="button" onClick={reset} title="Reset chart view">↺</button><button type="button" onClick={()=>setExpanded(value=>!value)} title={expanded?"Close expanded chart":"Expand chart"}>{expanded?"×":"↗"}</button></div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${heading} chart`}><text className="exposure-axis-heading" x={left} y={topTop-7}>QQQ PRICE · LOCAL SCALE</text><text className="exposure-axis-heading" x={left} y={bottomTop-7}>{wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA"} · LOCAL SCALE</text>{grid([0,.5,1],qqqRange,topTop,topBottom).map(item=><line className="wi-grid" key={`q-${item.ratio}`} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}{grid([0,.5,1],levelRange,bottomTop,bottomBottom).map(item=><line className="wi-grid" key={`l-${item.ratio}`} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}{ticks.map(index=><g key={index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={topTop} y2={bottomBottom}/><text x={x(index)} y={height-13} textAnchor="middle">{logTime(points[index].timestamp)}</text></g>)}<polyline className="exposure-qqq-line" fill="none" points={path("spot",qqqY)}/>{points.slice(1).map((point,index)=><line key={point.timestamp||index} x1={x(index)} y1={levelY(points[index].level)} x2={x(index+1)} y2={levelY(point.level)} stroke={signColor(point)} strokeWidth="2.6" strokeDasharray="7 4"/>)}{hover!==null&&<line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={topTop} y2={bottomBottom}/>}</svg>{active&&<aside className={`exposure-hover-card ${hover/Math.max(points.length-1,1)>.55?"left":"right"}`}><b>{logDate(active.timestamp)} · {logTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)}</strong></span><span style={{color:signColor(active)}}>{wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA"}<strong>{active.level.toFixed(2)}</strong></span><span style={{color:signColor(active)}}>{sign(active)==="unknown"?"EXPOSURE SIGN NOT STORED":active.signedExposure>=0?"POSITIVE EXPOSURE":"NEGATIVE EXPOSURE"}</span></aside>}</div></div><aside className="exposure-live-rail"><div className="exposure-y-controls"><button type="button" onClick={()=>setYZoom(value=>clamp(value*1.12,.15,120))}>+</button><button type="button" onClick={()=>setYZoom(value=>clamp(value*.89,.15,120))}>−</button></div><b>LIVE LEVELS</b><span className="exposure-level" style={{"--accent":signColor(points.at(-1))}}><i/>{wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ"}<strong>{points.at(-1).level.toFixed(2)}</strong></span><span className="exposure-spot"><i/>QQQ<strong>{points.at(-1).spot.toFixed(2)}</strong></span><small>{sign(points.at(-1))==="unknown"?"SIGN AVAILABLE ON NEW SNAPSHOTS":points.at(-1).signedExposure>=0?"POSITIVE":"NEGATIVE"} EXPOSURE · dashed segments update by sign</small></aside></div></section>;
+  return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
+}
+
+function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
+  const [period,setPeriod]=useState("SESSION");
+  const [hover,setHover]=useState(null);
+  const [xZoom,setXZoom]=useState(10);
+  const [yZoom,setYZoom]=useState(1);
+  const [expanded,setExpanded]=useState(false);
+  const scrollRef=useRef(null);
+  const dragRef=useRef(null);
+  const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,SESSION:null};
+  const allPoints=useMemo(()=>rows.map(row=>{
+    const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);
+    if(!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return null;
+    return {timestamp:row.timestamp,spot,level,positive:level<=spot};
+  }).filter(Boolean),[rows,wallKey]);
+  const points=useMemo(()=>{
+    const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
+    return !seconds||!Number.isFinite(latest)?allPoints:allPoints.filter(point=>Date.parse(point.timestamp)>=latest-seconds*1000);
+  },[allPoints,period]);
+  useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=scrollRef.current.scrollWidth},[points.length,period,xZoom]);
+  useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
+  if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and level observations.</p></section>;
+  const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+  // Keep the two independent plots compact enough to sit comfortably in the
+  // Wall Intelligence card while retaining a readable grid and x-axis.
+  const width=Math.max(920,points.length*xZoom),height=380,left=76,right=16,topStart=22,topEnd=145,bottomStart=190,bottomEnd=344,plotWidth=width-left-right;
+  const scaleFor=values=>{const minimum=Math.min(...values),maximum=Math.max(...values),base=Math.max(maximum-minimum,.02),span=base/yZoom,pad=Math.max(span*.16,.01),middle=(minimum+maximum)/2;return {low:middle-span/2-pad,high:middle+span/2+pad}};
+  const qqqScale=scaleFor(points.map(point=>point.spot)),gammaScale=scaleFor(points.map(point=>point.level));
+  const yFor=(value,scale,top,bottom)=>top+(scale.high-value)/(scale.high-scale.low)*(bottom-top),qqqY=value=>yFor(value,qqqScale,topStart,topEnd),gammaY=value=>yFor(value,gammaScale,bottomStart,bottomEnd),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
+  const tickCount=Math.max(2,Math.min(points.length,Math.floor(width/155))),timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
+  const ticks=(scale,top,bottom)=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:top+(1-ratio)*(bottom-top)}));
+  const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
+  const active=hover===null?null:points[hover];
+  const selectPeriod=name=>{setPeriod(name);setXZoom(10);setYZoom(1);setHover(null)};
+  const reset=()=>{setXZoom(10);setYZoom(1);setHover(null);requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=scrollRef.current.scrollWidth})};
+  const wheel=event=>{event.preventDefault();event.stopPropagation();const factor=event.deltaY<0?1.12:.89;if(event.shiftKey)setYZoom(current=>clamp(current*factor,.15,120));else setXZoom(current=>clamp(current*factor,1,180))};
+  const beginPan=event=>{if(event.button!==2)return;event.preventDefault();dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId)};
+  const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1);setHover(Math.round(ratio*Math.max(points.length-1,0)));const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
+  const stopPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null};
+  const last=points.at(-1),gammaColor=point=>point.positive?"#00d084":"#ff4f69",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ";
+  // Render each dashed portion using the relationship at that portion. This
+  // prevents a color from bleeding across a zero-gamma/QQQ sign transition.
+  const levelSegments=[];
+  points.slice(1).forEach((point,index)=>{
+    const previous=points[index],x0=x(index),x1=x(index+1),y0=gammaY(previous.level),y1=gammaY(point.level);
+    if(previous.positive===point.positive){
+      levelSegments.push({key:`${index}-full`,x0,y0,x1,y1,color:gammaColor(point)});
+      return;
+    }
+    const d0=previous.level-previous.spot,d1=point.level-point.spot,denominator=d0-d1;
+    const ratio=Number.isFinite(denominator)&&Math.abs(denominator)>1e-9?clamp(d0/denominator,0,1):.5;
+    const xm=x0+(x1-x0)*ratio,ym=y0+(y1-y0)*ratio;
+    levelSegments.push({key:`${index}-before`,x0,y0,x1:xm,y1:ym,color:gammaColor(previous)});
+    levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
+  });
+  const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><small>QQQ and {levelName} use independent local scales</small></header>
+    <div className="exposure-level-frame">
+      <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
+      <aside className="exposure-axes">
+        <b className="exposure-axis-name qqq">QQQ<br/>USD</b>
+        {ticks(qqqScale,topStart,topEnd).map(item=><span className="exposure-axis-tick qqq" key={"q-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
+        <b className="exposure-axis-name gamma">{axisName}<br/>USD</b>
+        {ticks(gammaScale,bottomStart,bottomEnd).map(item=><span className="exposure-axis-tick gamma" key={"g-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
+      </aside>
+      <div className="exposure-map-scroll" ref={scrollRef}>
+        <div className="exposure-map-canvas" style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null)}} onContextMenu={event=>event.preventDefault()}>
+          <div className="exposure-map-controls"><button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in on time">X+</button><button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out on time">X−</button><button type="button" onClick={reset} title="Reset chart view">↺</button><button type="button" onClick={()=>setExpanded(value=>!value)} title={expanded?"Close expanded chart":"Expand chart"}>{expanded?"×":"↗"}</button></div>
+          <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
+            <text className="exposure-axis-heading" x={left} y={topStart-8}>QQQ PRICE · LOCAL SCALE</text>
+            <text className="exposure-axis-heading" x={left} y={bottomStart-8}>{levelName} · LOCAL SCALE</text>
+            {ticks(qqqScale,topStart,topEnd).map(item=><line className="wi-grid" key={"qqq-grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
+            {ticks(gammaScale,bottomStart,bottomEnd).map(item=><line className="wi-grid" key={"gamma-grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
+            {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={topStart} y2={bottomEnd}/><text x={x(index)} y={height-12} textAnchor="middle">{logTime(points[index].timestamp)}</text></g>)}
+            <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
+            {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
+            {hover!==null&&<line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={topStart} y2={bottomEnd}/>}
+          </svg>
+          {active&&<aside className={["exposure-hover-card",hover/Math.max(points.length-1,1)>.55?"left":"right"].join(" ")}><b>{logDate(active.timestamp)} · {logTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{levelName}<strong>{active.level.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{active.positive?"POSITIVE · LEVEL BELOW QQQ":"NEGATIVE · LEVEL ABOVE QQQ"}</span></aside>}
+        </div>
+      </div>
+      <aside className="exposure-live-rail">
+        <div className="exposure-y-controls"><button type="button" onClick={()=>setYZoom(value=>clamp(value*1.12,.15,120))}>+</button><button type="button" onClick={()=>setYZoom(value=>clamp(value*.89,.15,120))}>−</button></div>
+        <span className="exposure-end-label gamma" style={{top:gammaY(last.level),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
+        <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
+      </aside>
+    </div>
+  </section>;
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
