@@ -6,10 +6,13 @@ import {
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["System scorecard", "system-scorecard"], ["One-screen focus", "decision"], ["Wall intelligence", "wall-intelligence"], ["Gamma dynamics 1.0", "gamma-dynamics"], ["Gamma dynamics 2.0", "gamma-dynamics-v2"], ["Gamma dynamics 3.0", "gamma-dynamics-v3"], ["Delta dynamics", "six-greek-dynamics"], ["Experimental forecast", "forecast"], ["Signal scores", "score-modules"], ["Greek orders", "greek-orders"],
-  ["Live alerts", "live-alerts"],
+  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["Live alerts", "live-alerts"],
 ];
-const DEFAULT_MODULE_ORDER=["wall-intelligence","gamma-dynamics","gamma-dynamics-v2","gamma-dynamics-v3","six-greek-dynamics","forecast","score-modules","greek-orders","live-alerts"];
+const DEFAULT_MODULE_ORDER=["wall-intelligence","live-alerts"];
+// Dynamics streams are intentionally paused in the UI for now. Their backend
+// calculations and persisted history remain untouched and can be re-enabled by
+// removing the corresponding ids from this set.
+const HIDDEN_OVERVIEW_MODULES=new Set(["decision","gamma-dynamics","gamma-dynamics-v2","gamma-dynamics-v3","six-greek-dynamics","forecast","score-modules","greek-orders"]);
 const OVERVIEW_LABELS=Object.fromEntries(OVERVIEW_SECTIONS.map(([label,id])=>[id,label]));
 const OVERVIEW_NUMBERS=Object.fromEntries(OVERVIEW_SECTIONS.map(([,id],index)=>[id,String(index+1).padStart(2,"0")]));
 const OVERVIEW_CATEGORIES={
@@ -517,6 +520,7 @@ function OverviewDisclosure({id,title,description,children,defaultOpen=false,sum
 }
 
 function DraggableOverviewModule({id,index,dragged,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,children}){
+  if(HIDDEN_OVERVIEW_MODULES.has(id))return null;
   const target=dragOver?.id===id&&dragged!==id;
   return <div className={`draggable-overview-module ${dragged===id?"is-dragging":""} ${target?`is-drag-over drop-${dragOver.position}`:""}`} data-module-id={id} style={{order:index}}>
       <button type="button" className="module-drag-handle" draggable="true" onDragStart={event=>onDragStart(event,id)} onDragEnd={onDragEnd} aria-label={`Drag ${OVERVIEW_LABELS[id]} section to reorder`} title="Drag with your cursor to reorder this section"><span>⠿</span><b>REORDER</b><small>Position {index+3}</small></button>
@@ -753,6 +757,7 @@ function SystemScorecard({attribution,state,symbol}){
 }
 
 function FocusView({state,symbol,engine,decision,lastQualifiedAlert,clock,attribution,history}) {
+  if(HIDDEN_OVERVIEW_MODULES.has("decision"))return null;
   const tone=decision.qualified?(decision.direction==="UP"?"long":"short"):"neutral";
   const label=decision.qualified?biasLabel(decision.direction):"WAIT";
   const lifecycleMessage=decision.lifecycle==="IDLE"?"ENGINE IDLE · WAIT":
@@ -1840,6 +1845,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const [xZoom,setXZoom]=useState(10);
   const [yZoom,setYZoom]=useState(1);
   const [expanded,setExpanded]=useState(false);
+  const [scrollOffset,setScrollOffset]=useState(0);
   const scrollRef=useRef(null);
   const dragRef=useRef(null);
   const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,SESSION:null};
@@ -1852,7 +1858,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
     return !seconds||!Number.isFinite(latest)?allPoints:allPoints.filter(point=>Date.parse(point.timestamp)>=latest-seconds*1000);
   },[allPoints,period]);
-  useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=scrollRef.current.scrollWidth},[points.length,period,xZoom]);
+  useEffect(()=>{if(scrollRef.current){scrollRef.current.scrollLeft=scrollRef.current.scrollWidth;setScrollOffset(scrollRef.current.scrollLeft)}},[points.length,period,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
   if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and level observations.</p></section>;
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
@@ -1870,7 +1876,11 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     const center=(minimum+maximum)/2,pad=Math.max(span*(kind==="qqq"?.10:.14),kind==="qqq"?.02:.05);
     return {low:center-span/2-pad,high:center+span/2+pad};
   };
-  const qqqScale=scaleFor(points.map(point=>point.spot),"qqq"),gammaScale=scaleFor(points.map(point=>point.level),"gamma");
+  // Refit both panels to the data currently inside the horizontal viewport.
+  // This keeps a historical scroll window readable instead of allowing a
+  // single extreme value elsewhere in the session to flatten the view.
+  const viewportWidth=scrollRef.current?.clientWidth||Math.min(width,920),dataCount=Math.max(points.length-1,1),visibleLeft=Math.max(0,scrollOffset),visibleRight=visibleLeft+viewportWidth,firstVisible=clamp(Math.floor((visibleLeft-left)/Math.max(plotWidth,1)*dataCount)-2,0,points.length-1),lastVisible=clamp(Math.ceil((visibleRight-left)/Math.max(plotWidth,1)*dataCount)+2,firstVisible,points.length-1),visiblePoints=points.slice(firstVisible,lastVisible+1);
+  const qqqScale=scaleFor(visiblePoints.map(point=>point.spot),"qqq"),gammaScale=scaleFor(visiblePoints.map(point=>point.level),"gamma");
   const yFor=(value,scale,top,bottom)=>top+(scale.high-value)/(scale.high-scale.low)*(bottom-top),qqqY=value=>yFor(value,qqqScale,topStart,topEnd),gammaY=value=>yFor(value,gammaScale,bottomStart,bottomEnd),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=Math.max(2,Math.min(points.length,8,Math.floor(width/135))),timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=(scale,top,bottom)=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:top+(1-ratio)*(bottom-top)}));
@@ -1908,7 +1918,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         <b className="exposure-axis-name gamma">{axisName}<br/>USD</b>
         {ticks(gammaScale,bottomStart,bottomEnd).map(item=><span className="exposure-axis-tick gamma" key={"g-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
       </aside>
-      <div className="exposure-map-scroll" ref={scrollRef}>
+      <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>setScrollOffset(event.currentTarget.scrollLeft)}>
         <div className="exposure-map-canvas" style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null)}} onContextMenu={event=>event.preventDefault()}>
           <div className="exposure-map-controls"><button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in on time">X+</button><button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out on time">X−</button><button type="button" onClick={reset} title="Reset chart view">↺</button><button type="button" onClick={()=>setExpanded(value=>!value)} title={expanded?"Close expanded chart":"Expand chart"}>{expanded?"×":"↗"}</button></div>
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
@@ -2146,8 +2156,8 @@ function WallIntelligenceChart({id,rows,traces,colors,valueFor,normalize=true}){
 
 function ZoneIntelligenceFixed({symbol}){
   const [spectrum,setSpectrum]=useState([]),[breaks,setBreaks]=useState([]),[summaries,setSummaries]=useState([]),[dayRows,setDayRows]=useState([]),[zeroGammaRows,setZeroGammaRows]=useState([]),[phaseAnchors,setPhaseAnchors]=useState([]),zeroGammaLastRef=useRef(null);
-  useEffect(()=>{const controller=new AbortController();zeroGammaLastRef.current=null;setZeroGammaRows([]);const load=async()=>{const [spectrumResult,breakResult,summaryResult,dayResult,zeroGammaResult]=await Promise.allSettled([fetchWallSpectrum(symbol,controller.signal),fetchWallBreaks(symbol,controller.signal),fetchWallSummaryHistory(symbol,controller.signal),fetchWallDayLevels(symbol,null,controller.signal),fetchWallDayLevels(symbol,null,controller.signal,5,zeroGammaLastRef.current)]);if(spectrumResult.status==="fulfilled")setSpectrum(spectrumResult.value.rows||[]);if(breakResult.status==="fulfilled")setBreaks(breakResult.value.rows||[]);if(summaryResult.status==="fulfilled")setSummaries(summaryResult.value.rows||[]);if(dayResult.status==="fulfilled"){setDayRows(dayResult.value.rows||[]);setPhaseAnchors(dayResult.value.phase_anchors||[])}if(zeroGammaResult.status==="fulfilled"){const incoming=zeroGammaResult.value.rows||[];if(incoming.length){zeroGammaLastRef.current=incoming.at(-1).timestamp;setZeroGammaRows(current=>{const byTimestamp=new Map(current.map(row=>[row.timestamp,row]));incoming.forEach(row=>byTimestamp.set(row.timestamp,row));return [...byTimestamp.values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp))})}};};load().catch(()=>{});const id=window.setInterval(()=>{load().catch(()=>{})},5000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
-  const levelRows=zeroGammaRows.length?zeroGammaRows:(dayRows.length?dayRows:spectrum),latest=levelRows.at(-1)||spectrum.at(-1)||{},walls=latest.walls||{},compact=value=>{const n=number(value);return Math.abs(n)>=1e9?`${(n/1e9).toFixed(2)}B`:Math.abs(n)>=1e6?`${(n/1e6).toFixed(1)}M`:n.toFixed(2)};
+  useEffect(()=>{const controller=new AbortController();zeroGammaLastRef.current=null;setZeroGammaRows([]);const loadFast=async()=>{const [spectrumResult,zeroGammaResult]=await Promise.allSettled([fetchWallSpectrum(symbol,controller.signal),fetchWallDayLevels(symbol,null,controller.signal,5,zeroGammaLastRef.current)]);if(spectrumResult.status==="fulfilled")setSpectrum((spectrumResult.value.rows||[]).slice(-600));if(zeroGammaResult.status==="fulfilled"){const incoming=zeroGammaResult.value.rows||[];if(incoming.length){zeroGammaLastRef.current=incoming.at(-1).timestamp;setZeroGammaRows(current=>{const byTimestamp=new Map(current.map(row=>[row.timestamp,row]));incoming.forEach(row=>byTimestamp.set(row.timestamp,row));return [...byTimestamp.values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-600)})}}};const loadSlow=async()=>{const [breakResult,summaryResult,dayResult]=await Promise.allSettled([fetchWallBreaks(symbol,controller.signal),fetchWallSummaryHistory(symbol,controller.signal),fetchWallDayLevels(symbol,null,controller.signal)]);if(breakResult.status==="fulfilled")setBreaks((breakResult.value.rows||[]).slice(-200));if(summaryResult.status==="fulfilled")setSummaries((summaryResult.value.rows||[]).slice(-200));if(dayResult.status==="fulfilled"){setDayRows((dayResult.value.rows||[]).slice(-600));setPhaseAnchors(dayResult.value.phase_anchors||[])}};loadFast().catch(()=>{});loadSlow().catch(()=>{});const fastId=window.setInterval(()=>loadFast().catch(()=>{}),5000);const slowId=window.setInterval(()=>loadSlow().catch(()=>{}),30000);return()=>{controller.abort();clearInterval(fastId);clearInterval(slowId)}},[symbol]);
+  const spectrumRows=spectrum.slice(-600),dayDisplayRows=dayRows.slice(-600),levelRows=(zeroGammaRows.length?zeroGammaRows:(dayRows.length?dayRows:spectrum)).slice(-600),latest=levelRows.at(-1)||spectrumRows.at(-1)||{},walls=latest.walls||{},compact=value=>{const n=number(value);return Math.abs(n)>=1e9?`${(n/1e9).toFixed(2)}B`:Math.abs(n)>=1e6?`${(n/1e6).toFixed(1)}M`:n.toFixed(2)};
   const levelTraces=["QQQ Price","Call Wall","Put Wall","Zero Gamma","Support","Resistance"];
   const colors={"QQQ Price":"#e6edf3","Call Wall":"#00d084","Put Wall":"#ff4f69","Zero Gamma":"#b56cff","Support":"#ff61b6","Resistance":"#ff8b75","DealerFlow":"#00d084","DEX":"#58a6ff","VolHack":"#ffd60a","Pos Inventory":"#5ce1b8","Neg Inventory":"#ff7382","GEX Density":"#ff8a00","TW GEX":"#a855f7","Spoof Score":"#ffd60a","Edge":"#4dd4ac","Liquidity":"#98a7b7","VIX":"#ff9f43"};
   const value=(row,name)=>({"QQQ Price":number(row.spot),"Call Wall":number(row.walls?.CALL_WALL?.strike),"Put Wall":number(row.walls?.PUT_WALL?.strike),"Zero Gamma":number(row.walls?.ZERO_GAMMA?.strike),"Support":number(row.walls?.SUPPORT?.strike),"Resistance":number(row.walls?.RESISTANCE?.strike),"DealerFlow":number(row.dealer_flow),"DEX":number(row.dex),"VolHack":number(row.vol_hack),"Pos Inventory":number(row.pos_inventory),"Neg Inventory":number(row.neg_inventory),"GEX Density":number(row.gex_dollar_density),"TW GEX":number(row.tw_gex),"Spoof Score":number(row.spoof_score),"Edge":number(row.edge),"Liquidity":number(row.liq_score),"VIX":number(row.vix)}[name]??0);
@@ -2205,11 +2215,11 @@ function interfaceHoverLabel(element){
 export default function Home() {
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
-  const [chartHistory,setChartHistory]=useState([]);
+  const [chartHistory,setChartHistoryState]=useState([]),setChartHistory=HIDDEN_OVERVIEW_MODULES.has("gamma-dynamics")?()=>{}:setChartHistoryState;
   const [attribution,setAttribution]=useState({systems:{}});
   const [apiConnected,setApiConnected]=useState(false), [toast,setToast]=useState(""), [replay,setReplay]=useState(null);
   const [instruments,setInstruments]=useState(FALLBACK_INSTRUMENTS);
-  const [activeSection,setActiveSection]=useState("decision"),[clock,setClock]=useState(Date.now());
+  const [activeSection,setActiveSection]=useState("system-scorecard"),[clock,setClock]=useState(Date.now());
   const [moduleOrder,setModuleOrder]=useState(()=>{try{const saved=JSON.parse(window.localStorage.getItem("axiom-overview-module-order")??"null");return Array.isArray(saved)&&saved.length===DEFAULT_MODULE_ORDER.length&&DEFAULT_MODULE_ORDER.every(id=>saved.includes(id))?saved:DEFAULT_MODULE_ORDER}catch{return DEFAULT_MODULE_ORDER}}),[draggedModule,setDraggedModule]=useState(null),[dragOverModule,setDragOverModule]=useState(null);
   useEffect(()=>{const tooltip=document.createElement("div");tooltip.className="interface-hover-tooltip";tooltip.setAttribute("role","tooltip");document.body.append(tooltip);let active=null;const targetFor=element=>element instanceof Element?element.closest("th,button"):null;const position=event=>{tooltip.style.left=`${Math.min(window.innerWidth-24,event.clientX+14)}px`;tooltip.style.top=`${Math.min(window.innerHeight-24,event.clientY+16)}px`};const show=event=>{const target=targetFor(event.target);if(!target)return;active=target;tooltip.textContent=interfaceHoverLabel(target);position(event);tooltip.dataset.visible="true"};const move=event=>{if(active)position(event)};const hide=event=>{const next=targetFor(event.relatedTarget);if(next===active)return;active=null;tooltip.dataset.visible="false"};document.addEventListener("pointerover",show);document.addEventListener("pointermove",move);document.addEventListener("pointerout",hide);return()=>{document.removeEventListener("pointerover",show);document.removeEventListener("pointermove",move);document.removeEventListener("pointerout",hide);tooltip.remove()}},[]);
   const state=dashboard.state, history=dashboard.history??[], alerts=dashboard.alerts??[], engine=dashboard.engine??{}, performance=dashboard.performance??{};
@@ -2218,16 +2228,16 @@ export default function Home() {
   useEffect(()=>{const controller=new AbortController();refresh(controller.signal);const id=window.setInterval(()=>refresh(controller.signal),5000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchConfiguration(controller.signal).then(setConfig).catch(()=>{});return()=>controller.abort()},[]);
   useEffect(()=>{const controller=new AbortController();const refreshOutcomes=()=>fetchOutcomeAttribution(symbol,controller.signal).then(setAttribution).catch(error=>{if(error.name!=="AbortError")setAttribution({symbol,systems:{},unavailable:true,error:error.message})});refreshOutcomes();const id=window.setInterval(refreshOutcomes,30000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
-  useEffect(()=>{const controller=new AbortController();fetchDynamicsHistory(symbol,controller.signal).then(result=>setChartHistory(result.rows??[])).catch(error=>{if(error.name!=="AbortError")setChartHistory([])});return()=>controller.abort()},[symbol]);
+  useEffect(()=>{if(HIDDEN_OVERVIEW_MODULES.has("gamma-dynamics")){setChartHistory([]);return undefined}const controller=new AbortController();fetchDynamicsHistory(symbol,controller.signal).then(result=>setChartHistory(result.rows??[])).catch(error=>{if(error.name!=="AbortError")setChartHistory([])});return()=>controller.abort()},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchInstruments(controller.signal).then(setInstruments).catch(()=>{});return()=>controller.abort()},[]);
-  useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(id)},[]);
-  const orderedOverviewSections=[...OVERVIEW_SECTIONS.slice(0,2),...moduleOrder.map(id=>[OVERVIEW_LABELS[id],id])];
+  useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),5000);return()=>clearInterval(id)},[]);
+  const orderedOverviewSections=[OVERVIEW_SECTIONS[0],...moduleOrder.map(id=>[OVERVIEW_LABELS[id],id])];
   useEffect(()=>{if(view!=="Overview")return;const sections=orderedOverviewSections.map(([,id])=>document.getElementById(id)).filter(Boolean);const observer=new IntersectionObserver(entries=>{const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(visible)setActiveSection(visible.target.id)},{rootMargin:"-18% 0px -68% 0px",threshold:[0,.2,.5,.8]});sections.forEach(section=>observer.observe(section));return()=>observer.disconnect()},[view,moduleOrder]);
   useEffect(()=>{window.localStorage.setItem("axiom-overview-module-order",JSON.stringify(moduleOrder))},[moduleOrder]);
   useEffect(()=>subscribeToEvents(message=>{if(message.topic==="market_state"){setDashboard(current=>({...current,state:message.payload,history:[...(current.history??[]),message.payload].slice(-120)}));setChartHistory(current=>[...current.filter(row=>row.timestamp!==message.payload.timestamp),message.payload].slice(-5000))}if(message.topic==="alert")setDashboard(current=>({...current,alerts:[toDashboardAlert(message.payload),...(current.alerts??[])].slice(0,100)}));if(message.topic==="outcome")setDashboard(current=>({...current,alerts:(current.alerts??[]).map(alert=>alert.id===message.payload.alert_id?{...alert,result:number(message.payload.precision)>=.7?"SUCCESS":"FAILURE",precision:number(message.payload.precision).toFixed(2)}:alert)}));if(message.topic==="engine_status"){setDashboard(current=>({...current,engine:message.payload}));setSystem(current=>current?{...current,engine:message.payload}:current)}if(message.topic==="system_event")setSystem(current=>current?{...current,events:[message.payload,...(current.events??[])].slice(0,25)}:current);if(message.topic==="replay_status")setReplay(message.payload)},()=>{}),[]);
   useEffect(()=>{if(!replay?.id||replay.status!=="running")return;const id=setInterval(()=>fetchReplay(replay.id).then(setReplay).catch(()=>{}),2000);return()=>clearInterval(id)},[replay?.id,replay?.status]);
   const runReplay=async()=>{try{const day=new Date();day.setDate(day.getDate()-1);while(day.getDay()===0||day.getDay()===6)day.setDate(day.getDate()-1);const date=day.toISOString().slice(0,10);setReplay(await startReplay({symbol,start:new Date(`${date}T09:30:00`).toISOString(),end:new Date(`${date}T16:00:00`).toISOString(),bar_resolution_seconds:60,replay_speed:0}));notify("Historical replay started")}catch(error){notify(error.message)}};
-  const indicators=state?.supporting_indicators??{}, visualHistory=chartHistory.length?chartHistory:history;
+  const indicators=state?.supporting_indicators??{}, visualHistory=(chartHistory.length?chartHistory:history).slice(-1200);
   const headerQuote=optionalNumber(indicators.price??state?.price??state?.underlying_price??state?.spot);
   const easternNow=time(clock).replace(" EST","");
   const liveBiasAlerts=alerts.filter(alert=>alert.channel==="LIVE");
@@ -2252,7 +2262,6 @@ export default function Home() {
     <aside className="sidebar"><div className="side-top"><div className="nav-context"><span>WORKSPACE</span><b>Live Overview</b><small>Decision → models → evidence</small></div><div className="nav-section-label"><span>NAVIGATION</span><b>{orderedOverviewSections.length} SECTIONS</b></div><nav className="overview-subnav" aria-label="Overview sections">{orderedOverviewSections.map(([label,section],index)=><button className={activeSection===section?"active":""} aria-current={activeSection===section?"location":undefined} key={section} onClick={()=>jumpTo(section)}><b>{String(index+1).padStart(2,"0")}</b><span><strong>{label}</strong><small>{OVERVIEW_CATEGORIES[section]}</small></span></button>)}</nav><div className="layout-actions"><button type="button" onClick={()=>setAllSections(true)}>Expand all</button><button type="button" onClick={()=>setAllSections(false)}>Collapse all</button></div><button type="button" className="reset-layout" onClick={()=>{setModuleOrder(DEFAULT_MODULE_ORDER);notify("Overview order reset")}}>↺ Reset section order</button></div><div className="side-bottom"><div className={`system-health ${system?.database_connected?"is-good":"is-bad"}`}><span><i/>{system?.database_connected?"System healthy":"System degraded"}</span><small>v{config?.version??"—"} · Render</small></div></div></aside>
     <section className="content">{view!=="Overview"?<ModulePage {...{view,state,history,alerts,performance,system,config,replay,onReplay:runReplay,notify}}/>:<><div id="overview-top" className="page-head overview-command overview-section"><div><div className="eyebrow">LIVE TRADING COMMAND</div><h1>Pressure intelligence</h1><p>Options-derived directional pressure with independent price confirmation.</p></div><div className="controls"><label>Instrument<select value={symbol} disabled={engine.running} onChange={e=>setSymbol(e.target.value)}>{instruments.map(item=><option value={item.symbol} key={item.symbol}>{item.symbol}</option>)}</select><small className={selectedInstrument?.available?"provider-ready":"provider-missing"}>{selectedInstrument?.provider}{selectedInstrument?.requirement?` · ${selectedInstrument.requirement}`:""}</small></label><label>Update interval<select value={resolution} onChange={e=>setResolution(Number(e.target.value))}><option value="5">5 seconds</option><option value="15">15 seconds</option><option value="60">1 minute</option></select></label></div></div>
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
-    <OverviewSectionHeading number="02" title="One-screen focus" description="The complete options-pressure decision and every active gate in one view."/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
