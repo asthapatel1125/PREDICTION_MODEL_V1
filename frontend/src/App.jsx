@@ -1859,10 +1859,19 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   // Keep the two independent plots compact enough to sit comfortably in the
   // Wall Intelligence card while retaining a readable grid and x-axis.
   const width=Math.max(920,points.length*xZoom),height=380,left=76,right=16,topStart=22,topEnd=145,bottomStart=190,bottomEnd=344,plotWidth=width-left-right;
-  const scaleFor=values=>{const minimum=Math.min(...values),maximum=Math.max(...values),base=Math.max(maximum-minimum,.02),span=base/yZoom,pad=Math.max(span*.16,.01),middle=(minimum+maximum)/2;return {low:middle-span/2-pad,high:middle+span/2+pad}};
+  // Use a robust local range so one stale/outlier wall does not flatten the
+  // entire live series. The full values remain in the hover card and labels;
+  // the plot scale follows the central 5th–95th percentile movement.
+  const scaleFor=values=>{
+    const sorted=values.filter(value=>Number.isFinite(value)).sort((a,b)=>a-b);
+    if(!sorted.length)return {low:0,high:1};
+    const quantile=ratio=>sorted[Math.min(sorted.length-1,Math.max(0,Math.round((sorted.length-1)*ratio)))];
+    const minimum=quantile(.05),maximum=quantile(.95),base=Math.max(maximum-minimum,.02),span=base/yZoom,pad=Math.max(span*.22,.01),middle=(minimum+maximum)/2;
+    return {low:middle-span/2-pad,high:middle+span/2+pad};
+  };
   const qqqScale=scaleFor(points.map(point=>point.spot)),gammaScale=scaleFor(points.map(point=>point.level));
   const yFor=(value,scale,top,bottom)=>top+(scale.high-value)/(scale.high-scale.low)*(bottom-top),qqqY=value=>yFor(value,qqqScale,topStart,topEnd),gammaY=value=>yFor(value,gammaScale,bottomStart,bottomEnd),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
-  const tickCount=Math.max(2,Math.min(points.length,Math.floor(width/155))),timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
+  const tickCount=Math.max(2,Math.min(points.length,8,Math.floor(width/135))),timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=(scale,top,bottom)=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:top+(1-ratio)*(bottom-top)}));
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
@@ -1902,10 +1911,9 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         <div className="exposure-map-canvas" style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null)}} onContextMenu={event=>event.preventDefault()}>
           <div className="exposure-map-controls"><button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in on time">X+</button><button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out on time">X−</button><button type="button" onClick={reset} title="Reset chart view">↺</button><button type="button" onClick={()=>setExpanded(value=>!value)} title={expanded?"Close expanded chart":"Expand chart"}>{expanded?"×":"↗"}</button></div>
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
-            <text className="exposure-axis-heading" x={left} y={topStart-8}>QQQ PRICE · LOCAL SCALE</text>
-            <text className="exposure-axis-heading" x={left} y={bottomStart-8}>{levelName} · LOCAL SCALE</text>
             {ticks(qqqScale,topStart,topEnd).map(item=><line className="wi-grid" key={"qqq-grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             {ticks(gammaScale,bottomStart,bottomEnd).map(item=><line className="wi-grid" key={"gamma-grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
+            <line className="exposure-panel-divider" x1={left} x2={width-right} y1={172} y2={172}/>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={topStart} y2={bottomEnd}/><text x={x(index)} y={height-12} textAnchor="middle">{logTime(points[index].timestamp)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
