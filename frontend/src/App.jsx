@@ -1824,6 +1824,7 @@ function GexWallNominationLog({rows=[]}){
     {key:"RESISTANCE",label:"RESISTANCE",color:"#ff8b75"},
     {key:"SUPPORT",label:"SUPPORT",color:"#ff61b6"},
   ];
+  const dominantStrength=wall=>strengths.reduce((winner,strength)=>wall.counts[strength]>wall.counts[winner]?strength:winner,"STRONGEST");
   const dailyRows=useMemo(()=>{
     const days=new Map();
     rows.forEach(row=>{
@@ -1855,8 +1856,8 @@ function GexWallNominationLog({rows=[]}){
   ].join("\n"));
   return <section className="gex-wall-nomination-log" aria-label="GEX wall nomination price tally">
     <header><div><span>GEX WALL NOMINATION LOG</span><h3>Daily rounded wall-price nominations by strength</h3></div><button type="button" onClick={copy} disabled={!dailyRows.length}>COPY DATA</button></header>
-    <p>One row represents one Eastern trading date. Prices are rounded to the nearest whole QQQ point. Every price each wall held that day remains in its wall cell, ordered by when it was first nominated.</p>
-    <div className="gex-wall-nomination-scroll"><table><thead><tr><th>DATE</th>{wallColumns.map(column=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{dailyRows.map(day=><tr key={day.date}><td><b className="gex-tally-price">{day.date}</b></td>{wallColumns.map(column=>{const walls=day.walls[column.key];return <td key={column.key}>{walls.length?<div className="gex-nominated-wall-list">{walls.map(wall=><div className="gex-nominated-wall" style={{"--wall-color":column.color}} key={wall.strike}><b>{wall.strike.toFixed(0)}</b><div className="gex-nomination-counts">{strengths.map(strength=><span className={strength.toLowerCase()} title={`${strength} · ${day.date}`} key={strength}><i>{countLabel[strength]}</i><strong>{wall.counts[strength]}</strong></span>)}</div></div>)}</div>:<span className="gex-no-wall">—</span>}</td>})}</tr>)}</tbody></table>{!dailyRows.length&&<div className="gex-nomination-empty">Waiting for stored wall nominations.</div>}</div>
+    <p>One row represents one Eastern trading date. Prices are rounded to the nearest whole QQQ point and ordered by first nomination. A price colour identifies its dominant strength count for that day: Strongest blue, Strong green, Normal grey, Weak yellow, Weakest red.</p>
+    <div className="gex-wall-nomination-scroll"><table><thead><tr><th>DATE</th>{wallColumns.map(column=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{dailyRows.map(day=><tr key={day.date}><td><b className="gex-tally-price">{day.date}</b></td>{wallColumns.map(column=>{const walls=day.walls[column.key];return <td key={column.key}>{walls.length?<div className="gex-nominated-wall-list">{walls.map(wall=>{const dominant=dominantStrength(wall),total=Object.values(wall.counts).reduce((sum,value)=>sum+value,0);return <b className={`gex-nominated-price ${dominant.toLowerCase()}`} key={wall.strike} title={`${dominant} · ${total} nominations · ${day.date}`}>{wall.strike.toFixed(0)}</b>})}</div>:<span className="gex-no-wall">—</span>}</td>})}</tr>)}</tbody></table>{!dailyRows.length&&<div className="gex-nomination-empty">Waiting for stored wall nominations.</div>}</div>
   </section>;
 }
 

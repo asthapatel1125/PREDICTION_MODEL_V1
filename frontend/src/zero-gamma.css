@@ -61,3 +61,4 @@
 .gex-nominated-wall>b{color:var(--wall-color,#d6b0ff);font-size:12px}
 .gex-tally-price{color:#e5eef5;font:700 13px var(--font-mono,monospace)}
 .gex-nominated-wall-list{display:grid;gap:9px}.gex-wall-nomination-scroll td{vertical-align:top}
+.gex-nominated-price{display:block;width:max-content;padding:3px 0;font:700 16px/1.1 var(--font-mono,monospace);letter-spacing:.02em}.gex-nominated-price.strongest{color:#9bd7ff}.gex-nominated-price.strong{color:#91efb2}.gex-nominated-price.normal{color:#c5ced5}.gex-nominated-price.weak{color:#ffd45e}.gex-nominated-price.weakest{color:#ff6f80}
