@@ -1824,44 +1824,38 @@ function GexWallNominationLog({rows=[]}){
     {key:"RESISTANCE",label:"RESISTANCE",color:"#ff8b75"},
     {key:"SUPPORT",label:"SUPPORT",color:"#ff61b6"},
   ];
-  const historyCounts=useMemo(()=>{
-    const counts=new Map();
+  const dailyRows=useMemo(()=>{
+    const days=new Map();
     rows.forEach(row=>{
+      const timestamp=Date.parse(row?.timestamp||"");
+      if(!Number.isFinite(timestamp))return;
+      const date=logDate(row.timestamp);
+      if(!days.has(date))days.set(date,{walls:Object.fromEntries(wallColumns.map(column=>[column.key,new Map()]))});
+      const day=days.get(date);
       wallColumns.forEach(column=>{
         const level=row?.walls?.[column.key],strike=number(level?.strike);
         if(!Number.isFinite(strike)||strike<=0)return;
-        const tier=String(level?.tier??level?.strength??"WEAKEST").toUpperCase(),validTier=strengths.includes(tier)?tier:"WEAKEST",roundedStrike=Math.round(strike),key=`${column.key}:${roundedStrike}`;
-        if(!counts.has(key))counts.set(key,{strike:roundedStrike,total:0,counts:Object.fromEntries(strengths.map(name=>[name,0])),lastAt:0});
-        const nomination=counts.get(key);
+        const tier=String(level?.tier??level?.strength??"WEAKEST").toUpperCase(),validTier=strengths.includes(tier)?tier:"WEAKEST",roundedStrike=Math.round(strike),priceKey=String(roundedStrike),nominations=day.walls[column.key];
+        if(!nominations.has(priceKey))nominations.set(priceKey,{strike:roundedStrike,total:0,counts:Object.fromEntries(strengths.map(name=>[name,0])),lastAt:timestamp});
+        const nomination=nominations.get(priceKey);
         nomination.total+=1;
         nomination.counts[validTier]+=1;
-        nomination.lastAt=Math.max(nomination.lastAt,Date.parse(row?.timestamp||"")||0);
+        nomination.lastAt=Math.max(nomination.lastAt,timestamp);
       });
     });
-    return counts;
+    return [...days.entries()].map(([date,day])=>({date,walls:Object.fromEntries(wallColumns.map(column=>[column.key,[...day.walls[column.key].values()].sort((a,b)=>b.total-a.total||b.lastAt-a.lastAt||a.strike-b.strike)[0]??null]))})).sort((a,b)=>b.date.localeCompare(a.date));
   },[rows]);
-  const priceRows=useMemo(()=>{
-    const prices=new Map();
-    historyCounts.forEach((nomination,key)=>{
-      const [wallKey,priceKey]=key.split(":"),price=Number(priceKey);
-      if(!prices.has(priceKey))prices.set(priceKey,{price,total:0,walls:Object.fromEntries(wallColumns.map(column=>[column.key,null]))});
-      const row=prices.get(priceKey);
-      row.walls[wallKey]=nomination;
-      row.total+=nomination.total;
-    });
-    return [...prices.values()].sort((a,b)=>b.total-a.total||a.price-b.price);
-  },[historyCounts]);
   const copy=()=>navigator.clipboard?.writeText([
-    ["PRICE",...wallColumns.map(column=>column.label)].join("\t"),
-    ...priceRows.map(row=>[row.price.toFixed(0),...wallColumns.map(column=>{
-      const wall=row.walls[column.key];
+    ["DATE",...wallColumns.map(column=>column.label)].join("\t"),
+    ...dailyRows.map(day=>[day.date,...wallColumns.map(column=>{
+      const wall=day.walls[column.key];
       return wall?`${wall.strike.toFixed(0)} · ${strengths.map(name=>`${name}: ${wall.counts[name]}`).join(" · ")}`:"—";
     })].join("\t")),
   ].join("\n"));
   return <section className="gex-wall-nomination-log" aria-label="GEX wall nomination price tally">
-    <header><div><span>GEX WALL NOMINATION LOG</span><h3>Rounded price tally across all stored history</h3></div><button type="button" onClick={copy} disabled={!priceRows.length}>COPY DATA</button></header>
-    <p>One row represents one whole QQQ price. Every later nomination at that same rounded price—regardless of date—adds to the matching wall-type and strength tally.</p>
-    <div className="gex-wall-nomination-scroll"><table><thead><tr><th>PRICE</th>{wallColumns.map(column=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{priceRows.map(row=><tr key={row.price}><td><b className="gex-tally-price">{row.price.toFixed(0)}</b></td>{wallColumns.map(column=>{const wall=row.walls[column.key];return <td key={column.key}>{wall?<div className="gex-nominated-wall" style={{"--wall-color":column.color}}><div className="gex-nomination-counts">{strengths.map(strength=><span className={strength.toLowerCase()} title={`${strength} · all history`} key={strength}><i>{countLabel[strength]}</i><strong>{wall.counts[strength]}</strong></span>)}</div></div>:<span className="gex-no-wall">—</span>}</td>})}</tr>)}</tbody></table>{!priceRows.length&&<div className="gex-nomination-empty">Waiting for stored wall nominations.</div>}</div>
+    <header><div><span>GEX WALL NOMINATION LOG</span><h3>Daily rounded wall-price nominations by strength</h3></div><button type="button" onClick={copy} disabled={!dailyRows.length}>COPY DATA</button></header>
+    <p>One row represents one Eastern trading date. Prices are rounded to the nearest whole QQQ point; each wall cell shows that date’s most frequently nominated price and its five strength counts.</p>
+    <div className="gex-wall-nomination-scroll"><table><thead><tr><th>DATE</th>{wallColumns.map(column=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{dailyRows.map(day=><tr key={day.date}><td><b className="gex-tally-price">{day.date}</b></td>{wallColumns.map(column=>{const wall=day.walls[column.key];return <td key={column.key}>{wall?<div className="gex-nominated-wall" style={{"--wall-color":column.color}}><b>{wall.strike.toFixed(0)}</b><div className="gex-nomination-counts">{strengths.map(strength=><span className={strength.toLowerCase()} title={`${strength} · ${day.date}`} key={strength}><i>{countLabel[strength]}</i><strong>{wall.counts[strength]}</strong></span>)}</div></div>:<span className="gex-no-wall">—</span>}</td>})}</tr>)}</tbody></table>{!dailyRows.length&&<div className="gex-nomination-empty">Waiting for stored wall nominations.</div>}</div>
   </section>;
 }
 
