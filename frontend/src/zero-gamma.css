@@ -60,3 +60,4 @@
 
 .gex-nominated-wall>b{color:var(--wall-color,#d6b0ff);font-size:12px}
 .gex-tally-price{color:#e5eef5;font:700 13px var(--font-mono,monospace)}
+.gex-nominated-wall-list{display:grid;gap:9px}.gex-wall-nomination-scroll td{vertical-align:top}

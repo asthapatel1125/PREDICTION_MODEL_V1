@@ -1836,26 +1836,27 @@ function GexWallNominationLog({rows=[]}){
         const level=row?.walls?.[column.key],strike=number(level?.strike);
         if(!Number.isFinite(strike)||strike<=0)return;
         const tier=String(level?.tier??level?.strength??"WEAKEST").toUpperCase(),validTier=strengths.includes(tier)?tier:"WEAKEST",roundedStrike=Math.round(strike),priceKey=String(roundedStrike),nominations=day.walls[column.key];
-        if(!nominations.has(priceKey))nominations.set(priceKey,{strike:roundedStrike,total:0,counts:Object.fromEntries(strengths.map(name=>[name,0])),lastAt:timestamp});
+        if(!nominations.has(priceKey))nominations.set(priceKey,{strike:roundedStrike,total:0,counts:Object.fromEntries(strengths.map(name=>[name,0])),firstAt:timestamp,lastAt:timestamp});
         const nomination=nominations.get(priceKey);
         nomination.total+=1;
         nomination.counts[validTier]+=1;
+        nomination.firstAt=Math.min(nomination.firstAt,timestamp);
         nomination.lastAt=Math.max(nomination.lastAt,timestamp);
       });
     });
-    return [...days.entries()].map(([date,day])=>({date,walls:Object.fromEntries(wallColumns.map(column=>[column.key,[...day.walls[column.key].values()].sort((a,b)=>b.total-a.total||b.lastAt-a.lastAt||a.strike-b.strike)[0]??null]))})).sort((a,b)=>b.date.localeCompare(a.date));
+    return [...days.entries()].map(([date,day])=>({date,walls:Object.fromEntries(wallColumns.map(column=>[column.key,[...day.walls[column.key].values()].sort((a,b)=>a.firstAt-b.firstAt||a.strike-b.strike)]))})).sort((a,b)=>b.date.localeCompare(a.date));
   },[rows]);
   const copy=()=>navigator.clipboard?.writeText([
     ["DATE",...wallColumns.map(column=>column.label)].join("\t"),
     ...dailyRows.map(day=>[day.date,...wallColumns.map(column=>{
-      const wall=day.walls[column.key];
-      return wall?`${wall.strike.toFixed(0)} · ${strengths.map(name=>`${name}: ${wall.counts[name]}`).join(" · ")}`:"—";
+      const walls=day.walls[column.key];
+      return walls.length?walls.map(wall=>`${wall.strike.toFixed(0)} · ${strengths.map(name=>`${name}: ${wall.counts[name]}`).join(" · ")}`).join(" | "):"—";
     })].join("\t")),
   ].join("\n"));
   return <section className="gex-wall-nomination-log" aria-label="GEX wall nomination price tally">
     <header><div><span>GEX WALL NOMINATION LOG</span><h3>Daily rounded wall-price nominations by strength</h3></div><button type="button" onClick={copy} disabled={!dailyRows.length}>COPY DATA</button></header>
-    <p>One row represents one Eastern trading date. Prices are rounded to the nearest whole QQQ point; each wall cell shows that date’s most frequently nominated price and its five strength counts.</p>
-    <div className="gex-wall-nomination-scroll"><table><thead><tr><th>DATE</th>{wallColumns.map(column=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{dailyRows.map(day=><tr key={day.date}><td><b className="gex-tally-price">{day.date}</b></td>{wallColumns.map(column=>{const wall=day.walls[column.key];return <td key={column.key}>{wall?<div className="gex-nominated-wall" style={{"--wall-color":column.color}}><b>{wall.strike.toFixed(0)}</b><div className="gex-nomination-counts">{strengths.map(strength=><span className={strength.toLowerCase()} title={`${strength} · ${day.date}`} key={strength}><i>{countLabel[strength]}</i><strong>{wall.counts[strength]}</strong></span>)}</div></div>:<span className="gex-no-wall">—</span>}</td>})}</tr>)}</tbody></table>{!dailyRows.length&&<div className="gex-nomination-empty">Waiting for stored wall nominations.</div>}</div>
+    <p>One row represents one Eastern trading date. Prices are rounded to the nearest whole QQQ point. Every price each wall held that day remains in its wall cell, ordered by when it was first nominated.</p>
+    <div className="gex-wall-nomination-scroll"><table><thead><tr><th>DATE</th>{wallColumns.map(column=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{dailyRows.map(day=><tr key={day.date}><td><b className="gex-tally-price">{day.date}</b></td>{wallColumns.map(column=>{const walls=day.walls[column.key];return <td key={column.key}>{walls.length?<div className="gex-nominated-wall-list">{walls.map(wall=><div className="gex-nominated-wall" style={{"--wall-color":column.color}} key={wall.strike}><b>{wall.strike.toFixed(0)}</b><div className="gex-nomination-counts">{strengths.map(strength=><span className={strength.toLowerCase()} title={`${strength} · ${day.date}`} key={strength}><i>{countLabel[strength]}</i><strong>{wall.counts[strength]}</strong></span>)}</div></div>)}</div>:<span className="gex-no-wall">—</span>}</td>})}</tr>)}</tbody></table>{!dailyRows.length&&<div className="gex-nomination-empty">Waiting for stored wall nominations.</div>}</div>
   </section>;
 }
 
