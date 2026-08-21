@@ -6,21 +6,28 @@ import {
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["Live alerts", "live-alerts"],
+  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["Gamma Dynamics 1.0", "gamma-dynamics"], ["Gamma Dynamics 2.0", "gamma-dynamics-v2"], ["Gamma Dynamics 3.0", "gamma-dynamics-v3"], ["Delta Dynamics", "six-greek-dynamics"], ["Live alerts", "live-alerts"],
 ];
-const DEFAULT_MODULE_ORDER=["wall-intelligence","live-alerts"];
+const DEFAULT_MODULE_ORDER=["wall-intelligence","gamma-dynamics","gamma-dynamics-v2","gamma-dynamics-v3","six-greek-dynamics","live-alerts"];
 // Keep every dynamics implementation in the bundle and backend, but pause its
 // browser-side panels/history while the lightweight Wall Intelligence view is
 // active. Setting this to false restores the panels without changing model code.
 const DYNAMICS_STREAMS_PAUSED=true;
 const PAUSED_DYNAMICS_MODULES=["gamma-dynamics","gamma-dynamics-v2","gamma-dynamics-v3","six-greek-dynamics"];
-const HIDDEN_OVERVIEW_MODULES=new Set(["decision",...(DYNAMICS_STREAMS_PAUSED?PAUSED_DYNAMICS_MODULES:[]),"forecast","score-modules","greek-orders"]);
-const stripPausedDynamics=state=>{
-  if(!DYNAMICS_STREAMS_PAUSED||!state)return state;
-  const {gamma_dynamics:_gamma,gamma_dynamics_v2:_gammaV2,gamma_dynamics_v3:_gammaV3,zone_intelligence:_delta,...rest}=state;
-  return rest;
+// Paused means "freeze the model panels at their last snapshot", not "remove
+// the panels". The model classes, payload shape, and API remain unchanged.
+const HIDDEN_OVERVIEW_MODULES=new Set(["decision","forecast","score-modules","greek-orders"]);
+const PAUSED_DYNAMICS_KEYS=["gamma_dynamics","gamma_dynamics_v2","gamma_dynamics_v3","zone_intelligence"];
+const preservePausedDynamics=(previous,next)=>{
+  if(!DYNAMICS_STREAMS_PAUSED||!next)return next;
+  const frozen=previous??{};
+  return {...next,...Object.fromEntries(PAUSED_DYNAMICS_KEYS.filter(key=>frozen[key]!==undefined).map(key=>[key,frozen[key]]))};
 };
-const stripPausedDashboard=dashboard=>DYNAMICS_STREAMS_PAUSED?{...dashboard,state:stripPausedDynamics(dashboard?.state),history:(dashboard?.history??[]).map(stripPausedDynamics)}:dashboard;
+const mergePausedDashboard=(previous,next)=>{
+  if(!DYNAMICS_STREAMS_PAUSED||!next)return next;
+  const oldHistory=new Map((previous?.history??[]).map(row=>[row.timestamp,row]));
+  return {...next,state:preservePausedDynamics(previous?.state,next.state),history:(next.history??[]).map(row=>preservePausedDynamics(oldHistory.get(row.timestamp),row))};
+};
 const OVERVIEW_LABELS=Object.fromEntries(OVERVIEW_SECTIONS.map(([label,id])=>[id,label]));
 const OVERVIEW_NUMBERS=Object.fromEntries(OVERVIEW_SECTIONS.map(([,id],index)=>[id,String(index+1).padStart(2,"0")]));
 const OVERVIEW_CATEGORIES={
@@ -533,7 +540,7 @@ function DraggableOverviewModule({id,index,dragged,dragOver,onDragStart,onDragOv
   const target=dragOver?.id===id&&dragged!==id;
   return <div className={`draggable-overview-module ${dragged===id?"is-dragging":""} ${target?`is-drag-over drop-${dragOver.position}`:""}`} data-module-id={id} style={{order:index}}>
       <button type="button" className="module-drag-handle" draggable="true" onDragStart={event=>onDragStart(event,id)} onDragEnd={onDragEnd} aria-label={`Drag ${OVERVIEW_LABELS[id]} section to reorder`} title="Drag with your cursor to reorder this section"><span>⠿</span><b>REORDER</b><small>Position {index+3}</small></button>
-    <div className="module-drop-zone" onDragEnter={event=>onDragOver(event,id)} onDragOver={event=>onDragOver(event,id)} onDrop={event=>onDrop(event,id)}>{children}</div>
+    <div className="module-drop-zone" onDragEnter={event=>onDragOver(event,id)} onDragOver={event=>onDragOver(event,id)} onDrop={event=>onDrop(event,id)}>{DYNAMICS_STREAMS_PAUSED&&PAUSED_DYNAMICS_MODULES.includes(id)&&<div className="dynamics-paused-banner">⏸ MODEL SNAPSHOT · STREAM PAUSED · ARCHITECTURE RETAINED</div>}{children}</div>
   </div>;
 }
 
@@ -2227,7 +2234,7 @@ function interfaceHoverLabel(element){
 export default function Home() {
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
-  const [chartHistory,setChartHistoryState]=useState([]),setChartHistory=HIDDEN_OVERVIEW_MODULES.has("gamma-dynamics")?()=>{}:setChartHistoryState;
+  const [chartHistory,setChartHistoryState]=useState([]),dynamicsHistoryFrozenRef=useRef(false);
   const [attribution,setAttribution]=useState({systems:{}});
   const [apiConnected,setApiConnected]=useState(false), [toast,setToast]=useState(""), [replay,setReplay]=useState(null);
   const [instruments,setInstruments]=useState(FALLBACK_INSTRUMENTS);
@@ -2236,17 +2243,17 @@ export default function Home() {
   useEffect(()=>{const tooltip=document.createElement("div");tooltip.className="interface-hover-tooltip";tooltip.setAttribute("role","tooltip");document.body.append(tooltip);let active=null;const targetFor=element=>element instanceof Element?element.closest("th,button"):null;const position=event=>{tooltip.style.left=`${Math.min(window.innerWidth-24,event.clientX+14)}px`;tooltip.style.top=`${Math.min(window.innerHeight-24,event.clientY+16)}px`};const show=event=>{const target=targetFor(event.target);if(!target)return;active=target;tooltip.textContent=interfaceHoverLabel(target);position(event);tooltip.dataset.visible="true"};const move=event=>{if(active)position(event)};const hide=event=>{const next=targetFor(event.relatedTarget);if(next===active)return;active=null;tooltip.dataset.visible="false"};document.addEventListener("pointerover",show);document.addEventListener("pointermove",move);document.addEventListener("pointerout",hide);return()=>{document.removeEventListener("pointerover",show);document.removeEventListener("pointermove",move);document.removeEventListener("pointerout",hide);tooltip.remove()}},[]);
   const state=dashboard.state, history=dashboard.history??[], alerts=dashboard.alerts??[], engine=dashboard.engine??{}, performance=dashboard.performance??{};
   const notify=text=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
-  const refresh=async(signal)=>{const [dash,sys]=await Promise.allSettled([fetchDashboard(symbol,signal),fetchSystem(signal)]);if(signal.aborted)return;setApiConnected(sys.status==="fulfilled");if(dash.status==="fulfilled"){const nextDashboard=stripPausedDashboard(dash.value);setDashboard(nextDashboard);setChartHistory(current=>[...new Map([...current,...(nextDashboard.history??[])].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-5000))}if(sys.status==="fulfilled")setSystem(sys.value)};
+  const refresh=async(signal)=>{const [dash,sys]=await Promise.allSettled([fetchDashboard(symbol,signal),fetchSystem(signal)]);if(signal.aborted)return;setApiConnected(sys.status==="fulfilled");if(dash.status==="fulfilled"){setDashboard(current=>mergePausedDashboard(current,dash.value));if(!DYNAMICS_STREAMS_PAUSED||!dynamicsHistoryFrozenRef.current){setChartHistoryState(current=>[...new Map([...current,...(dash.value.history??[])].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-5000));dynamicsHistoryFrozenRef.current=true}}if(sys.status==="fulfilled")setSystem(sys.value)};
   useEffect(()=>{const controller=new AbortController();refresh(controller.signal);const id=window.setInterval(()=>refresh(controller.signal),5000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchConfiguration(controller.signal).then(setConfig).catch(()=>{});return()=>controller.abort()},[]);
   useEffect(()=>{const controller=new AbortController();const refreshOutcomes=()=>fetchOutcomeAttribution(symbol,controller.signal).then(setAttribution).catch(error=>{if(error.name!=="AbortError")setAttribution({symbol,systems:{},unavailable:true,error:error.message})});refreshOutcomes();const id=window.setInterval(refreshOutcomes,30000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
-  useEffect(()=>{if(HIDDEN_OVERVIEW_MODULES.has("gamma-dynamics")){setChartHistory([]);return undefined}const controller=new AbortController();fetchDynamicsHistory(symbol,controller.signal).then(result=>setChartHistory(result.rows??[])).catch(error=>{if(error.name!=="AbortError")setChartHistory([])});return()=>controller.abort()},[symbol]);
+  useEffect(()=>{const controller=new AbortController();fetchDynamicsHistory(symbol,controller.signal).then(result=>{if(!DYNAMICS_STREAMS_PAUSED||!dynamicsHistoryFrozenRef.current){setChartHistoryState(result.rows??[]);dynamicsHistoryFrozenRef.current=true}}).catch(error=>{if(error.name!=="AbortError"&&!dynamicsHistoryFrozenRef.current)setChartHistoryState([])});return()=>controller.abort()},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchInstruments(controller.signal).then(setInstruments).catch(()=>{});return()=>controller.abort()},[]);
   useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),5000);return()=>clearInterval(id)},[]);
   const orderedOverviewSections=[OVERVIEW_SECTIONS[0],...moduleOrder.map(id=>[OVERVIEW_LABELS[id],id])];
   useEffect(()=>{if(view!=="Overview")return;const sections=orderedOverviewSections.map(([,id])=>document.getElementById(id)).filter(Boolean);const observer=new IntersectionObserver(entries=>{const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(visible)setActiveSection(visible.target.id)},{rootMargin:"-18% 0px -68% 0px",threshold:[0,.2,.5,.8]});sections.forEach(section=>observer.observe(section));return()=>observer.disconnect()},[view,moduleOrder]);
   useEffect(()=>{window.localStorage.setItem("axiom-overview-module-order",JSON.stringify(moduleOrder))},[moduleOrder]);
-  useEffect(()=>subscribeToEvents(message=>{if(message.topic==="market_state"){const payload=stripPausedDynamics(message.payload);setDashboard(current=>({...current,state:payload,history:[...(current.history??[]),payload].slice(-120)}));setChartHistory(current=>[...current.filter(row=>row.timestamp!==payload.timestamp),payload].slice(-5000))}if(message.topic==="alert")setDashboard(current=>({...current,alerts:[toDashboardAlert(message.payload),...(current.alerts??[])].slice(0,100)}));if(message.topic==="outcome")setDashboard(current=>({...current,alerts:(current.alerts??[]).map(alert=>alert.id===message.payload.alert_id?{...alert,result:number(message.payload.precision)>=.7?"SUCCESS":"FAILURE",precision:number(message.payload.precision).toFixed(2)}:alert)}));if(message.topic==="engine_status"){setDashboard(current=>({...current,engine:message.payload}));setSystem(current=>current?{...current,engine:message.payload}:current)}if(message.topic==="system_event")setSystem(current=>current?{...current,events:[message.payload,...(current.events??[])].slice(0,25)}:current);if(message.topic==="replay_status")setReplay(message.payload)},()=>{}),[]);
+  useEffect(()=>subscribeToEvents(message=>{if(message.topic==="market_state"){setDashboard(current=>{const payload=preservePausedDynamics(current.state,message.payload),historyRow=preservePausedDynamics((current.history??[]).find(row=>row.timestamp===message.payload?.timestamp),message.payload);return {...current,state:payload,history:[...(current.history??[]).filter(row=>row.timestamp!==message.payload?.timestamp),historyRow].slice(-120)}});if(!DYNAMICS_STREAMS_PAUSED)setChartHistoryState(current=>[...current.filter(row=>row.timestamp!==message.payload.timestamp),message.payload].slice(-5000))}if(message.topic==="alert")setDashboard(current=>({...current,alerts:[toDashboardAlert(message.payload),...(current.alerts??[])].slice(0,100)}));if(message.topic==="outcome")setDashboard(current=>({...current,alerts:(current.alerts??[]).map(alert=>alert.id===message.payload.alert_id?{...alert,result:number(message.payload.precision)>=.7?"SUCCESS":"FAILURE",precision:number(message.payload.precision).toFixed(2)}:alert)}));if(message.topic==="engine_status"){setDashboard(current=>({...current,engine:message.payload}));setSystem(current=>current?{...current,engine:message.payload}:current)}if(message.topic==="system_event")setSystem(current=>current?{...current,events:[message.payload,...(current.events??[])].slice(0,25)}:current);if(message.topic==="replay_status")setReplay(message.payload)},()=>{}),[]);
   useEffect(()=>{if(!replay?.id||replay.status!=="running")return;const id=setInterval(()=>fetchReplay(replay.id).then(setReplay).catch(()=>{}),2000);return()=>clearInterval(id)},[replay?.id,replay?.status]);
   const runReplay=async()=>{try{const day=new Date();day.setDate(day.getDate()-1);while(day.getDay()===0||day.getDay()===6)day.setDate(day.getDate()-1);const date=day.toISOString().slice(0,10);setReplay(await startReplay({symbol,start:new Date(`${date}T09:30:00`).toISOString(),end:new Date(`${date}T16:00:00`).toISOString(),bar_resolution_seconds:60,replay_speed:0}));notify("Historical replay started")}catch(error){notify(error.message)}};
   const indicators=state?.supporting_indicators??{}, visualHistory=(chartHistory.length?chartHistory:history).slice(-1200);
