@@ -411,6 +411,28 @@ class ThetaDataV3Client(MarketDataPort):
         call_delta_wall = max(positive_delta_walls, key=lambda strike: net_dex[strike]) if positive_delta_walls else None
         put_delta_wall = min(negative_delta_walls, key=lambda strike: net_dex[strike]) if negative_delta_walls else None
         delta_wall = max(net_dex, key=lambda strike: (abs(net_dex[strike]), -strike))
+        # Zero Delta is a *balance level*, not the maximum DEX wall.  Walk the
+        # cumulative signed DEX distribution from low to high strikes and use
+        # the nearest interpolated zero crossing.  This is the strike where
+        # cumulative calls/puts' OI-based delta exposure balances under the
+        # current-chain approximation; it is not a tape-confirmed dealer hedge.
+        cumulative_dex = 0.0
+        previous_strike: float | None = None
+        previous_cumulative: float | None = None
+        zero_delta_candidates: list[float] = []
+        for dex_strike in sorted(net_dex):
+            cumulative_dex += net_dex[dex_strike]
+            if previous_strike is not None and previous_cumulative is not None:
+                if cumulative_dex == 0.0:
+                    zero_delta_candidates.append(float(dex_strike))
+                elif previous_cumulative == 0.0:
+                    zero_delta_candidates.append(float(previous_strike))
+                elif (previous_cumulative < 0.0 < cumulative_dex) or (previous_cumulative > 0.0 > cumulative_dex):
+                    fraction = -previous_cumulative / (cumulative_dex - previous_cumulative)
+                    zero_delta_candidates.append(float(previous_strike + fraction * (dex_strike - previous_strike)))
+            previous_strike, previous_cumulative = dex_strike, cumulative_dex
+        zero_delta = min(zero_delta_candidates, key=lambda value: abs(value - spot)) if zero_delta_candidates else spot
+        zero_delta_nearest = min(net_dex, key=lambda strike: abs(strike - zero_delta))
         dex_walls = [
             {
                 "strike": float(strike), "dex": float(net_dex[strike]), "abs_dex": float(abs(net_dex[strike])),
@@ -437,6 +459,7 @@ class ThetaDataV3Client(MarketDataPort):
             "SUPPORT": {"strike": float(support), "gex": float(net_gex.get(support, 0.0))},
             "RESISTANCE": {"strike": float(resistance), "gex": float(net_gex.get(resistance, 0.0))},
             "DELTA_WALL": {"strike": float(delta_wall), "dex": float(net_dex[delta_wall])},
+            "ZERO_DELTA": {"strike": float(zero_delta), "dex": float(net_dex[zero_delta_nearest])},
         }
         exposure = lambda greek, power, scale=1.0: sum(
             cls._right_sign(row.get("right")) * cls._number(row.get(greek)) * cls._number(row.get("open_interest")) * 100.0 * spot ** power * scale
@@ -484,6 +507,8 @@ class ThetaDataV3Client(MarketDataPort):
             "dex_walls": dex_walls,
             "delta_wall_strike": float(delta_wall),
             "delta_wall_dex": float(net_dex[delta_wall]),
+            "zero_delta": float(zero_delta),
+            "zero_delta_dex": float(net_dex[zero_delta_nearest]),
             "call_delta_wall_strike": float(call_delta_wall or 0.0),
             "call_delta_wall_dex": float(net_dex[call_delta_wall]) if call_delta_wall is not None else 0.0,
             "put_delta_wall_strike": float(put_delta_wall or 0.0),

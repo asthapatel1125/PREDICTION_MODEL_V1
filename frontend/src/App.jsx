@@ -1772,7 +1772,7 @@ function ZeroGammaExposureChart({rows=[],embedded=false,showHistogram=true}){
   useEffect(()=>{const plot=plotRef.current,rail=railRef.current,onPlot=event=>wheelHandlersRef.current.plot?.(event),onRail=event=>wheelHandlersRef.current.rail?.(event);plot?.addEventListener("wheel",onPlot,{passive:false,capture:true});rail?.addEventListener("wheel",onRail,{passive:false,capture:true});return()=>{plot?.removeEventListener("wheel",onPlot,{capture:true});rail?.removeEventListener("wheel",onRail,{capture:true})}},[points.length]);
   if(!points.length)return <section className="zero-gamma-exposure"><header><div><span>ZERO GAMMA EXPOSURE</span><h3>QQQ price vs zero-gamma wall</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and zero-gamma observations.</p></section>;
   const width=Math.max(900,points.length*xZoom),height=300,top=16,priceBottom=250,left=64,right=16,plotWidth=width-left-right;
-  const prices=points.flatMap(point=>[point.spot,point.zero]),priceLow=Math.min(...prices),priceHigh=Math.max(...prices),basePriceSpan=Math.max(priceHigh-priceLow,.05),priceSpan=basePriceSpan/yZoom,priceFocus=(priceLow+priceHigh)/2+yPan*priceSpan*.25,pricePad=Math.max(priceSpan*.1,.05),low=priceFocus-priceSpan/2-pricePad,high=priceFocus+priceSpan/2+pricePad,qqqLow=Math.min(...points.map(point=>point.spot)),qqqHigh=Math.max(...points.map(point=>point.spot)),qqqSpan=Math.max(qqqHigh-qqqLow,.02),qqqPad=Math.max(qqqSpan*.12,.01),qqqDetailLow=qqqLow-qqqPad,qqqDetailHigh=qqqHigh+qqqPad;
+  const prices=points.flatMap(point=>[point.spot,point.zero]),priceLow=Math.min(...prices),priceHigh=Math.max(...prices),basePriceSpan=Math.max(priceHigh-priceLow,.05),priceSpan=basePriceSpan/yZoom,priceFocus=(priceLow+priceHigh)/2+yPan*priceSpan*.25,pricePad=Math.max(priceSpan*.1,.05),low=priceFocus-priceSpan/2-pricePad,high=priceFocus+priceSpan/2+pricePad,qqqLow=Math.min(...points.map(point=>point.spot)),qqqHigh=Math.max(...points.map(point=>point.spot)),qqqBaseSpan=Math.max(qqqHigh-qqqLow,.02),qqqSpan=qqqBaseSpan/yZoom,qqqFocus=(qqqLow+qqqHigh)/2+yPan*qqqSpan*.25,qqqPad=Math.max(qqqSpan*.12,.01),qqqDetailLow=qqqFocus-qqqSpan/2-qqqPad,qqqDetailHigh=qqqFocus+qqqSpan/2+qqqPad;
   const differences=points.map(point=>point.difference),differenceMax=Math.max(...differences.map(value=>Math.abs(value)),.05)*1.12/yZoom;
   // Full ET timestamps need roughly 175 pixels each. Limit labelled grid
   // ticks by the rendered chart width so labels never overlap when live data
@@ -1803,7 +1803,7 @@ function ZeroGammaExposureChart({rows=[],embedded=false,showHistogram=true}){
 
 function DeltaExposureLevelLog({rows=[]}){
   const entries=useMemo(()=>rows.map(row=>{
-    const wall=row?.walls?.DELTA_WALL,strike=number(wall?.strike),spot=number(row?.spot),at=Date.parse(row?.timestamp||"");
+    const wall=row?.walls?.ZERO_DELTA,strike=number(wall?.strike),spot=number(row?.spot),at=Date.parse(row?.timestamp||"");
     if(!Number.isFinite(strike)||strike<=0||!Number.isFinite(spot)||spot<=0||!Number.isFinite(at))return null;
     return {at,timestamp:row.timestamp,strike,spot,tier:String(wall?.tier||"WEAKEST").toUpperCase(),side:number(wall?.signed_exposure)>=0?"POSITIVE":"NEGATIVE"};
   }).filter(Boolean).sort((a,b)=>a.at-b.at),[rows]);
@@ -1813,7 +1813,7 @@ function DeltaExposureLevelLog({rows=[]}){
 }
 
 function DeltaExposureChart({rows=[]}){
-  const mappedRows=useMemo(()=>rows.map(row=>row?.walls?.DELTA_WALL?{...row,walls:{...row.walls,ZERO_GAMMA:row.walls.DELTA_WALL}}:row),[rows]);
+  const mappedRows=useMemo(()=>rows.map(row=>row?.walls?.ZERO_DELTA?{...row,walls:{...row.walls,ZERO_GAMMA:row.walls.ZERO_DELTA}}:row),[rows]);
   return <><section className="call-put-wall-map"><header><div><span>CALL / PUT WALL PRICE MAP</span><h3>QQQ price against the live call and put walls</h3></div><small>Solid white: QQQ · Green: Call Wall · Red: Put Wall</small></header><DailyWallLevelsChart rows={rows} visibleWallKeys={["CALL_WALL","PUT_WALL"]}/></section><section className="delta-exposure-map"><header><div><span>DELTA EXPOSURE LEVEL MAP</span><h3>QQQ price against the estimated net-DEX wall</h3></div><small>DEX = Σ(OI × 100 × Delta × QQQ) by strike · estimated, OI-based</small></header><ZeroGammaExposureChart rows={mappedRows} embedded showHistogram={false}/><DeltaExposureLevelLog rows={rows}/></section></>;
 }
 

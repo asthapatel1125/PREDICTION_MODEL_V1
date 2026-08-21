@@ -41,7 +41,7 @@ def wall_intelligence_snapshot(*, timestamp: Any, symbol: str, spot: float,
     return WallIntelligenceSnapshot(value, symbol.upper(), float(spot), dict(walls), float(dealer_flow))
 
 
-WALL_TYPES=("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE","DELTA_WALL")
+WALL_TYPES=("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE","DELTA_WALL","ZERO_DELTA")
 
 def tier_for(z:float, percentile:float, dollar:float, tw_gex:float)->str:
     if (z>.6 or percentile>80) and dollar>100_000_000 and tw_gex>.7:return "STRONGEST"
@@ -82,13 +82,13 @@ class WallIntelligenceService:
         return 50. if not values else 100*(sum(item<value for item in values)+.5*sum(item==value for item in values))/len(values)
     def observe(self,timestamp:Any,symbol:str,spot:float,metrics:dict[str,Any],regime:str,volume:float)->tuple[dict[str,Any],list[dict[str,Any]]]:
         gex={float(item.get("strike",0)):abs(float(item.get("gex",0))) for item in metrics.get("gex_walls",[]) if float(item.get("strike",0))>0};estimates=metrics.get("wall_estimates",{})
-        levels={"CALL_WALL":float(metrics.get("call_wall_strike",0)),"PUT_WALL":float(metrics.get("put_wall_strike",0)),"ZERO_GAMMA":float(metrics.get("zero_gamma",0)),"SUPPORT":float(metrics.get("support_level",0)),"RESISTANCE":float(metrics.get("resistance_level",0)),"DELTA_WALL":float(metrics.get("delta_wall_strike",0))}
+        levels={"CALL_WALL":float(metrics.get("call_wall_strike",0)),"PUT_WALL":float(metrics.get("put_wall_strike",0)),"ZERO_GAMMA":float(metrics.get("zero_gamma",0)),"SUPPORT":float(metrics.get("support_level",0)),"RESISTANCE":float(metrics.get("resistance_level",0)),"DELTA_WALL":float(metrics.get("delta_wall_strike",0)),"ZERO_DELTA":float(metrics.get("zero_delta",0))}
         tw=float(metrics.get("tw_gex",0));spoof=float(metrics.get("spoof_score",0));edge=float(metrics.get("edge",0));walls={};breaks=[];prior_vol=list(self.volumes);surge=float(volume)/max(sum(prior_vol)/len(prior_vol),1.) if prior_vol and float(volume)>0 else None
         for kind,strike in levels.items():
-            raw=abs(float(estimates.get(kind,{}).get("dex",metrics.get("delta_wall_dex",0)))) if kind=="DELTA_WALL" else abs(float(estimates.get(kind,{}).get("gex",gex.get(strike,abs(float(metrics.get("call_wall_gex",0))) if kind=="CALL_WALL" else abs(float(metrics.get("put_wall_gex",0))) if kind=="PUT_WALL" else 0.))))
+            raw=abs(float(estimates.get(kind,{}).get("dex",metrics.get("zero_delta_dex",0) if kind=="ZERO_DELTA" else metrics.get("delta_wall_dex",0)))) if kind in {"DELTA_WALL","ZERO_DELTA"} else abs(float(estimates.get(kind,{}).get("gex",gex.get(strike,abs(float(metrics.get("call_wall_gex",0))) if kind=="CALL_WALL" else abs(float(metrics.get("put_wall_gex",0))) if kind=="PUT_WALL" else 0.))))
             hist=list(self.history[kind]);z=self._z(raw,hist);pct=self._pct(raw,hist);dollar=raw
-            signed_exposure=float(estimates.get(kind,{}).get("dex",metrics.get("delta_wall_dex",0))) if kind=="DELTA_WALL" else 0.0
-            reading={"strike":strike,"raw":raw,"dollar":dollar,"z":z,"percentile":pct,"tier":tier_for_delta(z,pct,dollar) if kind=="DELTA_WALL" else tier_for(z,pct,dollar,tw),"tw_gex":tw,"spoof":spoof,"edge":edge,"exposure":"DEX" if kind=="DELTA_WALL" else "GEX","signed_exposure":signed_exposure,"is_estimated_oi_delayed":True};walls[kind]=reading;prior=self.previous.get((symbol,kind));direction=detect_break(prior[0],spot,prior[1]) if prior else None
+            signed_exposure=float(estimates.get(kind,{}).get("dex",metrics.get("zero_delta_dex",0) if kind=="ZERO_DELTA" else metrics.get("delta_wall_dex",0))) if kind in {"DELTA_WALL","ZERO_DELTA"} else 0.0
+            reading={"strike":strike,"raw":raw,"dollar":dollar,"z":z,"percentile":pct,"tier":tier_for_delta(z,pct,dollar) if kind in {"DELTA_WALL","ZERO_DELTA"} else tier_for(z,pct,dollar,tw),"tw_gex":tw,"spoof":spoof,"edge":edge,"exposure":"DEX" if kind in {"DELTA_WALL","ZERO_DELTA"} else "GEX","signed_exposure":signed_exposure,"is_estimated_oi_delayed":True};walls[kind]=reading;prior=self.previous.get((symbol,kind));direction=detect_break(prior[0],spot,prior[1]) if prior else None
             if direction:breaks.append({"timestamp":timestamp,"symbol":symbol,"wall_type":kind,"strike":strike,"direction":direction,"tier":reading["tier"],"spot":spot,"gex_dollar":dollar,"build_intensity":max(.01,(pct/100)*max(tw,.25)/(max(spoof,0)+.5)),"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"volume":float(volume) if float(volume)>0 else None,"volume_surge":surge,"delta_change":0.,"spot_change":spot-prior[0],"qqq_return":(spot-prior[0])/prior[0] if prior[0] else 0.,"retest_count":0,"path_efficiency_5m":None,"outcome":"PENDING","regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True})
             self.history[kind].append(raw)
             if strike>0:self.previous[(symbol,kind)]=(spot,strike)
