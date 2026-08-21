@@ -1859,17 +1859,18 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   // Keep the two independent plots compact enough to sit comfortably in the
   // Wall Intelligence card while retaining a readable grid and x-axis.
   const width=Math.max(920,points.length*xZoom),height=380,left=76,right=16,topStart=22,topEnd=145,bottomStart=190,bottomEnd=344,plotWidth=width-left-right;
-  // Use a robust local range so one stale/outlier wall does not flatten the
-  // entire live series. The full values remain in the hover card and labels;
-  // the plot scale follows the central 5th–95th percentile movement.
-  const scaleFor=values=>{
-    const sorted=values.filter(value=>Number.isFinite(value)).sort((a,b)=>a-b);
-    if(!sorted.length)return {low:0,high:1};
-    const quantile=ratio=>sorted[Math.min(sorted.length-1,Math.max(0,Math.round((sorted.length-1)*ratio)))];
-    const minimum=quantile(.05),maximum=quantile(.95),base=Math.max(maximum-minimum,.02),span=base/yZoom,pad=Math.max(span*.22,.01),middle=(minimum+maximum)/2;
-    return {low:middle-span/2-pad,high:middle+span/2+pad};
+  // Fit each panel to the actual selected-window observations. QQQ receives
+  // tighter padding because its normal intraday movement is small; Gamma gets
+  // a little more breathing room so rapid wall changes remain visible.
+  const scaleFor=(values,kind)=>{
+    const finite=values.filter(value=>Number.isFinite(value));
+    if(!finite.length)return {low:0,high:1};
+    const minimum=Math.min(...finite),maximum=Math.max(...finite),rawSpan=maximum-minimum;
+    const minimumSpan=kind==="qqq"?.04:.10,span=Math.max(rawSpan,minimumSpan)/yZoom;
+    const center=(minimum+maximum)/2,pad=Math.max(span*(kind==="qqq"?.10:.14),kind==="qqq"?.02:.05);
+    return {low:center-span/2-pad,high:center+span/2+pad};
   };
-  const qqqScale=scaleFor(points.map(point=>point.spot)),gammaScale=scaleFor(points.map(point=>point.level));
+  const qqqScale=scaleFor(points.map(point=>point.spot),"qqq"),gammaScale=scaleFor(points.map(point=>point.level),"gamma");
   const yFor=(value,scale,top,bottom)=>top+(scale.high-value)/(scale.high-scale.low)*(bottom-top),qqqY=value=>yFor(value,qqqScale,topStart,topEnd),gammaY=value=>yFor(value,gammaScale,bottomStart,bottomEnd),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=Math.max(2,Math.min(points.length,8,Math.floor(width/135))),timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=(scale,top,bottom)=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:top+(1-ratio)*(bottom-top)}));
