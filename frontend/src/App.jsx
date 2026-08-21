@@ -1814,7 +1814,7 @@ function DeltaExposureLevelLog({rows=[]}){
 
 function DeltaExposureChart({rows=[]}){
   const mappedRows=useMemo(()=>rows.map(row=>row?.walls?.DELTA_WALL?{...row,walls:{...row.walls,ZERO_GAMMA:row.walls.DELTA_WALL}}:row),[rows]);
-  return <section className="delta-exposure-map"><header><div><span>DELTA EXPOSURE LEVEL MAP</span><h3>QQQ price against the estimated net-DEX wall</h3></div><small>DEX = Σ(OI × 100 × Delta × QQQ) by strike · estimated, OI-based</small></header><section className="dex-call-put-price-map"><header><div><span>CALL / PUT WALL PRICE MAP</span><h4>QQQ price against the live call and put walls</h4></div><small>White: QQQ · Green: Call Wall · Red: Put Wall</small></header><DailyWallLevelsChart rows={rows} visibleWallKeys={["CALL_WALL","PUT_WALL"]}/></section><ZeroGammaExposureChart rows={mappedRows} embedded/><DeltaExposureLevelLog rows={rows}/></section>;
+  return <><section className="call-put-wall-map"><header><div><span>CALL / PUT WALL PRICE MAP</span><h3>QQQ price against the live call and put walls</h3></div><small>Solid white: QQQ · Green: Call Wall · Red: Put Wall</small></header><DailyWallLevelsChart rows={rows} visibleWallKeys={["CALL_WALL","PUT_WALL"]}/></section><section className="delta-exposure-map"><header><div><span>DELTA EXPOSURE LEVEL MAP</span><h3>QQQ price against the estimated net-DEX wall</h3></div><small>DEX = Σ(OI × 100 × Delta × QQQ) by strike · estimated, OI-based</small></header><ZeroGammaExposureChart rows={mappedRows} embedded/><DeltaExposureLevelLog rows={rows}/></section></>;
 }
 
 function ZeroGammaDifferenceHistogram({points,period}){
