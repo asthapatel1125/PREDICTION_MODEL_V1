@@ -1075,3 +1075,6 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
   color: #62c8ff;
   white-space: nowrap;
 }
+/* Delta balance is a first-class Wall Intelligence level and uses the same
+   cool accent as the dedicated Zero Delta exposure map. */
+.wall-strength-board td:first-child b.zero_delta{color:#62c8ff}

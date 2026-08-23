@@ -141,6 +141,9 @@
 .exposure-live-rail .exposure-end-label.qqq{background:#e6edf3;border-left:3px solid #e6edf3}
 .exposure-live-rail .exposure-end-label strong{font-variant-numeric:tabular-nums}
 .exposure-y-controls{top:8px;left:auto;right:8px}
+.exposure-map-controls{position:absolute;z-index:12;top:2px;left:10px;height:22px;display:flex;align-items:center;gap:3px;padding:2px 3px;border:1px solid #28556f;border-radius:5px;background:rgba(6,18,28,.94);box-shadow:0 5px 14px rgba(0,0,0,.3);pointer-events:auto}
+.exposure-map-controls button{min-width:25px;height:20px;padding:0 5px;border:1px solid #39718e;border-radius:3px;background:#0b2638;color:#83ddff;font:700 9px/18px var(--font-mono,monospace);cursor:pointer}
+.exposure-map-controls button:hover{background:#13425b;border-color:#69c9ee;color:#effbff}
 .exposure-level-map.expanded .exposure-level-frame{min-height:calc(100dvh - 78px)}
 .exposure-level-map.expanded .exposure-live-rail{min-height:calc(100dvh - 78px)}
 .exposure-level-map.expanded .exposure-map-canvas,.exposure-level-map.expanded .exposure-map-canvas svg{height:max(560px,calc(100dvh - 78px))}

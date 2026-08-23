@@ -325,7 +325,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                         break
                 return {"value":float(anchor),"method":"dominant_weighted_median","dominant_level":float(dominant_bucket),
                     "dominant_share":float(dominant_weight/max(sum(buckets.values()),1e-9)),"sample_count":len(observations)}
-            anchor_meta={key:wall_condition_anchor(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE")}
+            anchor_meta={key:wall_condition_anchor(key) for key in ("CALL_WALL","PUT_WALL","ZERO_GAMMA","ZERO_DELTA","SUPPORT","RESISTANCE")}
             phase_anchors.append({"phase":name,"start":anchor_start,"end":datetime.combine(day,phase_end,tzinfo=market_tz),
                 "sample_start":sample[0].get("timestamp"),"sample_count":len(sample),
                 "levels":{key:(anchor_meta[key] or {}).get("value") for key in anchor_meta},"anchor_meta":anchor_meta})
