@@ -1872,7 +1872,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const allPoints=useMemo(()=>rows.map(row=>{
     const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);
     if(!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return null;
-    return {timestamp:row.timestamp,spot,level,positive:level<=spot};
+     return {timestamp:row.timestamp,spot,level,positive:level<=spot,tier:String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase()};
   }).filter(Boolean),[rows,wallKey]);
   const points=useMemo(()=>{
     const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
@@ -1958,7 +1958,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
             {hover!==null&&<line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={topStart} y2={bottomEnd}/>}
           </svg>
-           {recentStates.length>0&&<div className="zero-gamma-recent-states" style={{left:scrollOffset+viewportWidth/2}} aria-label="Three most recent zero gamma states">{recentStates.map((point,index)=><div className={["zero-gamma-state-box",point.positive?"positive":"negative"].join(" ")} key={`${point.timestamp}-${index}`}><b>{point.positive?"POSITIVE":"NEGATIVE"}</b><strong>{point.level.toFixed(2)}</strong></div>)}</div>}
+           {recentStates.length>0&&<div className="zero-gamma-recent-states" style={{left:scrollOffset+viewportWidth-276}} aria-label="Three most recent zero gamma states">{recentStates.map((point,index)=><div className={["zero-gamma-state-box",point.tier.toLowerCase()].join(" ")} key={`${point.timestamp}-${index}`}><b>{point.tier}</b><strong>{point.level.toFixed(2)}</strong></div>)}</div>}
            {active&&hoverPoint&&(()=>{const cardWidth=300,cardHeight=132,px=hoverPoint.x,py=hoverPoint.y,placeLeft=hoverPoint.rightHalf,leftPos=placeLeft?Math.max(8,px-cardWidth-18):Math.min(width-cardWidth-8,px+18),topPos=clamp(py-cardHeight/2,8,height-cardHeight-8);return <aside className="exposure-hover-card" style={{left:leftPos,top:topPos}}><b>{logDate(active.timestamp)} · {logTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{levelName}<strong>{active.level.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{active.positive?"POSITIVE · LEVEL BELOW QQQ":"NEGATIVE · LEVEL ABOVE QQQ"}</span></aside>})()}
         </div>
       </div>
