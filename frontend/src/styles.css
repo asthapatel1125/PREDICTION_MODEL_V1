@@ -1121,6 +1121,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 /* Bound MPI scrolling to the individual plot surface; never resize the module frame. */
 .mpi-independent-pane svg{min-width:0!important}
 .mpi-plot-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;scrollbar-color:#5b89a3 #08131d;scrollbar-width:auto;z-index:1}
+.mpi-static-y-axis,.mpi-static-x-axis{position:absolute;z-index:4;pointer-events:none;background:#08141e;color:#9bb1c0}
+.mpi-static-y-axis{left:0;top:0;bottom:18px;width:112px;border-right:1px solid #1f4357}
+.mpi-static-y-axis .mpi-axis-title{position:absolute;left:18px;top:50%;transform:rotate(-90deg) translateX(-50%);transform-origin:left top;white-space:nowrap;color:#91aaba;font-size:10px;letter-spacing:.08em}
+.mpi-static-y-axis .mpi-axis-value{position:absolute;right:10px;transform:translateY(-50%);font-size:11px;white-space:nowrap}
+.mpi-static-x-axis{left:112px;right:26px;bottom:18px;height:30px;border-top:1px solid #1f4357}
+.mpi-static-x-axis .mpi-axis-value{position:absolute;top:8px;transform:translateX(-50%);font-size:10px;white-space:nowrap}
+.mpi-plot-viewport .mpi-axis-label{visibility:hidden}
 .mpi-plot-viewport::-webkit-scrollbar{width:12px;height:12px}.mpi-plot-viewport::-webkit-scrollbar-track{background:#08131d;border:1px solid #1e4055}.mpi-plot-viewport::-webkit-scrollbar-thumb{background:#5b89a3;border:3px solid #08131d;border-radius:8px}
 /* MPI interaction boundary: scrolling and zooming belong to the plot viewport, never the page/module. */
 .mpi-module-shell{overflow:hidden;contain:layout paint}
