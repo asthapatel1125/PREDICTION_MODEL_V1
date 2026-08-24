@@ -150,10 +150,10 @@
 
 /* The zero-gamma map's compact state history is deliberately kept inside the
    plot viewport so it never changes the chart's scale or pushes the live rail. */
-.zero-gamma-recent-states{position:absolute;z-index:7;left:0;top:18px;height:24px;display:flex;align-items:stretch;gap:7px;pointer-events:none;white-space:nowrap}
-.zero-gamma-state-box{box-sizing:border-box;min-width:82px;height:24px;padding:2px 6px;border:2px solid currentColor;border-radius:3px;background:rgba(5,16,26,.96);box-shadow:0 3px 9px rgba(0,0,0,.3);text-align:center;font:700 7px/1.05 var(--font-mono,monospace)}
-.zero-gamma-state-box b{display:block;letter-spacing:.04em;font-size:7px}
-.zero-gamma-state-box strong{display:block;margin-top:1px;color:#eef8ff;font-size:10px;line-height:1;letter-spacing:.01em}
+.zero-gamma-recent-states{position:absolute;z-index:7;left:0;top:0;height:34px;display:flex;align-items:stretch;gap:9px;pointer-events:none;white-space:nowrap}
+.zero-gamma-state-box{box-sizing:border-box;min-width:112px;height:34px;padding:4px 8px;border:2px solid currentColor;border-radius:4px;background:rgba(5,16,26,.97);box-shadow:0 4px 11px rgba(0,0,0,.36);text-align:center;font:700 9px/1.12 var(--font-mono,monospace)}
+.zero-gamma-state-box b{display:block;letter-spacing:.05em;font-size:9px}
+.zero-gamma-state-box strong{display:block;margin-top:2px;color:#eef8ff;font-size:14px;line-height:1;letter-spacing:.01em}
 .zero-gamma-state-box.positive{color:#00d084;background:rgba(0,95,66,.28)}
 .zero-gamma-state-box.negative{color:#ff4f69;background:rgba(107,22,40,.28)}
 .zero-gamma-state-box.strongest{color:#ff4f69;background:rgba(96,22,38,.94)}
