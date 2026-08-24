@@ -2242,7 +2242,7 @@ function MarketPressureIndexPanelReadable({rows=[]}){
 }
 
 function MarketPressureIndexPanelSpec({rows=[]}){
-  const [hover,setHover]=useState(null);
+  const [hover,setHover]=useState(null),[xZoom,setXZoom]=useState(1),[yZoom,setYZoom]=useState(1);
   const data=useMemo(()=>{
     const source=(rows||[]).filter(row=>row?.timestamp&&Number.isFinite(Number(row.spot))).slice().sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
     let cvd=0,ema20=null,ema50=null,pv=0,pvol=0,prevTrend=50;
@@ -2259,7 +2259,9 @@ function MarketPressureIndexPanelSpec({rows=[]}){
       return {...row,spot,tpi,mpi,mpiTrend,cvd,flowPct,roc,div,vwap:pv/pvol,ema20,ema50,cvdStrength:Math.min(100,Math.abs(cvd)/(Math.max(...source.map(x=>Math.abs(Number(x.dealer_flow)||0)))*Math.max(i+1,1))*100)};
     });
   },[rows]);
-  const width=1400,left=112,right=26,top=18,panelH=145,gap=36,bottom=52,total=top+4*panelH+3*gap+bottom,inner=width-left-right;
+  const baseWidth=1400,width=Math.round(baseWidth*xZoom),left=112,right=26,top=18,panelH=145,gap=36,bottom=52,total=top+4*panelH+3*gap+bottom,inner=width-left-right;
+  useEffect(()=>{const node=document.querySelector(".mpi-spec-chart");if(!node)return;const onWheel=e=>{e.preventDefault();if(e.clientX-node.getBoundingClientRect().left<left)setYZoom(v=>Math.max(.35,Math.min(12,v*(e.deltaY<0?1.18:.85))));else setXZoom(v=>Math.max(.65,Math.min(8,v*(e.deltaY<0?1.18:.85))))};node.addEventListener("wheel",onWheel,{passive:false});return()=>node.removeEventListener("wheel",onWheel)},[left]);
+  useEffect(()=>{const svg=document.querySelector(".mpi-spec-chart svg");if(svg){svg.style.width=`${width}px`;svg.style.minWidth=`${width}px`}},[width]);
   const x=i=>left+i*inner/Math.max(data.length-1,1), ticks=data.length?Array.from({length:Math.min(9,data.length)},(_,i)=>Math.round(i*(data.length-1)/Math.max(Math.min(9,data.length)-1,1))):[];
   const spots=data.map(r=>r.spot).filter(Number.isFinite),sMin=spots.length?Math.min(...spots):0,sMax=spots.length?Math.max(...spots):1,sPad=Math.max((sMax-sMin)*.12,.03),cvds=data.map(r=>r.cvd),cMin=Math.min(...cvds,0),cMax=Math.max(...cvds,1),cPad=Math.max((cMax-cMin)*.12,1);
   const panels=[
@@ -2268,9 +2270,10 @@ function MarketPressureIndexPanelSpec({rows=[]}){
     {key:"mpi",label:"MPI COMPOSITE · 0–100",min:0,max:100,color:"#ff6b9d",lines:[{key:"mpi",color:"#b56cff",width:2},{key:"mpiTrend",color:"#58a6ff",width:2},{key:"flowPct",color:"#ffd34d",width:1.6},{key:"roc",color:"#ff8b75",width:1.6},{key:"div",color:"#4dd4ac",width:1.6}]},
     {key:"cvd",label:"CVD · FLOW PROXY",min:cMin-cPad,max:cMax+cPad,color:"#58a6ff",lines:[{key:"cvd",color:"#58a6ff",width:2.5},{key:"cvdStrength",color:"#b56cff",width:1.5}]}
   ];
+  panels.forEach(p=>{const center=(p.min+p.max)/2,span=(p.max-p.min)/Math.max(yZoom,.05);p.min=center-span/2;p.max=center+span/2});
   const scale=(v,p,y)=>y+panelH-(Math.max(p.min,Math.min(p.max,v))-p.min)/Math.max(p.max-p.min,1)*(panelH-12);
   const value=(row,key)=>key==="tpiEma"?row.tpi:(Number(row[key])||0);
-  const point=hover==null?null:data[hover];
+  const point=hover==null?null:data[hover],wheel=e=>{e.preventDefault();const r=e.currentTarget.getBoundingClientRect();if(e.clientX-r.left<left)setYZoom(v=>Math.max(.35,Math.min(12,v*(e.deltaY<0?1.18:.85))));else setXZoom(v=>Math.max(.65,Math.min(8,v*(e.deltaY<0?1.18:.85))))};
   return <div className="mpi-spec-chart" onPointerMove={e=>{const r=e.currentTarget.getBoundingClientRect();setHover(Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*Math.max(data.length-1,0)))}} onPointerLeave={()=>setHover(null)}><div className="mpi-spec-legend"><span><i style={{background:"#e6edf3"}}/>QQQ</span><span><i style={{background:"#58a6ff"}}/>EMA 20 / CVD</span><span><i style={{background:"#ffd34d"}}/>EMA 50 / Flow%</span><span><i style={{background:"#4dd4ac"}}/>TPI / divergence</span><span><i style={{background:"#ff6b9d"}}/>MPI / ROC</span></div><svg viewBox={`0 0 ${width} ${total}`} role="img" aria-label="MPI four panel market pressure chart"><rect width={width} height={total} fill="#050a10"/>{panels.map((p,pi)=>{const y=top+pi*(panelH+gap);return <g key={p.key}><rect x={left} y={y} width={inner} height={panelH} className="mpi-panel-bg"/><text x="20" y={y+panelH/2} transform={`rotate(-90 20 ${y+panelH/2})`} className="mpi-axis-title">{p.label}</text>{[0,.5,1].map((t,i)=><g key={i}><line x1={left} x2={left+inner} y1={y+t*panelH} y2={y+t*panelH} className="mpi-grid"/><text x={left-10} y={y+t*panelH+4} textAnchor="end" className="mpi-axis-label">{pi===3?(p.max-t*(p.max-p.min)).toExponential(2):Math.round(p.max-t*(p.max-p.min))}</text></g>)}{pi===1&&[30,70].map(v=><line key={v} x1={left} x2={left+inner} y1={scale(v,p,y)} y2={scale(v,p,y)} stroke={v===70?"#ff6b9d":"#4dd4ac"} strokeDasharray="4 4"/>)}{p.lines.map(line=><polyline key={line.key} fill="none" stroke={line.color} strokeWidth={line.width} points={data.map((r,i)=>`${x(i)},${scale(value(r,line.key),p,y)}`).join(" ")}/>)}</g>})}{ticks.map(i=><g key={i}><line x1={x(i)} x2={x(i)} y1={top} y2={total-bottom} className="mpi-time-grid"/>{panels.map((p,pi)=><text key={p.key} x={x(i)} y={top+pi*(panelH+gap)+panelH+17} textAnchor="middle" className="mpi-axis-label">{new Date(data[i].timestamp).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"})} ET</text>)}</g>)}{hover!=null&&<line x1={x(hover)} x2={x(hover)} y1={top} y2={total-bottom} className="mpi-crosshair"/>}</svg>{point&&<aside className={`mpi-hover ${hover/Math.max(data.length-1,1)>.55?"left":"right"}`}><b>{new Date(point.timestamp).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit"})} ET</b><span style={{color:"#e6edf3"}}>QQQ {point.spot.toFixed(2)} USD</span><span style={{color:"#4dd4ac"}}>TPI {point.tpi.toFixed(1)}</span><span style={{color:"#ff6b9d"}}>MPI {point.mpi.toFixed(1)} · trend {point.mpiTrend.toFixed(1)}</span><span style={{color:"#58a6ff"}}>CVD proxy {point.cvd.toFixed(0)} · strength {point.cvdStrength.toFixed(1)}%</span></aside>}</div>;
 }
 
