@@ -1165,3 +1165,15 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .mpi-independent-pane::after{content:none!important;display:none!important}
 .mpi-independent-pane .mpi-pane-legend{left:225px;right:12px;top:7px;max-width:none;min-height:20px;justify-content:flex-start;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
 .mpi-independent-pane .mpi-pane-legend span{flex:0 0 auto}
+.mpi-independent-pane{border-width:2px}
+.mpi-pane-price{border-color:#e6edf3}
+.mpi-pane-tpi{border-color:#4dd4ac}
+.mpi-pane-mpi{border-color:#ff6b9d}
+.mpi-pane-cvd{border-color:#58a6ff}
+.mpi-independent-pane .mpi-pane-time-controls{position:absolute;z-index:10;left:7px;top:46px;width:56px;display:flex;flex-direction:column;gap:4px;padding:4px;border:1px solid #294b61;border-radius:6px;background:rgba(5,15,23,.96);box-shadow:0 3px 12px rgba(0,0,0,.35)}
+.mpi-independent-pane .mpi-pane-time-controls button{width:48px;min-height:22px;padding:2px 1px;border:1px solid #2d5c76;border-radius:4px;background:#0a1b27;color:#9fb8c8;font:10px var(--font-mono);cursor:pointer}
+.mpi-independent-pane .mpi-pane-time-controls button:hover,.mpi-independent-pane .mpi-pane-time-controls button.active{background:#54c8ec;color:#031019;border-color:#54c8ec}
+.mpi-independent-pane .mpi-pane-time-controls button.active{font-weight:700}
+.mpi-independent-pane .mpi-confluence-zone{pointer-events:none}
+.mpi-independent-pane .mpi-confluence-zone.long{fill:#00d084;opacity:.09}
+.mpi-independent-pane .mpi-confluence-zone.short{fill:#ff4f69;opacity:.09}
