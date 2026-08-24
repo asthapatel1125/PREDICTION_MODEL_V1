@@ -80,7 +80,7 @@ class WallIntelligenceService:
     @staticmethod
     def _pct(value:float,values:list[float])->float:
         return 50. if not values else 100*(sum(item<value for item in values)+.5*sum(item==value for item in values))/len(values)
-    def observe(self,timestamp:Any,symbol:str,spot:float,metrics:dict[str,Any],regime:str,volume:float)->tuple[dict[str,Any],list[dict[str,Any]]]:
+    def observe(self,timestamp:Any,symbol:str,spot:float,metrics:dict[str,Any],regime:str,volume:float,pressure_trend:float=50.0)->tuple[dict[str,Any],list[dict[str,Any]]]:
         gex={float(item.get("strike",0)):abs(float(item.get("gex",0))) for item in metrics.get("gex_walls",[]) if float(item.get("strike",0))>0};estimates=metrics.get("wall_estimates",{})
         levels={"CALL_WALL":float(metrics.get("call_wall_strike",0)),"PUT_WALL":float(metrics.get("put_wall_strike",0)),"ZERO_GAMMA":float(metrics.get("zero_gamma",0)),"SUPPORT":float(metrics.get("support_level",0)),"RESISTANCE":float(metrics.get("resistance_level",0)),"DELTA_WALL":float(metrics.get("delta_wall_strike",0)),"ZERO_DELTA":float(metrics.get("zero_delta",0))}
         tw=float(metrics.get("tw_gex",0));spoof=float(metrics.get("spoof_score",0));edge=float(metrics.get("edge",0));walls={};breaks=[];prior_vol=list(self.volumes);surge=float(volume)/max(sum(prior_vol)/len(prior_vol),1.) if prior_vol and float(volume)>0 else None
@@ -100,7 +100,7 @@ class WallIntelligenceService:
             self.history[kind].append(raw)
             if strike>0:self.previous[(symbol,kind)]=(spot,strike)
         self.volumes.append(float(volume))
-        point={"timestamp":timestamp,"symbol":symbol,"spot":spot,"volume":float(volume),"walls":walls,"dex":float(metrics.get("dex",0)),"vol_hack":float(metrics.get("vol_hack",0)),"dealer_flow":float(metrics.get("dealer_flow",0)),"pos_inventory":float(metrics.get("pos_inventory",0)),"neg_inventory":float(metrics.get("neg_inventory",0)),"tw_gex":tw,"gex_density":float(metrics.get("gex_density",0)),"gex_dollar_density":float(metrics.get("gex_dollar_density",0)),"spoof_score":spoof,"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True,"disclaimer":WALL_INTELLIGENCE_DISCLAIMER}
+        point={"timestamp":timestamp,"symbol":symbol,"spot":spot,"volume":float(volume),"walls":walls,"dex":float(metrics.get("dex",0)),"vol_hack":float(metrics.get("vol_hack",0)),"dealer_flow":float(metrics.get("dealer_flow",0)),"pos_inventory":float(metrics.get("pos_inventory",0)),"neg_inventory":float(metrics.get("neg_inventory",0)),"tw_gex":tw,"gex_density":float(metrics.get("gex_density",0)),"gex_dollar_density":float(metrics.get("gex_dollar_density",0)),"spoof_score":spoof,"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"pressure_trend":max(0.0,min(100.0,float(pressure_trend))),"regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True,"disclaimer":WALL_INTELLIGENCE_DISCLAIMER}
         return point,breaks
 
     def summary_due(self,timestamp:Any,interval_seconds:int=30)->bool:

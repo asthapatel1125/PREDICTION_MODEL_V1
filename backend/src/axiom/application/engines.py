@@ -74,7 +74,10 @@ class _EngineRunner:
         wall_estimates=metrics.get("wall_estimates",{})
         wall_observable=bool(wall_estimates) and any(float(value.get("strike",0) or 0)>0 for value in wall_estimates.values() if isinstance(value,dict))
         if wall_observable and hasattr(self.repository,"save_wall_intelligence"):
-            point,breaks=self.wall_intelligence.observe(bar.timestamp,bar.symbol,float(bar.close),metrics,result.state.regime.value,float(bar.volume))
+            # MPI consumes the existing signed pressure score as a readable
+            # 0-100 PressureTrend confirmation (neutral pressure = 50).
+            pressure_trend=50.0*(1.0+float(result.state.pressure.value))
+            point,breaks=self.wall_intelligence.observe(bar.timestamp,bar.symbol,float(bar.close),metrics,result.state.regime.value,float(bar.volume),pressure_trend)
             await self.repository.save_wall_intelligence(point,breaks)
             if self.wall_intelligence.summary_due(bar.timestamp,self.wall_summary_log_sec) and hasattr(self.repository,"save_wall_summary"):
                 await self.repository.save_wall_summary(self.wall_intelligence.summarize(point,breaks))
