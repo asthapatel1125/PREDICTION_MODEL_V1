@@ -2242,7 +2242,7 @@ function MarketPressureIndexPanelReadable({rows=[]}){
 }
 
 function MarketPressureIndexPanelSpec({rows=[]}){
-  const [hover,setHover]=useState(null),[xZoom,setXZoom]=useState(1),[yZoom,setYZoom]=useState(1);
+  const [hover,setHover]=useState(null),[xZoom,setXZoom]=useState(1),[yZoom,setYZoom]=useState(1),[panelYZoom,setPanelYZoom]=useState({0:1,1:1,2:1,3:1});
   const data=useMemo(()=>{
     const source=(rows||[]).filter(row=>row?.timestamp&&Number.isFinite(Number(row.spot))).slice().sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
     let cvd=0,ema20=null,ema50=null,pv=0,pvol=0,prevTrend=50;
@@ -2260,7 +2260,7 @@ function MarketPressureIndexPanelSpec({rows=[]}){
     });
   },[rows]);
   const baseWidth=1400,width=Math.round(baseWidth*xZoom),left=112,right=26,top=18,panelH=145,gap=36,bottom=52,total=top+4*panelH+3*gap+bottom,inner=width-left-right;
-  useEffect(()=>{const node=document.querySelector(".mpi-spec-chart");if(!node)return;const onWheel=e=>{e.preventDefault();if(e.clientX-node.getBoundingClientRect().left<left)setYZoom(v=>Math.max(.35,Math.min(12,v*(e.deltaY<0?1.18:.85))));else setXZoom(v=>Math.max(.65,Math.min(8,v*(e.deltaY<0?1.18:.85))))};node.addEventListener("wheel",onWheel,{passive:false});return()=>node.removeEventListener("wheel",onWheel)},[left]);
+  useEffect(()=>{const node=document.querySelector(".mpi-spec-chart");if(!node)return;const onWheel=e=>{e.preventDefault();const rect=node.getBoundingClientRect(),idx=Math.max(0,Math.min(3,Math.floor((e.clientY-rect.top-top)/(panelH+gap))));if(e.clientX-rect.left<left)setPanelYZoom(current=>({...current,[idx]:Math.max(.35,Math.min(12,(current[idx]||1)*(e.deltaY<0?1.18:.85)))}));else setXZoom(v=>Math.max(.65,Math.min(8,v*(e.deltaY<0?1.18:.85))))};node.addEventListener("wheel",onWheel,{passive:false});return()=>node.removeEventListener("wheel",onWheel)},[left,top,panelH,gap]);
   useEffect(()=>{const svg=document.querySelector(".mpi-spec-chart svg");if(svg){svg.style.width=`${width}px`;svg.style.minWidth=`${width}px`}},[width]);
   const x=i=>left+i*inner/Math.max(data.length-1,1), ticks=data.length?Array.from({length:Math.min(9,data.length)},(_,i)=>Math.round(i*(data.length-1)/Math.max(Math.min(9,data.length)-1,1))):[];
   const spots=data.map(r=>r.spot).filter(Number.isFinite),sMin=spots.length?Math.min(...spots):0,sMax=spots.length?Math.max(...spots):1,sPad=Math.max((sMax-sMin)*.12,.03),cvds=data.map(r=>r.cvd),cMin=Math.min(...cvds,0),cMax=Math.max(...cvds,1),cPad=Math.max((cMax-cMin)*.12,1);
@@ -2270,7 +2270,7 @@ function MarketPressureIndexPanelSpec({rows=[]}){
     {key:"mpi",label:"MPI COMPOSITE · 0–100",min:0,max:100,color:"#ff6b9d",lines:[{key:"mpi",color:"#b56cff",width:2},{key:"mpiTrend",color:"#58a6ff",width:2},{key:"flowPct",color:"#ffd34d",width:1.6},{key:"roc",color:"#ff8b75",width:1.6},{key:"div",color:"#4dd4ac",width:1.6}]},
     {key:"cvd",label:"CVD · FLOW PROXY",min:cMin-cPad,max:cMax+cPad,color:"#58a6ff",lines:[{key:"cvd",color:"#58a6ff",width:2.5},{key:"cvdStrength",color:"#b56cff",width:1.5}]}
   ];
-  panels.forEach(p=>{const center=(p.min+p.max)/2,span=(p.max-p.min)/Math.max(yZoom,.05);p.min=center-span/2;p.max=center+span/2});
+  panels.forEach((p,index)=>{const center=(p.min+p.max)/2,span=(p.max-p.min)/Math.max(panelYZoom[index]||1,.05);p.min=center-span/2;p.max=center+span/2});
   const scale=(v,p,y)=>y+panelH-(Math.max(p.min,Math.min(p.max,v))-p.min)/Math.max(p.max-p.min,1)*(panelH-12);
   const value=(row,key)=>key==="tpiEma"?row.tpi:(Number(row[key])||0);
   const point=hover==null?null:data[hover],wheel=e=>{e.preventDefault();const r=e.currentTarget.getBoundingClientRect();if(e.clientX-r.left<left)setYZoom(v=>Math.max(.35,Math.min(12,v*(e.deltaY<0?1.18:.85))));else setXZoom(v=>Math.max(.65,Math.min(8,v*(e.deltaY<0?1.18:.85))))};
