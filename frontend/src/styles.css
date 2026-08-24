@@ -1132,6 +1132,11 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .mpi-independent-pane .mpi-axis-label{font-size:11px;letter-spacing:0;white-space:nowrap}
 .mpi-independent-pane .mpi-time-grid{stroke:#1e4055}
 .mpi-independent-pane .mpi-pane-controls{top:8px;left:12px}
+.mpi-independent-pane{min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden}
+.mpi-independent-pane .mpi-plot-viewport{box-sizing:border-box;min-width:0;min-height:0;width:100%;height:100%;overflow:auto;overflow-x:auto;overflow-y:auto;scrollbar-gutter:stable;contain:layout paint}
+.mpi-independent-pane .mpi-plot-viewport>svg{display:block;width:auto;max-width:none!important;min-width:0!important;overflow:hidden!important;padding-bottom:18px;box-sizing:content-box}
+.mpi-independent-chart{min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden}
+.mpi-independent-pane .mpi-axis-label{font-size:10px}
 /* Wall Intelligence map identity: keep each map unmistakable without changing its data. */
 .refined-wall .zero-gamma-exposure{border:2px solid #b56cff;box-shadow:0 0 0 1px rgba(181,108,255,.16),0 8px 24px #0003}
 .refined-wall .delta-exposure-map{border:2px solid #ff9f43;border-radius:9px;box-shadow:0 0 0 1px rgba(255,159,67,.16),0 8px 24px #0003;overflow:hidden}
