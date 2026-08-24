@@ -1160,3 +1160,8 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .refined-wall .zero-gamma-exposure{border:2px solid #b56cff;box-shadow:0 0 0 1px rgba(181,108,255,.16),0 8px 24px #0003}
 .refined-wall .delta-exposure-map{border:2px solid #ff9f43;border-radius:9px;box-shadow:0 0 0 1px rgba(255,159,67,.16),0 8px 24px #0003;overflow:hidden}
 .refined-wall .call-put-wall-map{border:2px solid #f4f7fb;border-radius:9px;box-shadow:0 0 0 1px rgba(244,247,251,.14),0 8px 24px #0003;overflow:hidden}
+
+/* MPI pane chrome: one dedicated legend row, with no generated title overlay. */
+.mpi-independent-pane::after{content:none!important;display:none!important}
+.mpi-independent-pane .mpi-pane-legend{left:225px;right:12px;top:7px;max-width:none;min-height:20px;justify-content:flex-start;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+.mpi-independent-pane .mpi-pane-legend span{flex:0 0 auto}

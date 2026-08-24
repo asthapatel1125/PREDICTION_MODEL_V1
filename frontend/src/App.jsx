@@ -2316,8 +2316,8 @@ function MarketPressureIndexModule({symbol}){
   const [rows,setRows]=useState([]),[expanded,setExpanded]=useState(false),[range,setRangeState]=useState("ALL");
   const setRange=item=>{if(item===range){setRangeState("");requestAnimationFrame(()=>setRangeState(item))}else setRangeState(item)};
   useEffect(()=>{const controller=new AbortController();const load=()=>fetchWallSpectrum(symbol,controller.signal).then(result=>setRows((result.rows??[]).slice(-720))).catch(error=>{if(error.name!=="AbortError")setRows(current=>current)});load();const id=window.setInterval(load,5000);return()=>{controller.abort();window.clearInterval(id)}},[symbol]);
-  const cutoff=range==="ALL"?0:Date.now()-({"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400}[range]||0)*1000,visibleRows=range==="ALL"?rows:rows.filter(row=>new Date(row.timestamp).getTime()>=cutoff);
-  const ranges=["1M","5M","15M","30M","1H","2H","3H","4H","ALL"];
+  const latestTimestamp=rows.reduce((latest,row)=>Math.max(latest,new Date(row.timestamp).getTime()||0),0),cutoff=range==="ALL"?0:(latestTimestamp||Date.now())-({"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400}[range]||0)*1000,visibleRows=range==="ALL"?rows:rows.filter(row=>new Date(row.timestamp).getTime()>=cutoff);
+  const ranges=["5S","10S","30S","1M","5M","15M","30M","1H","2H","3H","4H","ALL"];
   return <div className={expanded?"mpi-module-shell mpi-module-expanded":"mpi-module-shell"}><div className="mpi-module-toolbar"><span>INDEPENDENT MARKET PRESSURE INDEX</span><div className="mpi-time-controls" aria-label="MPI time range">{ranges.map(item=><button type="button" className={range===item?"active":""} onClick={()=>setRange(item)} key={item}>{item}</button>)}</div><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND FULL VIEW"}</button></div><MarketPressureIndexIndependent key={range} rows={visibleRows}/></div>;
 }
 
