@@ -1132,6 +1132,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .mpi-independent-pane .mpi-axis-label{font-size:11px;letter-spacing:0;white-space:nowrap}
 .mpi-independent-pane .mpi-time-grid{stroke:#1e4055}
 .mpi-independent-pane .mpi-pane-controls{top:8px;left:12px}
+.mpi-independent-pane .mpi-pane-controls{top:6px;left:10px;background:rgba(8,22,32,.96);box-shadow:0 3px 12px rgba(0,0,0,.35)}
+.mpi-independent-pane .mpi-pane-reorder{right:14px;bottom:16px}
+.mpi-independent-pane::after{position:absolute;z-index:7;top:7px;right:48px;max-width:62%;padding:4px 8px;border:1px solid #294b61;border-radius:4px;background:rgba(5,15,23,.92);color:#9fb8c8;font:10px var(--font-mono);letter-spacing:.02em;white-space:nowrap;pointer-events:none}
+.mpi-independent-pane:nth-child(1)::after{content:"QQQ PRICE  ·  EMA 20  ·  EMA 50  ·  VWAP";color:#dce9f2}
+.mpi-independent-pane:nth-child(2)::after{content:"PRESSURE TREND  ·  UPPER 70  ·  LOWER 30";color:#4dd4ac}
+.mpi-independent-pane:nth-child(3)::after{content:"MPI  ·  ROC  ·  DIVERGENCE  ·  TREND";color:#ff6b9d}
+.mpi-independent-pane:nth-child(4)::after{content:"CVD  ·  SIGNED FLOW  ·  STRENGTH";color:#58a6ff}
 .mpi-independent-pane{min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden}
 .mpi-independent-pane .mpi-plot-viewport{box-sizing:border-box;min-width:0;min-height:0;width:100%;height:100%;overflow:auto;overflow-x:auto;overflow-y:auto;scrollbar-gutter:stable;contain:layout paint}
 .mpi-independent-pane .mpi-plot-viewport>svg{display:block;width:auto;max-width:none!important;min-width:0!important;overflow:hidden!important;padding-bottom:18px;box-sizing:content-box}
