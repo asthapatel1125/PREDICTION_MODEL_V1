@@ -2261,7 +2261,7 @@ function MarketPressureIndexPanelSpec({rows=[]}){
   },[rows]);
   const width=1400,left=112,right=26,top=18,panelH=145,gap=36,bottom=52,total=top+4*panelH+3*gap+bottom,inner=width-left-right;
   const x=i=>left+i*inner/Math.max(data.length-1,1), ticks=data.length?Array.from({length:Math.min(9,data.length)},(_,i)=>Math.round(i*(data.length-1)/Math.max(Math.min(9,data.length)-1,1))):[];
-  const spots=data.map(r=>r.spot),sMin=Math.min(...spots,0),sMax=Math.max(...spots,1),sPad=Math.max((sMax-sMin)*.12,.03),cvds=data.map(r=>r.cvd),cMin=Math.min(...cvds,0),cMax=Math.max(...cvds,1),cPad=Math.max((cMax-cMin)*.12,1);
+  const spots=data.map(r=>r.spot).filter(Number.isFinite),sMin=spots.length?Math.min(...spots):0,sMax=spots.length?Math.max(...spots):1,sPad=Math.max((sMax-sMin)*.12,.03),cvds=data.map(r=>r.cvd),cMin=Math.min(...cvds,0),cMax=Math.max(...cvds,1),cPad=Math.max((cMax-cMin)*.12,1);
   const panels=[
     {key:"price",label:"QQQ PRICE · USD",min:sMin-sPad,max:sMax+sPad,color:"#e6edf3",lines:[{key:"spot",color:"#e6edf3",width:3},{key:"ema20",color:"#58a6ff",width:1.6},{key:"ema50",color:"#ffd34d",width:1.6},{key:"vwap",color:"#ff9f43",width:1.6}]},
     {key:"tpi",label:"PRESSURE TREND · 0–100",min:0,max:100,color:"#4dd4ac",lines:[{key:"tpi",color:"#4dd4ac",width:2.4},{key:"tpiEma",color:"#58a6ff",width:1.4}]},
