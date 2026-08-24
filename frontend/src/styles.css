@@ -1122,3 +1122,17 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .mpi-independent-pane svg{min-width:0!important}
 .mpi-plot-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;scrollbar-color:#5b89a3 #08131d;scrollbar-width:auto;z-index:1}
 .mpi-plot-viewport::-webkit-scrollbar{width:12px;height:12px}.mpi-plot-viewport::-webkit-scrollbar-track{background:#08131d;border:1px solid #1e4055}.mpi-plot-viewport::-webkit-scrollbar-thumb{background:#5b89a3;border:3px solid #08131d;border-radius:8px}
+/* MPI interaction boundary: scrolling and zooming belong to the plot viewport, never the page/module. */
+.mpi-module-shell{overflow:hidden;contain:layout paint}
+.mpi-module-toolbar{flex-wrap:wrap;row-gap:6px}
+.mpi-time-controls{flex:1 1 100%;order:3;justify-content:flex-start;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#5b89a3 #08131d;padding-bottom:2px}
+.mpi-time-controls button{min-width:42px;white-space:nowrap}
+.mpi-independent-pane{overscroll-behavior:contain;isolation:isolate}
+.mpi-independent-pane .mpi-plot-viewport{overscroll-behavior:contain;touch-action:none;contain:strict}
+.mpi-independent-pane .mpi-axis-label{font-size:11px;letter-spacing:0;white-space:nowrap}
+.mpi-independent-pane .mpi-time-grid{stroke:#1e4055}
+.mpi-independent-pane .mpi-pane-controls{top:8px;left:12px}
+/* Wall Intelligence map identity: keep each map unmistakable without changing its data. */
+.refined-wall .zero-gamma-exposure{border:2px solid #b56cff;box-shadow:0 0 0 1px rgba(181,108,255,.16),0 8px 24px #0003}
+.refined-wall .delta-exposure-map{border:2px solid #ff9f43;border-radius:9px;box-shadow:0 0 0 1px rgba(255,159,67,.16),0 8px 24px #0003;overflow:hidden}
+.refined-wall .call-put-wall-map{border:2px solid #f4f7fb;border-radius:9px;box-shadow:0 0 0 1px rgba(244,247,251,.14),0 8px 24px #0003;overflow:hidden}
