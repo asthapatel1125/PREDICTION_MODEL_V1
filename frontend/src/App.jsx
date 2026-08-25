@@ -1975,7 +1975,6 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
-    <ExposureSeparationZones points={points} wallKey={wallKey}/>
   </section>;
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
