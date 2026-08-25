@@ -213,8 +213,12 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return value.astimezone(timezone.utc) if value else None
 
     @api.get("/walls/spectrum")
-    async def wall_spectrum(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None,wall_type:str|None=None,tiers:str|None=None):
-        rows=await container.repository.wall_intelligence_points(symbol,_wall_time(start),_wall_time(end),720)
+    async def wall_spectrum(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None,wall_type:str|None=None,tiers:str|None=None,limit:int=720):
+        # Keep the normal Wall Intelligence response compact, while allowing
+        # the MPI history view to request enough observations for its longer
+        # windows (4H at a five-second cadence is ~2,880 points).
+        safe_limit=max(1,min(int(limit),5_000))
+        rows=await container.repository.wall_intelligence_points(symbol,_wall_time(start),_wall_time(end),safe_limit)
         requested_types={item.strip().upper() for item in wall_type.split(",")} if wall_type else None
         requested_tiers={item.strip().upper() for item in tiers.split(",")} if tiers else None
         # Filter individual walls without discarding their shared market point.

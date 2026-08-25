@@ -61,8 +61,8 @@ export const fetchDynamicsSessionHistory = (symbol, sessionDate, signal) =>
 
 export const fetchDynamicsHistory = (symbol, signal) =>
   request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}`, { signal });
-export const fetchWallSpectrum = (symbol, signal) =>
-  request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}`, { signal });
+export const fetchWallSpectrum = (symbol, signal, limit = null) =>
+  request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}${limit ? `&limit=${encodeURIComponent(limit)}` : ""}`, { signal });
 export const fetchWallBreaks = (symbol, signal) =>
   request(`/api/v1/walls/breaks?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallDealerFlow = (symbol, signal) =>
