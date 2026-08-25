@@ -135,6 +135,11 @@
 .exposure-axes .exposure-axis-tick.qqq{color:#d7e5ec}
 .exposure-axes .exposure-axis-tick.gamma{color:#c9a5ff}
 .exposure-map-canvas .exposure-panel-divider{stroke:#23485e;stroke-width:1}
+.exposure-map-canvas .exposure-panel-bg{pointer-events:none}
+.exposure-map-canvas .exposure-panel-bg.qqq{fill:rgba(220,232,240,.025)}
+.exposure-map-canvas .exposure-panel-bg.gamma{fill:rgba(181,108,255,.035)}
+.exposure-map-canvas .exposure-panel-caption{font:700 10px var(--font-mono,monospace);letter-spacing:.11em;fill:#91a9b7;pointer-events:none}
+.exposure-map-canvas .exposure-panel-caption.gamma{fill:#b56cff}
 .exposure-live-rail{min-height:380px;padding:8px}
 .exposure-live-rail .exposure-end-label{position:absolute;right:8px;width:146px;box-sizing:border-box;margin:0;transform:translateY(-50%);z-index:4;line-height:1.15}
 .exposure-live-rail .exposure-end-label.gamma{background:var(--accent);border-left:3px solid var(--accent)}

@@ -1884,7 +1884,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   // Keep the two independent plots compact enough to sit comfortably in the
   // Wall Intelligence card while retaining a readable grid and x-axis.
-  const width=Math.max(920,points.length*xZoom),height=380,left=76,right=16,topStart=22,topEnd=145,bottomStart=190,bottomEnd=344,plotWidth=width-left-right;
+   const width=Math.max(920,points.length*xZoom),height=380,left=76,right=16,topStart=24,topEnd=145,dividerY=170,bottomStart=194,bottomEnd=344,plotWidth=width-left-right;
   // Fit each panel to the actual selected-window observations. QQQ receives
   // tighter padding because its normal intraday movement is small; Gamma gets
   // a little more breathing room so rapid wall changes remain visible.
@@ -1930,7 +1930,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><small>QQQ and {levelName} use independent local scales</small></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><small>SYNCHRONIZED TIME · INDEPENDENT LOCAL USD SCALES</small></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
@@ -1950,9 +1950,13 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
             <button type="button" onClick={()=>setExpanded(value=>!value)} title={expanded?"Close expanded chart":"Expand chart"}>{expanded?"×":"↗"}</button>
           </div>
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
+            <rect className="exposure-panel-bg qqq" x={left} y={topStart} width={plotWidth} height={topEnd-topStart}/>
+            <rect className="exposure-panel-bg gamma" x={left} y={bottomStart} width={plotWidth} height={bottomEnd-bottomStart}/>
             {ticks(qqqScale,topStart,topEnd).map(item=><line className="wi-grid" key={"qqq-grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             {ticks(gammaScale,bottomStart,bottomEnd).map(item=><line className="wi-grid" key={"gamma-grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            <line className="exposure-panel-divider" x1={left} x2={width-right} y1={172} y2={172}/>
+            <line className="exposure-panel-divider" x1={left} x2={width-right} y1={dividerY} y2={dividerY}/>
+            <text className="exposure-panel-caption qqq" x={left+10} y={topStart+16}>QQQ · LOCAL USD SCALE</text>
+            <text className="exposure-panel-caption gamma" x={left+10} y={bottomStart+16}>{axisName} · LOCAL USD SCALE</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={topStart} y2={bottomEnd}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
