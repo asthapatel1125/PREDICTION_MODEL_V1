@@ -1899,12 +1899,16 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   // This keeps a historical scroll window readable instead of allowing a
   // single extreme value elsewhere in the session to flatten the view.
   const viewportWidth=scrollRef.current?.clientWidth||Math.min(width,920),dataCount=Math.max(points.length-1,1),visibleLeft=Math.max(0,scrollOffset),visibleRight=visibleLeft+viewportWidth,firstVisible=clamp(Math.floor((visibleLeft-left)/Math.max(plotWidth,1)*dataCount)-2,0,points.length-1),lastVisible=clamp(Math.ceil((visibleRight-left)/Math.max(plotWidth,1)*dataCount)+2,firstVisible,points.length-1),visiblePoints=points.slice(firstVisible,lastVisible+1);
-  // The main plot uses one truthful price domain. A visual intersection now
-  // means QQQ and the level were actually equal at that time.
-  const sharedScale=scaleFor(visiblePoints.flatMap(point=>[point.spot,point.level]),"qqq");
-  const priceY=value=>plotTop+(sharedScale.high-value)/(sharedScale.high-sharedScale.low)*(plotBottom-plotTop),qqqY=priceY,gammaY=priceY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
+  const sharedScale=scaleFor(visiblePoints.flatMap(point=>[point.spot,point.level]),"qqq"),qqqLocalScale=scaleFor(visiblePoints.map(point=>point.spot),"qqq"),gammaLocalScale=scaleFor(visiblePoints.map(point=>point.level),"gamma");
+  const qqqMin=Math.min(...visiblePoints.map(point=>point.spot)),qqqMax=Math.max(...visiblePoints.map(point=>point.spot)),gammaMin=Math.min(...visiblePoints.map(point=>point.level)),gammaMax=Math.max(...visiblePoints.map(point=>point.level)),rangesSeparated=qqqMax<gammaMin||gammaMax<qqqMin,axisGap=14,axisMiddle=(plotTop+plotBottom)/2,upperBottom=axisMiddle-axisGap/2,lowerTop=axisMiddle+axisGap/2;
+  // Compress only an empty gap between the two occupied price regions. As
+  // soon as their ranges touch, the plot automatically becomes continuous so
+  // a visible crossing still means an actual price intersection.
+  const qqqIsUpper=qqqMin>gammaMax,qqqBand=rangesSeparated?(qqqIsUpper?[plotTop,upperBottom]:[lowerTop,plotBottom]):[plotTop,plotBottom],gammaBand=rangesSeparated?(qqqIsUpper?[lowerTop,plotBottom]:[plotTop,upperBottom]):[plotTop,plotBottom];
+  const mapY=(value,scale,band)=>band[0]+(scale.high-value)/(scale.high-scale.low)*(band[1]-band[0]),continuousY=value=>plotTop+(sharedScale.high-value)/(sharedScale.high-sharedScale.low)*(plotBottom-plotTop),qqqY=value=>rangesSeparated?mapY(value,qqqLocalScale,qqqBand):continuousY(value),gammaY=value=>rangesSeparated?mapY(value,gammaLocalScale,gammaBand):continuousY(value),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=scale=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:plotTop+(1-ratio)*(plotBottom-plotTop)}));
+  const bandTicks=(scale,band,prefix)=>[0,.5,1].map(ratio=>({key:prefix+ratio,value:scale.low+ratio*(scale.high-scale.low),y:band[0]+(1-ratio)*(band[1]-band[0])})),displayTicks=rangesSeparated?[...bandTicks(qqqLocalScale,qqqBand,"q"),...bandTicks(gammaLocalScale,gammaBand,"g")]:ticks(sharedScale).map(item=>({...item,key:String(item.ratio)}));
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
   const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(10);setYZoom(1);setHover(null)};
@@ -1931,12 +1935,12 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><small>TRUE PRICE RELATIONSHIP · ONE SHARED USD SCALE</small></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><small>{rangesSeparated?"BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
         <b className="exposure-axis-name qqq">PRICE<br/>USD</b>
-        {ticks(sharedScale).map(item=><span className="exposure-axis-tick qqq" key={"q-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
+        {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null);setHoverPoint(null)}} onContextMenu={event=>event.preventDefault()}>
@@ -1950,9 +1954,10 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
           </div>
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
-            {ticks(sharedScale).map(item=><line className="wi-grid" key={"grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · SHARED USD AXIS</text>
-            <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · SHARED USD AXIS</text>
+            {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
+            {rangesSeparated&&<g className="exposure-axis-break"><line x1={left} x2={width-right} y1={axisMiddle} y2={axisMiddle}/><path d={`M ${left-7} ${axisMiddle-5} l 7 5 l -7 5 M ${width-right} ${axisMiddle-5} l 7 5 l -7 5`}/><text x={width-right-12} y={axisMiddle-5} textAnchor="end">EMPTY PRICE GAP COMPRESSED</text></g>}
+            <text className="exposure-panel-caption qqq" x={left+10} y={qqqBand[0]+17}>QQQ · USD</text>
+            <text className="exposure-panel-caption gamma" x={width-right-10} y={gammaBand[0]+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
