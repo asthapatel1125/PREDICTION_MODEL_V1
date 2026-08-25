@@ -227,10 +227,10 @@
 /* Daily Hedge Map control placement: keep only zoom/reset grouped over the
    plot; full-day remains the last item in the left time rail, and expand is
    isolated at the graph's upper-right edge. */
-.hedge-x-zoom-buttons button[title="Expand graph"],.hedge-x-zoom-buttons button[title="Minimize graph"]{position:absolute;z-index:130;left:auto;right:10px;top:8px;width:auto;min-width:72px;padding:0 9px}.hedge-x-zoom-buttons{right:0;width:calc(100% - 20px)}.hedge-x-zoom-buttons button[title="Reset chart view"]{margin-right:auto}
+.hedge-x-zoom-buttons{right:0;width:calc(100% - 20px);padding-right:190px;box-sizing:border-box}.hedge-x-zoom-buttons button[title="Reset chart view"]{margin-right:0}.hedge-x-zoom-buttons button[title="Download full-day PNG"]{position:absolute;z-index:130;top:8px;right:92px;width:auto;min-width:76px;padding:0 9px}.hedge-x-zoom-buttons button[title="Expand graph"],.hedge-x-zoom-buttons button[title="Minimize graph"]{position:absolute;z-index:130;left:auto;right:10px;top:8px;width:auto;min-width:72px;padding:0 9px}
 
 /* Shared control placement for the zero-gamma and zero-delta maps. */
-.exposure-map-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}.exposure-map-head-actions>button{flex:0 0 auto;padding:6px 9px;border:1px solid #39718e;border-radius:4px;background:#0b2638;color:#a9e6fa;font:700 9px var(--font-mono,monospace);cursor:pointer}.exposure-time-rail nav{display:flex;flex-direction:column;height:100%}
+.exposure-map-head-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 10px}.exposure-map-head-actions>button{flex:0 0 auto;padding:6px 9px;border:1px solid #39718e;border-radius:4px;background:#0b2638;color:#a9e6fa;font:700 9px var(--font-mono,monospace);cursor:pointer;white-space:nowrap}.exposure-time-rail nav{display:flex;flex-direction:column;height:100%}
 
 /* Custom Wall Intelligence graphs: keep expand above the plotting frame. */
 .dealer-custom-card{position:relative}.dealer-custom-card .greek-chart-controls .expand-chart{position:absolute;z-index:30;top:12px;right:12px}.dealer-custom-card>header{padding-right:108px}
