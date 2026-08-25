@@ -71,6 +71,13 @@ export const fetchWallSummaryHistory = (symbol, signal) =>
   request(`/api/v1/walls/summary-history?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallDayLevels = (symbol, sessionDate, signal, displayBucketSeconds = 60, since = null) =>
   request(`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${sessionDate ? `&session_date=${encodeURIComponent(sessionDate)}` : ""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}${since ? `&since=${encodeURIComponent(since)}` : ""}`, { signal });
+export async function fetchEodSnapshot(symbol,module,mapName,sessionDate,signal){
+  if(!baseUrl())throw new Error("VITE_API_URL is not configured");
+  const query=new URLSearchParams({symbol,session_date:sessionDate});
+  const response=await fetch(`${baseUrl()}/api/v1/eod-snapshots/${encodeURIComponent(module)}/${encodeURIComponent(mapName)}?${query}`,{signal,cache:"no-store"});
+  if(!response.ok)throw new Error(await response.text()||`Snapshot request returned ${response.status}`);
+  return response.blob();
+}
 
 export const fetchConfiguration = (signal) => request("/api/v1/configuration", { signal });
 export const fetchSystem = (signal) => request("/api/v1/system", { signal });

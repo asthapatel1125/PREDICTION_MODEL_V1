@@ -10,12 +10,14 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter,FastAPI,HTTPException,Query,WebSocket,WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel,Field
 
 from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
 from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
+from axiom.analytics.eod_snapshots import render_eod_svg
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -337,6 +339,16 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "count":len(rows),"display_count":len(minute_buckets),"rows":list(minute_buckets.values()),"cadence_seconds":5,"display_bucket_seconds":requested_bucket,
             "phase_anchor_window_seconds":300,"phase_anchors":phase_anchors,
             "disclaimer":"Solid phase levels use a condition-aware weighted median from the first five minutes of each market phase: the dominant persistent level receives more weight when its wall is stronger, larger, nearer spot, and more recent. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
+
+    @api.get("/eod-snapshots/{module}/{map_name}")
+    async def eod_snapshot(module:str,map_name:str,symbol:str="QQQ",session_date:date|None=None):
+        allowed={"wall":{"hedge-levels","zero-gamma","zero-delta","dealer-flow"},"mpi":{"tpi","mpi","cvd"}}
+        if module not in allowed or map_name not in allowed[module]:raise HTTPException(422,"Unsupported EOD snapshot selection")
+        market_tz=ZoneInfo(cfg.market_timezone);day=session_date or datetime.now(market_tz).date()
+        start=datetime.combine(day,time(7,0),tzinfo=market_tz).astimezone(timezone.utc);end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
+        rows=await container.repository.wall_intelligence_points(symbol,start,end,8_000)
+        svg=render_eod_svg(rows,map_name,cfg.market_timezone);filename=f'{symbol.upper()}-{module}-{map_name}-{day.isoformat()}.svg'
+        return Response(svg,media_type="image/svg+xml",headers={"Content-Disposition":f'inline; filename="{filename}"',"Cache-Control":"public, max-age=300"})
 
     @api.get("/walls/dealerflow")
     async def wall_dealerflow(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None):
