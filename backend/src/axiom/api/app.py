@@ -213,7 +213,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return value.astimezone(timezone.utc) if value else None
 
     @api.get("/walls/spectrum")
-    async def wall_spectrum(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None,wall_type:str|None=None,tiers:str|None=None,limit:int=720):
+    async def wall_spectrum(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None,wall_type:str|None=None,tiers:str|None=None,limit:int=5_000):
         # Keep the normal Wall Intelligence response compact, while allowing
         # the MPI history view to request enough observations for its longer
         # windows (4H at a five-second cadence is ~2,880 points).

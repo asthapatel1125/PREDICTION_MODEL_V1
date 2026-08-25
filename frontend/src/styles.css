@@ -1177,6 +1177,12 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .mpi-independent-pane .mpi-confluence-zone{pointer-events:none}
 .mpi-independent-pane .mpi-confluence-zone.long{fill:#00d084;opacity:.09}
 .mpi-independent-pane .mpi-confluence-zone.short{fill:#ff4f69;opacity:.09}
+/* Confluence intervals are highlighted with a neutral expectation band so the
+   shading remains readable regardless of whether the signal is long or short. */
+.mpi-independent-pane .mpi-confluence-zone.long,
+.mpi-independent-pane .mpi-confluence-zone.short,
+.mpi-dhl-zone.long,
+.mpi-dhl-zone.short{fill:#f4d35e;opacity:.14}
 .mpi-dhl-workspace{display:flex;flex-direction:column;gap:14px;width:100%;min-width:0}
 .mpi-dhl-chart{position:relative;border:2px solid var(--mpi-accent);border-radius:10px;background:#050b12;color:#dce9f2;overflow:hidden;min-width:0}
 .mpi-dhl-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid #29485c;background:#08151f}

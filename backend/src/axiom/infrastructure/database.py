@@ -278,7 +278,7 @@ class SqlAlchemyRepository:
             for event in breaks:s.add(WallBreakRow(timestamp=event["timestamp"],symbol=event["symbol"],wall_type=event["wall_type"],tier=event["tier"],regime=event["regime"],payload=self._json_ready(event)))
             await s.commit()
 
-    async def wall_intelligence_points(self,symbol:str,start:datetime|None=None,end:datetime|None=None,limit:int=720)->list[dict[str,Any]]:
+    async def wall_intelligence_points(self,symbol:str,start:datetime|None=None,end:datetime|None=None,limit:int=5_000)->list[dict[str,Any]]:
         async with self.sessions() as s:
             statement=select(WallIntelligenceRow).where(WallIntelligenceRow.symbol==symbol.upper())
             if start:statement=statement.where(WallIntelligenceRow.timestamp>=start)
