@@ -399,7 +399,7 @@ function ChartShell({expanded,setExpanded,children,className=""}){
 function ChartTimeControls({intervalSeconds,setIntervalSeconds,isLive,setOffset,expanded,setExpanded,zoom,onZoom,side=false}){
   const changeZoom=amount=>onZoom(amount);
   if(side)return <aside className="chart-side-time-controls" aria-label="Chart timeframe" onPointerDown={event=>event.stopPropagation()} onWheel={event=>event.stopPropagation()}><span>TIME</span><div className="timeframe-buttons">{CHART_INTERVALS.map(([label,seconds])=><button type="button" key={label} className={intervalSeconds===seconds?"active":""} onClick={()=>setIntervalSeconds(seconds)}>{label}</button>)}</div></aside>;
-  return <div className="greek-chart-controls"><div className="timeframe-buttons" aria-label="Chart aggregation interval">{CHART_INTERVALS.map(([label,seconds])=><button type="button" key={label} className={intervalSeconds===seconds?"active":""} onClick={()=>setIntervalSeconds(seconds)}>{label}</button>)}</div><div className="chart-zoom" aria-label="Coordinate zoom"><button type="button" onClick={()=>changeZoom(-.5)} disabled={zoom<=1}>−</button><span>{zoom.toFixed(1)}×</span><button type="button" onClick={()=>changeZoom(.5)} disabled={zoom>=8}>+</button><button type="button" className="zoom-reset" onClick={()=>changeZoom(1-zoom)} disabled={zoom===1}>RESET</button></div><button type="button" className={`return-live ${isLive?"is-live":"is-back"}`} onClick={()=>setOffset(0)}>{isLive?"● LIVE":"↪ RETURN LIVE"}</button><button type="button" className="expand-chart" onClick={event=>{event.stopPropagation();setExpanded(!expanded)}}>{expanded?"↙ MINIMIZE":"↗ EXPAND"}</button></div>;
+  return <div className="greek-chart-controls"><div className="timeframe-buttons" aria-label="Chart aggregation interval">{CHART_INTERVALS.map(([label,seconds])=><button type="button" key={label} className={intervalSeconds===seconds?"active":""} onClick={()=>setIntervalSeconds(seconds)}>{label}</button>)}</div><div className="chart-zoom" aria-label="Coordinate zoom"><button type="button" onClick={()=>changeZoom(-.5)} disabled={zoom<=1}>−</button><span>{zoom.toFixed(1)}×</span><button type="button" onClick={()=>changeZoom(.5)} disabled={zoom>=8}>+</button><button type="button" className="zoom-reset" onClick={()=>changeZoom(1-zoom)} disabled={zoom===1}>RESET</button></div><button type="button" className={`return-live ${isLive?"is-live":"is-back"}`} onClick={()=>setOffset(0)}>{isLive?"● LIVE":"↪ RETURN LIVE"}</button>{typeof setExpanded==="function"&&<button type="button" className="expand-chart" onClick={event=>{event.stopPropagation();setExpanded(!expanded)}}>{expanded?"↙ MINIMIZE":"↗ EXPAND"}</button>}</div>;
 }
 
 function chartCursor(event,dims,rowCount,maxAbs){
@@ -1939,9 +1939,9 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:stateColor(point)});
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-zone-key"><small>{rangesSeparated?"BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small><nav aria-label="Daily strength-zone colors">{["STRONGEST","STRONG","NORMAL","WEAK","WEAKEST"].map(tier=><i className={tier.toLowerCase()} key={tier}>{tier}</i>)}</nav></div></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><div className="exposure-zone-key"><small>{rangesSeparated?"BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small><nav aria-label="Daily strength-zone colors">{["STRONGEST","STRONG","NORMAL","WEAK","WEAKEST"].map(tier=><i className={tier.toLowerCase()} key={tier}>{tier}</i>)}</nav></div><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
-      <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
+      <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name==="SESSION"?"FULL DAY":name}</button>)}</nav></aside>
       <aside className="exposure-axes">
         <b className="exposure-axis-name qqq">PRICE<br/>USD</b>
         {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
@@ -1949,12 +1949,9 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null);setHoverPoint(null)}} onContextMenu={event=>event.preventDefault()}>
           <div className="exposure-map-controls" aria-label="Chart zoom controls">
-            <button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in horizontally">X+</button>
-            <button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out horizontally">X−</button>
-            <button type="button" onClick={()=>setYZoom(value=>clamp(value*1.12,.15,120))} title="Zoom in vertically">Y+</button>
-            <button type="button" onClick={()=>setYZoom(value=>clamp(value*.89,.15,120))} title="Zoom out vertically">Y−</button>
+            <button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in horizontally">+</button>
+            <button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out horizontally">−</button>
             <button type="button" onClick={reset} title="Reset chart view">↺</button>
-            <button type="button" onClick={()=>setExpanded(value=>!value)} title={expanded?"Close expanded chart":"Expand chart"}>{expanded?"×":"↗"}</button>
           </div>
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
