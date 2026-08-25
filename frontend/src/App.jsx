@@ -2322,11 +2322,12 @@ function MpiDhlMetricChart({rows=[],metric="tpi",title,accent="#4dd4ac",unit="0â
   const source=useMemo(()=>rows.filter(r=>r?.timestamp&&Number.isFinite(Number(r.spot))).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)),[rows]);
   const data=useMemo(()=>{let cvd=0,ema20=null,ema50=null,prevTrend=50;const maxFlow=Math.max(...source.map(r=>Math.abs(Number(r.dealer_flow)||0)),1);return source.map((r,i)=>{const spot=Number(r.spot),flow=Number(r.dealer_flow)||0,prev=i?source[i-1]:r;cvd+=flow;ema20=ema20==null?spot:(2/21)*spot+(19/21)*ema20;ema50=ema50==null?spot:(2/51)*spot+(49/51)*ema50;const tpi=Math.max(0,Math.min(100,Number(r.pressure_trend)||50)),dt=Math.max((Date.parse(r.timestamp)-Date.parse(prev.timestamp))/1000,1),roc=Math.min(100,Math.abs(tpi-(Number(prev.pressure_trend)||50))/dt*20),flowPct=tpi*Math.abs(flow)/maxFlow,div=Math.max(0,Math.min(100,50+(spot-(Number(prev.spot)||spot))*250)),mpi=.4*flowPct+.3*roc+.3*div,trend=i?.1*mpi+.9*prevTrend:mpi;prevTrend=trend;return {...r,spot,tpi,mpi,mpiTrend:trend,cvd,ema20,ema50}})},[source]);
   const seconds=periods?.[period],latest=Date.parse(data.at(-1)?.timestamp||"")||0;
-  // The selected preset controls the live view, but the inner canvas keeps a
-  // minimum two-hour history buffer.  This lets the user drag the plot back
-  // in time even when viewing a short 5S/30S/1M preset.  Longer presets retain
-  // their complete advertised duration; ALL uses every returned observation.
-  const historySeconds=seconds==null?null:Math.max(seconds,7200);
+  // The selected preset is a real data window, not an axis-label mode.  The
+  // previous implementation always rendered at least two hours and only
+  // changed the labels, so 5M/15M/30M appeared to contain the same plot.  Keep
+  // the frame fixed and pass only the observations in the requested window to
+  // every renderer (paths, grids, hover values, and live labels).
+  const historySeconds=seconds==null?null:Math.max(1,seconds);
   const points=historySeconds==null?data:data.filter(r=>Date.parse(r.timestamp)>=latest-historySeconds*1000);
   const H=430,left=0,right=0,top0=22,top1=172,bot0=220,bot1=388,n=Math.max(points.length-1,1),W=Math.max(1100,Math.max(points.length,1)*2.6*xZoom),plotW=W-2;
   const metricValue=r=>metric==="tpi"?r.tpi:metric==="mpi"?r.mpi:r.cvd;
