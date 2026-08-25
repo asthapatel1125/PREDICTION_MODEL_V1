@@ -1872,7 +1872,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const allPoints=useMemo(()=>rows.map(row=>{
     const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);
     if(!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return null;
-     return {timestamp:row.timestamp,spot,level,positive:level<=spot,tier:String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase()};
+     return {timestamp:row.timestamp,spot,level,zero:level,difference:spot-level,positive:level<=spot,tier:String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase()};
   }).filter(Boolean),[rows,wallKey]);
   const points=useMemo(()=>{
     const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
@@ -1899,8 +1899,10 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   // This keeps a historical scroll window readable instead of allowing a
   // single extreme value elsewhere in the session to flatten the view.
   const viewportWidth=scrollRef.current?.clientWidth||Math.min(width,920),dataCount=Math.max(points.length-1,1),visibleLeft=Math.max(0,scrollOffset),visibleRight=visibleLeft+viewportWidth,firstVisible=clamp(Math.floor((visibleLeft-left)/Math.max(plotWidth,1)*dataCount)-2,0,points.length-1),lastVisible=clamp(Math.ceil((visibleRight-left)/Math.max(plotWidth,1)*dataCount)+2,firstVisible,points.length-1),visiblePoints=points.slice(firstVisible,lastVisible+1);
-  const qqqScale=scaleFor(visiblePoints.map(point=>point.spot),"qqq"),gammaScale=scaleFor(visiblePoints.map(point=>point.level),"gamma");
-  const yFor=(value,scale)=>plotTop+(scale.high-value)/(scale.high-scale.low)*(plotBottom-plotTop),qqqY=value=>yFor(value,qqqScale),gammaY=value=>yFor(value,gammaScale),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
+  // The main plot uses one truthful price domain. A visual intersection now
+  // means QQQ and the level were actually equal at that time.
+  const sharedScale=scaleFor(visiblePoints.flatMap(point=>[point.spot,point.level]),"qqq");
+  const priceY=value=>plotTop+(sharedScale.high-value)/(sharedScale.high-sharedScale.low)*(plotBottom-plotTop),qqqY=priceY,gammaY=priceY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=scale=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:plotTop+(1-ratio)*(plotBottom-plotTop)}));
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
@@ -1929,12 +1931,12 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><small>OVERLAID SERIES · INDEPENDENT LOCAL USD SCALES</small></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><small>TRUE PRICE RELATIONSHIP · ONE SHARED USD SCALE</small></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
-        <b className="exposure-axis-name qqq">QQQ<br/>USD</b>
-        {ticks(qqqScale).map(item=><span className="exposure-axis-tick qqq" key={"q-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
+        <b className="exposure-axis-name qqq">PRICE<br/>USD</b>
+        {ticks(sharedScale).map(item=><span className="exposure-axis-tick qqq" key={"q-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null);setHoverPoint(null)}} onContextMenu={event=>event.preventDefault()}>
@@ -1948,9 +1950,9 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
           </div>
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
-            {ticks(qqqScale).map(item=><line className="wi-grid" key={"grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · LEFT AXIS</text>
-            <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · RIGHT AXIS</text>
+            {ticks(sharedScale).map(item=><line className="wi-grid" key={"grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
+            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · SHARED USD AXIS</text>
+            <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · SHARED USD AXIS</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
@@ -1961,14 +1963,12 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         </div>
       </div>
       <aside className="exposure-live-rail">
-        <b className="exposure-right-axis-name">{axisName}<br/>USD</b>
-        <div className="exposure-right-axis" aria-hidden="true">{ticks(gammaScale).map(item=><i key={"right-g-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</i>)}</div>
         <span className="exposure-end-label gamma" style={{top:gammaY(last.level),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
         <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
   </section>;
-  return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
+  return expanded?createPortal(content,document.body):<>{content}{!embedded&&<QQQMicroMovementChart points={points} period={period}/>} {!embedded&&<ZeroGammaDifferenceHistogram points={points} period={period}/>} {!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
 function DeltaExposureLevelLog({rows=[]}){
