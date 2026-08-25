@@ -163,3 +163,49 @@
 .zero-gamma-state-box.weakest{color:#3f78b8;background:rgba(12,37,70,.96)}
 .exposure-hover-card{max-width:300px;will-change:left,top}
 @media(max-width:850px){.exposure-level-frame{grid-template-columns:44px 88px minmax(0,1fr) 124px}.exposure-axes .exposure-axis-name{left:6px;font-size:8px}.exposure-axes .exposure-axis-tick{right:5px;font-size:8px}}
+
+/* Keep navigation inside each chart.  The live-level rails stay fixed while
+   only the plotted data viewport can be scrolled in either direction. */
+.exposure-map-scroll,
+.zero-gamma-scroll {
+  /* Scroll the plot viewport itself; the axis columns and live rail remain
+     fixed outside this element.  Always reserve both gutters so the frame
+     does not jump when a zoomed data window begins to overflow. */
+  overflow-x: auto;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: #5c86a2 #07111b;
+  scrollbar-width: thin;
+}
+
+.exposure-map-scroll::-webkit-scrollbar,
+.zero-gamma-scroll::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+.exposure-map-scroll::-webkit-scrollbar-track,
+.zero-gamma-scroll::-webkit-scrollbar-track {
+  background: #07111b;
+  border: 1px solid #23465d;
+}
+
+.exposure-map-scroll::-webkit-scrollbar-thumb,
+.zero-gamma-scroll::-webkit-scrollbar-thumb {
+  background: #5c86a2;
+  border: 2px solid #07111b;
+  border-radius: 8px;
+}
+
+.exposure-map-scroll::-webkit-scrollbar-thumb:hover,
+.zero-gamma-scroll::-webkit-scrollbar-thumb:hover {
+  background: #78a9c6;
+}
+
+/* The right-side green +/- pair is redundant with the top-left chart tools;
+   keep the live-price labels unobstructed. */
+.exposure-live-rail .exposure-y-controls,
+.zero-gamma-y-zoom {
+  display: none !important;
+}
