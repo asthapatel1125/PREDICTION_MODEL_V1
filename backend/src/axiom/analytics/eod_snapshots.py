@@ -47,26 +47,26 @@ def render_eod_svg(rows:list[dict[str,Any]],map_name:str,market_timezone:str="Am
     }
     if map_name not in definitions:raise ValueError("Unsupported EOD snapshot map")
     title,y_label,series=definitions[map_name];source=derived if map_name in {"tpi","mpi","cvd"} else rows
-    width,height,left,right,top,bottom=1800,980,145,65,115,125;plot_w=width-left-right;plot_h=height-top-bottom
+    width,height,left,right,top,bottom=1800,980,118,42,152,112;plot_w=width-left-right;plot_h=height-top-bottom
     values=[value for _,_,getter in series for row in source if (value:=getter(row)) is not None]
     if not values:return _empty_svg(width,height,title)
     low,high=min(values),max(values);padding=max((high-low)*.08,.01);low-=padding;high+=padding
     x=lambda index:left+index*plot_w/max(len(source)-1,1);y=lambda value:top+(high-value)/max(high-low,1e-9)*plot_h
-    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">', '<rect width="100%" height="100%" fill="#071019"/>',f'<text x="54" y="52" fill="#e4edf3" font-family="monospace" font-size="28" font-weight="700">{escape(title)}</text>', '<text x="54" y="82" fill="#8eb5c8" font-family="monospace" font-size="18">END-OF-DAY SNAPSHOT · EASTERN TIME (EST)</text>']
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">', '<rect width="100%" height="100%" fill="#071019"/>',f'<text x="42" y="48" fill="#e4edf3" font-family="monospace" font-size="30" font-weight="700">{escape(title)}</text>', '<text x="42" y="79" fill="#8eb5c8" font-family="monospace" font-size="19" font-weight="700">END-OF-DAY SNAPSHOT · EASTERN TIME (EST)</text>','<rect x="30" y="91" width="1740" height="45" rx="7" fill="#0b1d2a" stroke="#28546d"/>']
     for index in range(7):
         ratio=index/6;yy=top+ratio*plot_h;value=high-ratio*(high-low);parts.extend([f'<line x1="{left}" y1="{yy:.1f}" x2="{width-right}" y2="{yy:.1f}" stroke="#24495e"/>',f'<text x="{left-14}" y="{yy+5:.1f}" text-anchor="end" fill="#b9ced9" font-family="monospace" font-size="16">{value:.2f}</text>'])
     tz=ZoneInfo(market_timezone)
     for index in range(9):
-        ratio=index/8;row_index=round(ratio*(len(source)-1));xx=left+ratio*plot_w;stamp=datetime.fromisoformat(str(source[row_index]["timestamp"]).replace("Z","+00:00")).astimezone(tz).strftime("%H:%M EST");parts.extend([f'<line x1="{xx:.1f}" y1="{top}" x2="{xx:.1f}" y2="{height-bottom}" stroke="#24495e" stroke-dasharray="3 6"/>',f'<text x="{xx:.1f}" y="{height-bottom+32}" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="16">{stamp}</text>'])
+        ratio=index/8;row_index=round(ratio*(len(source)-1));xx=left+ratio*plot_w;observed=datetime.fromisoformat(str(source[row_index]["timestamp"]).replace("Z","+00:00")).astimezone(tz);stamp=observed.strftime("%I:%M %p").lstrip("0")+" EST";parts.extend([f'<line x1="{xx:.1f}" y1="{top}" x2="{xx:.1f}" y2="{height-bottom}" stroke="#24495e" stroke-dasharray="3 6"/>',f'<text x="{xx:.1f}" y="{height-bottom+32}" text-anchor="middle" fill="#d4e5ee" font-family="monospace" font-size="17" font-weight="700">{stamp}</text>'])
     parts.extend([f'<text x="30" y="{top+plot_h/2}" transform="rotate(-90 30 {top+plot_h/2})" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">Y AXIS · {escape(y_label)}</text>',f'<text x="{left+plot_w/2}" y="{height-25}" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">X AXIS · EASTERN TIME (EST)</text>'])
-    legend_x=left
+    legend_x=50
     for label,color_key,getter in series:
         path=[]
         for index,row in enumerate(source):
             value=getter(row)
             if value is not None:path.append(f'{"M" if not path else "L"}{x(index):.1f},{y(value):.1f}')
         color=COLORS[color_key];dash=' stroke-dasharray="12 8"' if "zero" in color_key else "";parts.append(f'<path d="{" ".join(path)}" fill="none" stroke="{color}" stroke-width="4"{dash}/>' )
-        parts.extend([f'<line x1="{legend_x}" y1="101" x2="{legend_x+25}" y2="101" stroke="{color}" stroke-width="4"/>',f'<text x="{legend_x+34}" y="107" fill="#dce8ef" font-family="monospace" font-size="16">{escape(label)}</text>']);legend_x+=max(165,len(label)*13+70)
+        parts.extend([f'<line x1="{legend_x}" y1="114" x2="{legend_x+34}" y2="114" stroke="{color}" stroke-width="6"/>',f'<text x="{legend_x+45}" y="121" fill="#f1f8fb" font-family="monospace" font-size="20" font-weight="700">{escape(label)}</text>']);legend_x+=max(205,len(label)*15+90)
     parts.append("</svg>");return "".join(parts)
 
 
