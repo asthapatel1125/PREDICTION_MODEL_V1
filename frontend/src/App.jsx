@@ -1968,7 +1968,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
       </aside>
     </div>
   </section>;
-  return expanded?createPortal(content,document.body):<>{content}{!embedded&&<QQQMicroMovementChart points={points} period={period}/>} {!embedded&&<ZeroGammaDifferenceHistogram points={points} period={period}/>} {!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
+  return expanded?createPortal(content,document.body):<>{content}{!embedded&&<QqqMicroMovementChart points={points} period={period}/>} {!embedded&&<ZeroGammaDifferenceHistogram points={points} period={period}/>} {!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
 function DeltaExposureLevelLog({rows=[]}){
