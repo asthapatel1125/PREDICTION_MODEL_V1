@@ -1889,8 +1889,10 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     const finite=values.filter(value=>Number.isFinite(value));
     if(!finite.length)return {low:0,high:1};
     const minimum=Math.min(...finite),maximum=Math.max(...finite),rawSpan=maximum-minimum;
-    const minimumSpan=kind==="qqq"?.04:.10,span=Math.max(rawSpan,minimumSpan)/yZoom;
-    const center=(minimum+maximum)/2,pad=Math.max(span*(kind==="qqq"?.10:.14),kind==="qqq"?.02:.05);
+    // A minimum visible range prevents a very short window from making a few
+    // cents in QQQ or one Gamma update look like a full-height market shock.
+    const minimumSpan=kind==="qqq"?.50:4,span=Math.max(rawSpan,minimumSpan)/yZoom;
+    const center=(minimum+maximum)/2,pad=span*.10;
     return {low:center-span/2-pad,high:center+span/2+pad};
   };
   // Refit both panels to the data currently inside the horizontal viewport.
@@ -1933,8 +1935,6 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
       <aside className="exposure-axes">
         <b className="exposure-axis-name qqq">QQQ<br/>USD</b>
         {ticks(qqqScale).map(item=><span className="exposure-axis-tick qqq" key={"q-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
-        <b className="exposure-axis-name gamma">{axisName}<br/>USD</b>
-        {ticks(gammaScale).map(item=><span className="exposure-axis-tick gamma" key={"g-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null);setHoverPoint(null)}} onContextMenu={event=>event.preventDefault()}>
@@ -1949,8 +1949,8 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
             {ticks(qqqScale).map(item=><line className="wi-grid" key={"grid-"+item.ratio} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · LEFT SCALE</text>
-            <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · RIGHT SCALE</text>
+            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · LEFT AXIS</text>
+            <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · RIGHT AXIS</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
@@ -1961,6 +1961,8 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         </div>
       </div>
       <aside className="exposure-live-rail">
+        <b className="exposure-right-axis-name">{axisName}<br/>USD</b>
+        <div className="exposure-right-axis" aria-hidden="true">{ticks(gammaScale).map(item=><i key={"right-g-"+item.ratio} style={{top:item.y}}>{item.value.toFixed(2)}</i>)}</div>
         <span className="exposure-end-label gamma" style={{top:gammaY(last.level),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
         <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
