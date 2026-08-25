@@ -1872,9 +1872,9 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const allPoints=useMemo(()=>rows.map(row=>{
     const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike),sourceTier=String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase();
     if(!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return null;
-    const difference=spot-level,expectedMove=Math.max(spot*.01,1),separation=Math.abs(difference)/expectedMove,tierOrder=["WEAKEST","WEAK","NORMAL","STRONG","STRONGEST"],exposureRank=Math.max(0,tierOrder.indexOf(sourceTier)),separationRank=separation<.10?0:separation<.25?1:separation<.50?2:separation<.80?3:4,combinedRank=separationRank===0?0:Math.round(exposureRank*.6+separationRank*.4),combinedTier=tierOrder[combinedRank];
+    const difference=spot-level,expectedMove=Math.max(spot*.01,1),separation=Math.abs(difference)/expectedMove,tierOrder=["WEAKEST","WEAK","NORMAL","STRONG","STRONGEST"],separationRank=separation<.10?0:separation<.25?1:separation<.50?2:separation<.80?3:4,combinedTier=tierOrder[separationRank];
     const gammaRegime=separationRank===0?"NEAR FLIP · TRANSITION":difference>0?"POSITIVE Γ · STABILIZING":"NEGATIVE Γ · AMPLIFYING",deltaRegime=difference>0?"QQQ ABOVE ZERO Δ":"QQQ BELOW ZERO Δ";
-     return {timestamp:row.timestamp,spot,level,zero:level,difference,positive:level<=spot,tier:sourceTier,combinedTier:wallKey==="ZERO_GAMMA"?combinedTier:sourceTier,separation,separationRank,regime:wallKey==="ZERO_GAMMA"?gammaRegime:deltaRegime};
+     return {timestamp:row.timestamp,spot,level,zero:level,difference,positive:level<=spot,tier:sourceTier,combinedTier,separation,separationRank,regime:wallKey==="ZERO_GAMMA"?gammaRegime:deltaRegime};
   }).filter(Boolean),[rows,wallKey]);
   const points=useMemo(()=>{
     const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
@@ -1964,8 +1964,6 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
-            <g className="exposure-regime-ribbon" aria-label="Estimated regime-strength timeline">{tierZones.map(zone=><rect className={zone.tier} key={"ribbon-"+zone.key} x={zone.x} y={plotBottom-10} width={zone.width} height="10"/>)}</g>
-            <text className="exposure-regime-ribbon-label" x={left+8} y={plotBottom-14}>{wallKey==="ZERO_GAMMA"?"EST. GAMMA REGIME STRENGTH":"DELTA BALANCE STRENGTH"}</text>
             {hover!==null&&<line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/>}
           </svg>
            {recentStates.length>0&&<div className="zero-gamma-recent-states" style={{left:scrollOffset+18}} aria-label="Three most recent regime states">{recentStates.map((point,index)=><div className={["zero-gamma-state-box",point.combinedTier.toLowerCase()].join(" ")} key={`${point.timestamp}-${index}`}><b>{point.combinedTier}</b><strong>{point.level.toFixed(2)}</strong><small>{point.regime}</small></div>)}</div>}
@@ -1977,8 +1975,17 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
+    <ExposureSeparationZones points={points} wallKey={wallKey}/>
   </section>;
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
+}
+
+function ExposureSeparationZones({points=[],wallKey="ZERO_GAMMA"}){
+  if(!points.length)return null;
+  const width=Math.max(920,points.length*10),height=210,left=92,right=18,top=12,bottom=32,ceiling=1.05,x=index=>left+index*(width-left-right)/Math.max(points.length-1,1),y=value=>top+(ceiling-Math.min(ceiling,Math.max(0,value)))/ceiling*(height-top-bottom);
+  const bands=[["STRONGEST",.80,ceiling,"#ff3b30"],["STRONG",.50,.80,"#ff8a00"],["NORMAL",.25,.50,"#8b949e"],["WEAK",.10,.25,"#4a9eff"],["WEAKEST",0,.10,"#3a4a5e"]];
+  const path=points.map((point,index)=>`${x(index).toFixed(1)},${y(point.separation).toFixed(1)}`).join(" "),last=points.at(-1),title=wallKey==="ZERO_GAMMA"?"ZERO GAMMA REGIME SEPARATION":"ZERO DELTA BALANCE SEPARATION";
+  return <section className="exposure-separation-zones"><header><div><span>{title}</span><h4>Horizontal strength zones · independent of DHL tier</h4></div><b>{last.combinedTier} · {(last.separation*100).toFixed(1)}% OF 1% QQQ MOVE</b></header><div className="exposure-separation-scroll"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title} horizontal strength zones`}>{bands.map(([name,low,high,color])=><g key={name}><rect x={left} y={y(high)} width={width-left-right} height={Math.max(1,y(low)-y(high))} fill={color} opacity={name==="NORMAL"?.30:.38}/><text className="exposure-zone-name" x={left-8} y={(y(low)+y(high))/2+3} textAnchor="end">{name}</text><line className="exposure-zone-boundary" x1={left} x2={width-right} y1={y(low)} y2={y(low)}/></g>)}<polyline className="exposure-separation-line" fill="none" points={path}/><text className="exposure-separation-axis-label" x={width/2} y={height-9} textAnchor="middle">LIVE |QQQ − LEVEL| ÷ 1% OF QQQ · LATEST {(last.separation*100).toFixed(1)}%</text></svg></div></section>;
 }
 
 function DeltaExposureLevelLog({rows=[]}){
