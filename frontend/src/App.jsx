@@ -1862,7 +1862,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
    const [period,setPeriod]=useState("1H");
    const [hover,setHover]=useState(null);
    const [hoverPoint,setHoverPoint]=useState(null);
-  const [xZoom,setXZoom]=useState(1.15);
+  const [xZoom,setXZoom]=useState(1);
   const [yZoom,setYZoom]=useState(1);
   const [expanded,setExpanded]=useState(false);
   const [scrollOffset,setScrollOffset]=useState(0);
@@ -1906,7 +1906,10 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   // the newest value or push a live label outside the plotting area.
   const visiblePoints=points;
   const sharedScale=scaleFor(visiblePoints.flatMap(point=>[point.spot,point.level]),"qqq"),qqqLocalScale=scaleFor(visiblePoints.map(point=>point.spot),"qqq"),gammaLocalScale=scaleFor(visiblePoints.map(point=>point.level),"gamma");
-  const axisGap=16,axisMiddle=(plotTop+plotBottom)/2,upperBottom=axisMiddle-axisGap/2,lowerTop=axisMiddle+axisGap/2,qqqBand=[lowerTop,plotBottom],gammaBand=[plotTop,upperBottom];
+  // Preserve the true USD ordering across the compressed break. Independent
+  // local scales keep both series readable, but the lower-priced series must
+  // still occupy the lower lane (for example, Gamma 681 below QQQ 708).
+  const axisGap=16,axisMiddle=(plotTop+plotBottom)/2,upperBand=[plotTop,axisMiddle-axisGap/2],lowerBand=[axisMiddle+axisGap/2,plotBottom],latestVisible=visiblePoints.at(-1),levelIsBelowQqq=latestVisible.level<latestVisible.spot,qqqBand=levelIsBelowQqq?upperBand:lowerBand,gammaBand=levelIsBelowQqq?lowerBand:upperBand;
   const mapY=(value,scale,band)=>band[0]+(scale.high-value)/(scale.high-scale.low)*(band[1]-band[0]),qqqY=value=>mapY(value,qqqLocalScale,qqqBand),gammaY=value=>mapY(value,gammaLocalScale,gammaBand),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=scale=>[0,.25,.5,.75,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:plotTop+(1-ratio)*(plotBottom-plotTop)}));
@@ -1914,8 +1917,8 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
-  const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1.15);setYZoom(1);setHover(null);returnToLatest()};
-  const reset=()=>{followingLiveRef.current=true;setXZoom(1.15);setYZoom(1);setHover(null);returnToLatest()};
+  const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setHover(null);returnToLatest()};
+  const reset=()=>{followingLiveRef.current=true;setXZoom(1);setYZoom(1);setHover(null);returnToLatest()};
   const zoomXAt=(event,factor)=>{const viewport=scrollRef.current,canvas=canvasRef.current;if(!viewport||!canvas){setXZoom(current=>clamp(current*factor,1,180));return}const viewportRect=viewport.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect(),oldWidth=Math.max(canvasRect.width,1),pointerInViewport=clamp(event.clientX-viewportRect.left,0,viewport.clientWidth),contentX=viewport.scrollLeft+pointerInViewport,anchorRatio=clamp(contentX/oldWidth,0,1);followingLiveRef.current=false;setXZoom(current=>{const next=clamp(current*factor,1,180),nextWidth=1100*next;requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=clamp(anchorRatio*nextWidth-pointerInViewport,0,Math.max(0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth))});return next})};
   const wheel=event=>{event.preventDefault();event.stopPropagation();const factor=event.deltaY<0?1.12:.89;if(event.shiftKey)setYZoom(current=>clamp(current*factor,.15,120));else zoomXAt(event,factor)};
   const beginPan=event=>{if(event.button!==2)return;event.preventDefault();dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId)};

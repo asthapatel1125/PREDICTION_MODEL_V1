@@ -263,6 +263,11 @@
   .exposure-level-frame{grid-template-columns:52px 82px minmax(0,1fr) 124px}
   .exposure-live-rail{padding-left:4px;padding-right:4px}
   .exposure-live-rail .exposure-end-label{right:6px}
+
+  /* Match the Gamma/Delta frame proportions on the shared-price wall map. */
+  .call-put-wall-map .hedge-map-frame{grid-template-columns:52px 70px minmax(0,1fr) 124px 22px}
+  .call-put-wall-map .hedge-live-scale header{left:4px;right:4px}
+  .call-put-wall-map .hedge-live-scale>span{left:3px;right:3px}
 }
 
 .mpi-dhl-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}.mpi-dhl-header-actions small{margin-right:4px}.mpi-dhl-header-actions button{padding:5px 8px;border:1px solid #39718e;border-radius:4px;background:#0b2638;color:#a9e6fa;font:700 9px var(--font-mono,monospace);cursor:pointer}.mpi-dhl-y-tools{display:none!important}.mpi-dhl-expanded{position:fixed!important;z-index:2147483646!important;inset:0!important;margin:0!important;padding:12px!important;overflow:auto!important;background:#071019!important}.mpi-dhl-expanded .mpi-dhl-frame{min-height:calc(100dvh - 84px)}.mpi-confluence-marker line,.wall-confluence-marker line{stroke-width:1.35;stroke-dasharray:2 5}.mpi-confluence-marker text,.wall-confluence-marker text{font:700 8px var(--font-mono,monospace);letter-spacing:.06em;paint-order:stroke;stroke:#061019;stroke-width:3px}.mpi-confluence-marker.long line,.wall-confluence-marker.long line{stroke:#00d084}.mpi-confluence-marker.long text,.wall-confluence-marker.long text{fill:#00d084}.mpi-confluence-marker.short line,.wall-confluence-marker.short line{stroke:#ff4f69}.mpi-confluence-marker.short text,.wall-confluence-marker.short text{fill:#ff4f69}.hedge-map-expanded{position:fixed!important;z-index:2147483646!important;inset:0!important;margin:0!important;padding:12px!important;overflow:auto!important;background:#071019!important}.hedge-map-expanded .hedge-map-frame{min-height:calc(100dvh - 24px)}
