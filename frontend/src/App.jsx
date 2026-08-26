@@ -1887,7 +1887,10 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   // Overlay both series in one time-aligned plot, but map each one through its
   // own local USD scale so small QQQ moves remain visible.
-   const width=1100*xZoom,height=320,left=76,right=16,plotTop=34,plotBottom=282,plotWidth=width-left-right;
+   // Restore the full-height coordinate geometry used by the former zone
+   // plot. The zones are gone, but both price regions should still occupy the
+   // plotting surface instead of being letterboxed in a short 320px SVG.
+   const width=1100*xZoom,height=486,left=76,right=16,plotTop=42,plotBottom=444,plotWidth=width-left-right;
   const scaleFor=(values,kind)=>{
     const finite=values.filter(value=>Number.isFinite(value));
     if(!finite.length)return {low:0,high:1};
