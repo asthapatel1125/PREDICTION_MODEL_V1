@@ -1898,20 +1898,20 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     const center=(minimum+maximum)/2,pad=span*.10;
     return {low:center-span/2-pad,high:center+span/2+pad};
   };
-  // Refit both panels to the data currently inside the horizontal viewport.
-  // This keeps a historical scroll window readable instead of allowing a
-  // single extreme value elsewhere in the session to flatten the view.
-  const viewportWidth=scrollRef.current?.clientWidth||Math.min(width,920),dataCount=Math.max(points.length-1,1),visibleLeft=Math.max(0,scrollOffset),visibleRight=visibleLeft+viewportWidth,firstVisible=clamp(Math.floor((visibleLeft-left)/Math.max(plotWidth,1)*dataCount)-2,0,points.length-1),lastVisible=clamp(Math.ceil((visibleRight-left)/Math.max(plotWidth,1)*dataCount)+2,firstVisible,points.length-1),visiblePoints=points.slice(firstVisible,lastVisible+1);
+  // Timeframe buttons fit the complete selected window into one frame. Scale
+  // from that same complete window so a stale scroll offset can never exclude
+  // the newest value or push a live label outside the plotting area.
+  const visiblePoints=points;
   const sharedScale=scaleFor(visiblePoints.flatMap(point=>[point.spot,point.level]),"qqq"),qqqLocalScale=scaleFor(visiblePoints.map(point=>point.spot),"qqq"),gammaLocalScale=scaleFor(visiblePoints.map(point=>point.level),"gamma");
-  const qqqMin=Math.min(...visiblePoints.map(point=>point.spot)),qqqMax=Math.max(...visiblePoints.map(point=>point.spot)),gammaMin=Math.min(...visiblePoints.map(point=>point.level)),gammaMax=Math.max(...visiblePoints.map(point=>point.level)),rangesSeparated=qqqMax<gammaMin||gammaMax<qqqMin,axisGap=14,axisMiddle=(plotTop+plotBottom)/2,upperBottom=axisMiddle-axisGap/2,lowerTop=axisMiddle+axisGap/2;
+  const qqqMin=Math.min(...visiblePoints.map(point=>point.spot)),qqqMax=Math.max(...visiblePoints.map(point=>point.spot)),gammaMin=Math.min(...visiblePoints.map(point=>point.level)),gammaMax=Math.max(...visiblePoints.map(point=>point.level)),qqqSpan=Math.max(qqqMax-qqqMin,.01),gammaSpan=Math.max(gammaMax-gammaMin,.01),rangesSeparated=qqqMax<gammaMin||gammaMax<qqqMin,splitScale=rangesSeparated||gammaSpan>qqqSpan*4||qqqSpan>gammaSpan*4,axisGap=14,axisMiddle=(plotTop+plotBottom)/2,upperBottom=axisMiddle-axisGap/2,lowerTop=axisMiddle+axisGap/2;
   // Compress only an empty gap between the two occupied price regions. As
   // soon as their ranges touch, the plot automatically becomes continuous so
   // a visible crossing still means an actual price intersection.
-  const qqqIsUpper=qqqMin>gammaMax,qqqBand=rangesSeparated?(qqqIsUpper?[plotTop,upperBottom]:[lowerTop,plotBottom]):[plotTop,plotBottom],gammaBand=rangesSeparated?(qqqIsUpper?[lowerTop,plotBottom]:[plotTop,upperBottom]):[plotTop,plotBottom];
-  const mapY=(value,scale,band)=>band[0]+(scale.high-value)/(scale.high-scale.low)*(band[1]-band[0]),continuousY=value=>plotTop+(sharedScale.high-value)/(sharedScale.high-sharedScale.low)*(plotBottom-plotTop),qqqY=value=>rangesSeparated?mapY(value,qqqLocalScale,qqqBand):continuousY(value),gammaY=value=>rangesSeparated?mapY(value,gammaLocalScale,gammaBand):continuousY(value),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
+  const qqqIsUpper=rangesSeparated&&qqqMin>gammaMax,qqqBand=splitScale?(qqqIsUpper?[plotTop,upperBottom]:[lowerTop,plotBottom]):[plotTop,plotBottom],gammaBand=splitScale?(qqqIsUpper?[lowerTop,plotBottom]:[plotTop,upperBottom]):[plotTop,plotBottom];
+  const mapY=(value,scale,band)=>band[0]+(scale.high-value)/(scale.high-scale.low)*(band[1]-band[0]),continuousY=value=>plotTop+(sharedScale.high-value)/(sharedScale.high-sharedScale.low)*(plotBottom-plotTop),qqqY=value=>splitScale?mapY(value,qqqLocalScale,qqqBand):continuousY(value),gammaY=value=>splitScale?mapY(value,gammaLocalScale,gammaBand):continuousY(value),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const ticks=scale=>[0,.5,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:plotTop+(1-ratio)*(plotBottom-plotTop)}));
-  const bandTicks=(scale,band,prefix)=>[0,.5,1].map(ratio=>({key:prefix+ratio,value:scale.low+ratio*(scale.high-scale.low),y:band[0]+(1-ratio)*(band[1]-band[0])})),displayTicks=rangesSeparated?[...bandTicks(qqqLocalScale,qqqBand,"q"),...bandTicks(gammaLocalScale,gammaBand,"g")]:ticks(sharedScale).map(item=>({...item,key:String(item.ratio)}));
+  const bandTicks=(scale,band,prefix)=>[0,.5,1].map(ratio=>({key:prefix+ratio,value:scale.low+ratio*(scale.high-scale.low),y:band[0]+(1-ratio)*(band[1]-band[0])})),displayTicks=splitScale?[...bandTicks(qqqLocalScale,qqqBand,"q"),...bandTicks(gammaLocalScale,gammaBand,"g")]:ticks(sharedScale).map(item=>({...item,key:String(item.ratio)}));
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
@@ -1939,7 +1939,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>{rangesSeparated?"BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>{splitScale?"DUAL LOCAL USD SCALES · MOVEMENT PRESERVED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).filter(name=>name!=="SESSION").map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
@@ -1956,7 +1956,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
           <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            {rangesSeparated&&<g className="exposure-axis-break"><line x1={left} x2={width-right} y1={axisMiddle} y2={axisMiddle}/><path d={`M ${left-7} ${axisMiddle-5} l 7 5 l -7 5 M ${width-right} ${axisMiddle-5} l 7 5 l -7 5`}/><text x={width-right-12} y={axisMiddle-5} textAnchor="end">EMPTY PRICE GAP COMPRESSED</text></g>}
+            {splitScale&&<g className="exposure-axis-break"><line x1={left} x2={width-right} y1={axisMiddle} y2={axisMiddle}/><path d={`M ${left-7} ${axisMiddle-5} l 7 5 l -7 5 M ${width-right} ${axisMiddle-5} l 7 5 l -7 5`}/><text x={width-right-12} y={axisMiddle-5} textAnchor="end">INDEPENDENT LOCAL SCALES</text></g>}
             <text className="exposure-panel-caption qqq" x={left+10} y={qqqBand[0]+17}>QQQ · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={gammaBand[0]+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
