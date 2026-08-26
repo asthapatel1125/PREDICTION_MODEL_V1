@@ -1956,7 +1956,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
             <button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out horizontally">−</button>
             <button type="button" onClick={reset} title="Reset chart view">↺</button>
           </div>
-          <svg viewBox={"0 0 "+width+" "+height} role="img" aria-label={heading}>
+          <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             {splitScale&&<g className="exposure-axis-break"><line x1={left} x2={width-right} y1={axisMiddle} y2={axisMiddle}/><path d={`M ${left-7} ${axisMiddle-5} l 7 5 l -7 5 M ${width-right} ${axisMiddle-5} l 7 5 l -7 5`}/><text x={width-right-12} y={axisMiddle-5} textAnchor="end">INDEPENDENT LOCAL SCALES</text></g>}

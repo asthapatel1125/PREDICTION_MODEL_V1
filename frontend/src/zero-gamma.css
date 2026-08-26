@@ -233,6 +233,13 @@
 .exposure-level-map:not(.expanded) .exposure-live-rail{height:486px;min-height:486px;max-height:486px}
 .exposure-level-map:not(.expanded) .exposure-map-scroll{overflow-y:hidden}
 
+/* Axes and module chrome remain stationary; only the centre plot can pan. */
+.exposure-level-frame{position:relative;align-items:stretch;overflow:hidden}
+.exposure-time-rail,.exposure-axes,.exposure-live-rail{position:relative;z-index:3;overflow:hidden}
+.exposure-map-scroll{position:relative;min-width:0;overflow-x:auto!important;overflow-y:hidden!important;overscroll-behavior-x:contain}
+.exposure-map-canvas{height:100%;min-height:100%}
+.exposure-map-canvas svg{display:block;width:100%;height:100%}
+
 .mpi-dhl-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}.mpi-dhl-header-actions small{margin-right:4px}.mpi-dhl-header-actions button{padding:5px 8px;border:1px solid #39718e;border-radius:4px;background:#0b2638;color:#a9e6fa;font:700 9px var(--font-mono,monospace);cursor:pointer}.mpi-dhl-y-tools{display:none!important}.mpi-dhl-expanded{position:fixed!important;z-index:2147483646!important;inset:0!important;margin:0!important;padding:12px!important;overflow:auto!important;background:#071019!important}.mpi-dhl-expanded .mpi-dhl-frame{min-height:calc(100dvh - 84px)}.mpi-confluence-marker line,.wall-confluence-marker line{stroke-width:1.35;stroke-dasharray:2 5}.mpi-confluence-marker text,.wall-confluence-marker text{font:700 8px var(--font-mono,monospace);letter-spacing:.06em;paint-order:stroke;stroke:#061019;stroke-width:3px}.mpi-confluence-marker.long line,.wall-confluence-marker.long line{stroke:#00d084}.mpi-confluence-marker.long text,.wall-confluence-marker.long text{fill:#00d084}.mpi-confluence-marker.short line,.wall-confluence-marker.short line{stroke:#ff4f69}.mpi-confluence-marker.short text,.wall-confluence-marker.short text{fill:#ff4f69}.hedge-map-expanded{position:fixed!important;z-index:2147483646!important;inset:0!important;margin:0!important;padding:12px!important;overflow:auto!important;background:#071019!important}.hedge-map-expanded .hedge-map-frame{min-height:calc(100dvh - 24px)}
 
 /* Daily Hedge Map control placement: keep only zoom/reset grouped over the
