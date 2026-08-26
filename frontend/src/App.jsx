@@ -1872,17 +1872,16 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const dragRef=useRef(null);
   const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,SESSION:null};
   const allPoints=useMemo(()=>rows.map(row=>{
-    const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike),sourceTier=String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase();
+    const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);
     if(!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return null;
-    const difference=spot-level,expectedMove=Math.max(spot*.01,1),separation=Math.abs(difference)/expectedMove,tierOrder=["WEAKEST","WEAK","NORMAL","STRONG","STRONGEST"],separationRank=separation<.10?0:separation<.25?1:separation<.50?2:separation<.80?3:4,combinedTier=tierOrder[separationRank];
-    const gammaRegime=separationRank===0?"NEAR FLIP · TRANSITION":difference>0?"POSITIVE Γ · STABILIZING":"NEGATIVE Γ · AMPLIFYING",deltaRegime=difference>0?"QQQ ABOVE ZERO Δ":"QQQ BELOW ZERO Δ";
-     return {timestamp:row.timestamp,spot,level,zero:level,difference,positive:level<=spot,tier:sourceTier,combinedTier,separation,signedSeparation:(level-spot)/expectedMove,separationRank,regime:wallKey==="ZERO_GAMMA"?gammaRegime:deltaRegime};
+    const difference=spot-level,gammaRegime=difference>0?"POSITIVE Γ · STABILIZING":"NEGATIVE Γ · AMPLIFYING",deltaRegime=difference>0?"QQQ ABOVE ZERO Δ":"QQQ BELOW ZERO Δ";
+     return {timestamp:row.timestamp,spot,level,zero:level,difference,positive:level<=spot,regime:wallKey==="ZERO_GAMMA"?gammaRegime:deltaRegime};
   }).filter(Boolean),[rows,wallKey]);
   const points=useMemo(()=>{
     const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
     return !seconds||!Number.isFinite(latest)?allPoints:allPoints.filter(point=>Date.parse(point.timestamp)>=latest-seconds*1000);
   },[allPoints,period]);
-  useEffect(()=>{if(scrollRef.current&&followingLiveRef.current){scrollRef.current.scrollLeft=scrollRef.current.scrollWidth;setScrollOffset(scrollRef.current.scrollLeft)}},[points.length,period,points.at(-1)?.timestamp]);
+  useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=xZoom===1?0:Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)})},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
   if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and level observations.</p></section>;
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
@@ -1915,32 +1914,31 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   const bandTicks=(scale,band,prefix)=>[0,.5,1].map(ratio=>({key:prefix+ratio,value:scale.low+ratio*(scale.high-scale.low),y:band[0]+(1-ratio)*(band[1]-band[0])})),displayTicks=rangesSeparated?[...bandTicks(qqqLocalScale,qqqBand,"q"),...bandTicks(gammaLocalScale,gammaBand,"g")]:ticks(sharedScale).map(item=>({...item,key:String(item.ratio)}));
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
-  const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setHover(null);requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=0})};
+  const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setHover(null);setScrollOffset(0);requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=0})};
   const reset=()=>{followingLiveRef.current=true;setXZoom(1);setYZoom(1);setHover(null);requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=0})};
   const zoomXAt=(event,factor)=>{const viewport=scrollRef.current,canvas=canvasRef.current;if(!viewport||!canvas){setXZoom(current=>clamp(current*factor,1,180));return}const viewportRect=viewport.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect(),oldWidth=Math.max(canvasRect.width,1),pointerInViewport=clamp(event.clientX-viewportRect.left,0,viewport.clientWidth),contentX=viewport.scrollLeft+pointerInViewport,anchorRatio=clamp(contentX/oldWidth,0,1);followingLiveRef.current=false;setXZoom(current=>{const next=clamp(current*factor,1,180),nextWidth=1100*next;requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=clamp(anchorRatio*nextWidth-pointerInViewport,0,Math.max(0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth))});return next})};
   const wheel=event=>{event.preventDefault();event.stopPropagation();const factor=event.deltaY<0?1.12:.89;if(event.shiftKey)setYZoom(current=>clamp(current*factor,.15,120));else zoomXAt(event,factor)};
   const beginPan=event=>{if(event.button!==2)return;event.preventDefault();dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId)};
    const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1),index=Math.round(ratio*Math.max(points.length-1,0)),viewportRect=scrollRef.current?.getBoundingClientRect(),viewportX=viewportRect?event.clientX-viewportRect.left:event.clientX-rect.left,viewportWidth=viewportRect?.width||rect.width;setHover(index);setHoverPoint({x:event.clientX-rect.left,y:event.clientY-rect.top,rightHalf:viewportX>viewportWidth*.55});const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
   const stopPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null};
-  const last=points.at(-1),recentStates=points.slice(-3),gammaColor=point=>point.positive?"#00d084":"#ff4f69",tierColors={STRONGEST:"#ff3b30",STRONG:"#ff8a00",NORMAL:"#a6b2bd",WEAK:"#4a9eff",WEAKEST:"#3a4a5e"},stateColor=point=>tierColors[point.combinedTier]||tierColors.WEAKEST,levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ";
-  const tierZones=points.map((point,index)=>{const start=index===0?left:(x(index-1)+x(index))/2,end=index===points.length-1?width-right:(x(index)+x(index+1))/2;return {key:`${point.timestamp}-${index}`,tier:point.combinedTier.toLowerCase(),x:start,width:Math.max(1,end-start)}});
+  const last=points.at(-1),gammaColor=point=>point.positive?"#00d084":"#ff4f69",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ";
   // Render each dashed portion using the relationship at that portion. This
   // prevents a color from bleeding across a zero-gamma/QQQ sign transition.
   const levelSegments=[];
   points.slice(1).forEach((point,index)=>{
     const previous=points[index],x0=x(index),x1=x(index+1),y0=gammaY(previous.level),y1=gammaY(point.level);
     if(previous.positive===point.positive){
-      levelSegments.push({key:`${index}-full`,x0,y0,x1,y1,color:stateColor(point)});
+      levelSegments.push({key:`${index}-full`,x0,y0,x1,y1,color:gammaColor(point)});
       return;
     }
     const d0=previous.level-previous.spot,d1=point.level-point.spot,denominator=d0-d1;
     const ratio=Number.isFinite(denominator)&&Math.abs(denominator)>1e-9?clamp(d0/denominator,0,1):.5;
     const xm=x0+(x1-x0)*ratio,ym=y0+(y1-y0)*ratio;
-    levelSegments.push({key:`${index}-before`,x0,y0,x1:xm,y1:ym,color:stateColor(previous)});
-    levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:stateColor(point)});
+    levelSegments.push({key:`${index}-before`,x0,y0,x1:xm,y1:ym,color:gammaColor(previous)});
+    levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><div className="exposure-zone-key"><small>{rangesSeparated?"BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small><nav aria-label="Daily strength-zone colors">{["STRONGEST","STRONG","NORMAL","WEAK","WEAKEST"].map(tier=><i className={tier.toLowerCase()} key={tier}>{tier}</i>)}</nav></div><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>{rangesSeparated?"BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED":"CONTINUOUS SHARED USD SCALE · CROSSINGS ARE EXACT"}</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).filter(name=>name!=="SESSION").map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
@@ -1948,7 +1946,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
         {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
-         <div className="exposure-map-canvas" ref={canvasRef} style={{width}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null);setHoverPoint(null)}} onContextMenu={event=>event.preventDefault()}>
+         <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${xZoom*100}%`,minWidth:"100%"}} onWheel={wheel} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={()=>{dragRef.current=null;setHover(null);setHoverPoint(null)}} onContextMenu={event=>event.preventDefault()}>
           <div className="exposure-map-controls" aria-label="Chart zoom controls">
             <button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in horizontally">+</button>
             <button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out horizontally">−</button>
@@ -1965,8 +1963,7 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
             {hover!==null&&<line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/>}
           </svg>
-           {recentStates.length>0&&<div className="zero-gamma-recent-states" style={{left:scrollOffset+18}} aria-label="Three most recent regime states">{recentStates.map((point,index)=><div className={["zero-gamma-state-box",point.combinedTier.toLowerCase()].join(" ")} key={`${point.timestamp}-${index}`}><b>{point.combinedTier}</b><strong>{point.level.toFixed(2)}</strong><small>{point.regime}</small></div>)}</div>}
-           {active&&hoverPoint&&(()=>{const cardWidth=300,cardHeight=154,px=hoverPoint.x,py=hoverPoint.y,placeLeft=hoverPoint.rightHalf,leftPos=placeLeft?Math.max(8,px-cardWidth-18):Math.min(width-cardWidth-8,px+18),topPos=clamp(py-cardHeight/2,8,height-cardHeight-8);return <aside className="exposure-hover-card" style={{left:leftPos,top:topPos}}><b>{logDate(active.timestamp)} · {logTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)}</strong></span><span style={{color:stateColor(active)}}>{levelName}<strong>{active.level.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{active.regime}</span><span>COMBINED STATE <strong style={{color:stateColor(active)}}>{active.combinedTier}</strong></span>{wallKey==="ZERO_GAMMA"&&<span>FLIP SEPARATION <strong>{(active.separation*100).toFixed(1)}% OF 1% MOVE</strong></span>}</aside>})()}
+           {active&&hoverPoint&&(()=>{const cardWidth=300,cardHeight=118,px=hoverPoint.x,py=hoverPoint.y,placeLeft=hoverPoint.rightHalf,leftPos=placeLeft?Math.max(8,px-cardWidth-18):Math.min(width-cardWidth-8,px+18),topPos=clamp(py-cardHeight/2,8,height-cardHeight-8);return <aside className="exposure-hover-card" style={{left:leftPos,top:topPos}}><b>{logDate(active.timestamp)} · {logTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{levelName}<strong>{active.level.toFixed(2)}</strong></span><span style={{color:gammaColor(active)}}>{active.regime}</span></aside>})()}
         </div>
       </div>
       <aside className="exposure-live-rail">
