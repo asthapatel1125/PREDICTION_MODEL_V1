@@ -1905,15 +1905,15 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   // from that same complete window so a stale scroll offset can never exclude
   // the newest value or push a live label outside the plotting area.
   const visiblePoints=points;
-  const sharedScale=scaleFor(visiblePoints.flatMap(point=>[point.spot,point.level]),"qqq"),qqqLocalScale=scaleFor(visiblePoints.map(point=>point.spot),"qqq"),gammaLocalScale=scaleFor(visiblePoints.map(point=>point.level),"gamma");
-  // Preserve the true USD ordering across the compressed break. Independent
-  // local scales keep both series readable, but the lower-priced series must
-  // still occupy the lower lane (for example, Gamma 681 below QQQ 708).
-  const axisGap=16,axisMiddle=(plotTop+plotBottom)/2,upperBand=[plotTop,axisMiddle-axisGap/2],lowerBand=[axisMiddle+axisGap/2,plotBottom],latestVisible=visiblePoints.at(-1),levelIsBelowQqq=latestVisible.level<latestVisible.spot,qqqBand=levelIsBelowQqq?upperBand:lowerBand,gammaBand=levelIsBelowQqq?lowerBand:upperBand;
-  const mapY=(value,scale,band)=>band[0]+(scale.high-value)/(scale.high-scale.low)*(band[1]-band[0]),qqqY=value=>mapY(value,qqqLocalScale,qqqBand),gammaY=value=>mapY(value,gammaLocalScale,gammaBand),x=index=>left+index*plotWidth/Math.max(points.length-1,1);
+  // One monotonic, gap-compressed USD scale preserves the real relationship
+  // at every timestamp. A lower Gamma value is therefore always drawn below
+  // QQQ, while rank compression prevents a large empty USD gap from making
+  // the smaller QQQ moves appear flat.
+  const orderedValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,point.level]).filter(Number.isFinite))].sort((a,b)=>a-b),scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
+  const valueRank=value=>{if(orderedValues.length<2)return .5;let lowIndex=0,highIndex=orderedValues.length-1;while(lowIndex<=highIndex){const middle=(lowIndex+highIndex)>>1;if(orderedValues[middle]<value)lowIndex=middle+1;else highIndex=middle-1}const upper=Math.min(orderedValues.length-1,lowIndex),lower=Math.max(0,upper-1),lowerValue=orderedValues[lower],upperValue=orderedValues[upper],fraction=upperValue===lowerValue?0:(value-lowerValue)/(upperValue-lowerValue);return (lower+(upper-lower)*fraction)/(orderedValues.length-1)};
+  const compressedRatio=value=>.82*valueRank(value)+.18*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
-  const ticks=scale=>[0,.25,.5,.75,1].map(ratio=>({ratio,value:scale.low+ratio*(scale.high-scale.low),y:plotTop+(1-ratio)*(plotBottom-plotTop)}));
-  const bandTicks=(scale,band,prefix)=>[0,.5,1].map(ratio=>({key:prefix+ratio,value:scale.low+ratio*(scale.high-scale.low),y:band[0]+(1-ratio)*(band[1]-band[0])})),displayTicks=[...bandTicks(gammaLocalScale,gammaBand,"g"),...bandTicks(qqqLocalScale,qqqBand,"q")];
+  const displayTicks=[0,.25,.5,.75,1].map((ratio,index)=>{const value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
@@ -1958,8 +1958,8 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            <text className="exposure-panel-caption qqq" x={left+10} y={qqqBand[0]+17}>QQQ · USD</text>
-            <text className="exposure-panel-caption gamma" x={width-right-10} y={gammaBand[0]+17} textAnchor="end">{axisName} · USD</text>
+            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · USD</text>
+            <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
             <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
