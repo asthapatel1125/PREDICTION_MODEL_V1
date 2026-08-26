@@ -1858,7 +1858,7 @@ function LegacyExposureLevelMap({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
-function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
+function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
    const [period,setPeriod]=useState("1H");
    const [hover,setHover]=useState(null);
    const [hoverPoint,setHoverPoint]=useState(null);
@@ -1973,6 +1973,11 @@ function ZeroGammaExposureChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
     </div>
   </section>;
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
+}
+
+function ZeroGammaExposureChart(props){
+  if(props.wallKey==="ZERO_DELTA")return <ModernExposureLevelChart {...props}/>;
+  return <LegacyZeroGammaExposureChart rows={props.rows} embedded={props.embedded} showHistogram={false}/>;
 }
 
 function ExposureSeparationZones({points=[],wallKey="ZERO_GAMMA"}){
