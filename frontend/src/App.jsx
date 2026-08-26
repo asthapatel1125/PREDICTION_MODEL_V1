@@ -1862,7 +1862,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
    const [period,setPeriod]=useState("1H");
    const [hover,setHover]=useState(null);
    const [hoverPoint,setHoverPoint]=useState(null);
-  const [xZoom,setXZoom]=useState(1);
+  const [xZoom,setXZoom]=useState(1.15);
   const [yZoom,setYZoom]=useState(1);
   const [expanded,setExpanded]=useState(false);
   const [scrollOffset,setScrollOffset]=useState(0);
@@ -1890,7 +1890,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
    // Restore the full-height coordinate geometry used by the former zone
    // plot. The zones are gone, but both price regions should still occupy the
    // plotting surface instead of being letterboxed in a short 320px SVG.
-   const width=1100*xZoom,height=486,left=76,right=16,plotTop=42,plotBottom=444,plotWidth=width-left-right;
+   const width=1100*xZoom,height=320,left=76,right=16,plotTop=34,plotBottom=282,plotWidth=width-left-right;
   const scaleFor=(values,kind)=>{
     const finite=values.filter(value=>Number.isFinite(value));
     if(!finite.length)return {low:0,high:1};
@@ -1914,15 +1914,14 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
   const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
-  const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setHover(null);returnToLatest()};
-  const reset=()=>{followingLiveRef.current=true;setXZoom(1);setYZoom(1);setHover(null);returnToLatest()};
+  const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1.15);setYZoom(1);setHover(null);returnToLatest()};
+  const reset=()=>{followingLiveRef.current=true;setXZoom(1.15);setYZoom(1);setHover(null);returnToLatest()};
   const zoomXAt=(event,factor)=>{const viewport=scrollRef.current,canvas=canvasRef.current;if(!viewport||!canvas){setXZoom(current=>clamp(current*factor,1,180));return}const viewportRect=viewport.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect(),oldWidth=Math.max(canvasRect.width,1),pointerInViewport=clamp(event.clientX-viewportRect.left,0,viewport.clientWidth),contentX=viewport.scrollLeft+pointerInViewport,anchorRatio=clamp(contentX/oldWidth,0,1);followingLiveRef.current=false;setXZoom(current=>{const next=clamp(current*factor,1,180),nextWidth=1100*next;requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=clamp(anchorRatio*nextWidth-pointerInViewport,0,Math.max(0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth))});return next})};
   const wheel=event=>{event.preventDefault();event.stopPropagation();const factor=event.deltaY<0?1.12:.89;if(event.shiftKey)setYZoom(current=>clamp(current*factor,.15,120));else zoomXAt(event,factor)};
   const beginPan=event=>{if(event.button!==2)return;event.preventDefault();dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId)};
    const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1),index=Math.round(ratio*Math.max(points.length-1,0)),viewportRect=scrollRef.current?.getBoundingClientRect(),viewportX=viewportRect?event.clientX-viewportRect.left:event.clientX-rect.left,viewportWidth=viewportRect?.width||rect.width;setHover(index);setHoverPoint({x:event.clientX-rect.left,y:event.clientY-rect.top,rightHalf:viewportX>viewportWidth*.55});const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
   const stopPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null};
   const last=points.at(-1),recentStates=points.slice(-3),gammaColor=point=>point.positive?"#00d084":"#ff4f69",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ";
-  const regimeBands=points.map((point,index)=>{const start=index===0?left:(x(index-1)+x(index))/2,end=index===points.length-1?width-right:(x(index)+x(index+1))/2;return {key:`band-${point.timestamp}-${index}`,tier:point.tier.toLowerCase(),x:start,width:Math.max(1,end-start)}});
   // Render each dashed portion using the relationship at that portion. This
   // prevents a color from bleeding across a zero-gamma/QQQ sign transition.
   const levelSegments=[];
@@ -1955,7 +1954,6 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
           </div>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
-            <g className="exposure-regime-ribbon">{regimeBands.map(band=><rect key={band.key} className={band.tier} x={band.x} y={plotTop} width={band.width} height={plotBottom-plotTop} opacity=".12"/>)}</g>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             <text className="exposure-panel-caption qqq" x={left+10} y={qqqBand[0]+17}>QQQ · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={gammaBand[0]+17} textAnchor="end">{axisName} · USD</text>
