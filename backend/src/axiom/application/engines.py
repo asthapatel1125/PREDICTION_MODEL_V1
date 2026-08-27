@@ -23,6 +23,12 @@ except ModuleNotFoundError:
         def finalize_active(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline
 from axiom.analytics.wall_intelligence import WallIntelligenceService
+from axiom.analytics.pressure_trend import PressureTrendEngine
+from axiom.analytics.mpi import MarketPressureEngine
+from axiom.analytics.cvd_proxy import CvdProxyEngine
+from axiom.analytics.imbalance import chain_imbalances
+from axiom.domain.metrics import MaxTrackerToday
+from axiom.domain.scoring import ConfluenceEngine
 from axiom.domain.enums import Direction,EngineMode
 from axiom.domain.models import Outcome,PipelineResult
 from axiom.ports.interfaces import EventPublisherPort, MarketDataPort, RepositoryPort
@@ -50,6 +56,11 @@ class _EngineRunner:
         )
         wall_cfg=getattr(pipeline.config,"wall_intel",{})
         self.wall_intelligence=WallIntelligenceService(int(wall_cfg.get("history_len",720)),int(wall_cfg.get("volume_sma",20)))
+        self.market_trackers:dict[str,MaxTrackerToday]={}
+        self.pressure_engines:dict[str,PressureTrendEngine]={}
+        self.mpi_engines:dict[str,MarketPressureEngine]={}
+        self.cvd_engines:dict[str,CvdProxyEngine]={}
+        self.confluence_engine=ConfluenceEngine()
         self.wall_summary_log_sec=int(wall_cfg.get("summary_log_sec",30))
         self._last_gamma_tick_persist_at:dict[str,datetime]={}
 
@@ -66,7 +77,7 @@ class _EngineRunner:
             await self.repository.save_confluence(result.state)
         # Standalone Wall Intelligence observes the completed point-in-time
         # chain metrics. It neither mutates nor gates any existing system.
-        metrics=result.state.gamma_dynamics_v2.chain_metrics if result.state.gamma_dynamics_v2 else {}
+        metrics=dict(result.state.gamma_dynamics_v2.chain_metrics) if result.state.gamma_dynamics_v2 else {}
         # Wall Intelligence is an observer, not a strategy gate.  Persist a
         # valid wall map even when a compatibility adapter omits the numeric
         # ``chain_available`` flag; requiring that flag alone left the panel
@@ -74,9 +85,16 @@ class _EngineRunner:
         wall_estimates=metrics.get("wall_estimates",{})
         wall_observable=bool(wall_estimates) and any(float(value.get("strike",0) or 0)>0 for value in wall_estimates.values() if isinstance(value,dict))
         if wall_observable and hasattr(self.repository,"save_wall_intelligence"):
-            # MPI consumes the existing signed pressure score as a readable
-            # 0-100 PressureTrend confirmation (neutral pressure = 50).
-            pressure_trend=50.0*(1.0+float(result.state.pressure.value))
+            tracker=self.market_trackers.setdefault(bar.symbol,MaxTrackerToday())
+            pressure_engine=self.pressure_engines.setdefault(bar.symbol,PressureTrendEngine(tracker))
+            mpi_engine=self.mpi_engines.setdefault(bar.symbol,MarketPressureEngine(tracker))
+            cvd_engine=self.cvd_engines.setdefault(bar.symbol,CvdProxyEngine(tracker))
+            pressure_metrics=pressure_engine.calculate(bar.symbol,bar.timestamp,float(bar.close),metrics,float(bar.greeks.zomma))
+            mpi_metrics=mpi_engine.calculate(bar.symbol,bar.timestamp,float(bar.close),pressure_metrics)
+            cvd_metrics=cvd_engine.calculate(bar.symbol,bar.timestamp,float(metrics.get("dealer_flow",0)))
+            metrics={**metrics,**chain_imbalances(metrics),**pressure_metrics,**mpi_metrics,**cvd_metrics,"spot":float(bar.close)}
+            metrics={**metrics,**self.confluence_engine.calculate(bar.symbol,metrics)}
+            pressure_trend=float(metrics["pressure_trend"])
             point,breaks=self.wall_intelligence.observe(bar.timestamp,bar.symbol,float(bar.close),metrics,result.state.regime.value,float(bar.volume),pressure_trend)
             await self.repository.save_wall_intelligence(point,breaks)
             if self.wall_intelligence.summary_due(bar.timestamp,self.wall_summary_log_sec) and hasattr(self.repository,"save_wall_summary"):

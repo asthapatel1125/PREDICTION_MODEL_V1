@@ -353,7 +353,11 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/walls/dealerflow")
     async def wall_dealerflow(symbol:str="QQQ",start:datetime|None=None,end:datetime|None=None):
         rows=await container.repository.wall_intelligence_points(symbol,_wall_time(start),_wall_time(end),720)
-        fields=("timestamp","spot","dex","vol_hack","dealer_flow","pos_inventory","neg_inventory","tw_gex","gex_density","gex_dollar_density","spoof_score","edge","liquidity","vix","regime","is_point_in_time","is_estimated_oi_delayed")
+        fields=("timestamp","spot","dex","vol_hack","dealer_flow","pos_inventory","neg_inventory","tw_gex","gex_density","gex_dollar_density","spoof_score","edge","liquidity","vix","regime",
+            "gex_imbalance_pct","dex_imbalance_pct","vol_imbalance_pct","pressure_composite_raw","speed_pct","zomma_pct","dex_pct","gex_pct","dealer_flow_pct","zero_gamma_pct","effective_gex_pct",
+            "pressure_trend","pressure_flow_pct","pressure_roc_pct","pressure_div_pct","roc_vector","div_vector","qqq_norm_pct","mpi","mpi_trend",
+            "cvd_proxy_raw","cvd_proxy_pct","cvd_proxy_vector","is_strong_long","is_strong_short","is_fake_long","is_early_reversal","is_no_trade","confluence_confidence",
+            "is_point_in_time","is_estimated_oi_delayed")
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":[{key:row.get(key) for key in fields} for row in rows],"is_point_in_time":True,"is_estimated_oi_delayed":True}
 
     @api.get("/walls/breaks")

@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from math import sqrt
 from typing import Any
 
+from .imbalance import chain_imbalances
+
 
 WALL_INTELLIGENCE_DISCLAIMER = (
     "Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."
@@ -100,7 +102,11 @@ class WallIntelligenceService:
             self.history[kind].append(raw)
             if strike>0:self.previous[(symbol,kind)]=(spot,strike)
         self.volumes.append(float(volume))
-        point={"timestamp":timestamp,"symbol":symbol,"spot":spot,"volume":float(volume),"walls":walls,"dex":float(metrics.get("dex",0)),"vol_hack":float(metrics.get("vol_hack",0)),"dealer_flow":float(metrics.get("dealer_flow",0)),"pos_inventory":float(metrics.get("pos_inventory",0)),"neg_inventory":float(metrics.get("neg_inventory",0)),"tw_gex":tw,"gex_density":float(metrics.get("gex_density",0)),"gex_dollar_density":float(metrics.get("gex_dollar_density",0)),"spoof_score":spoof,"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"pressure_trend":max(0.0,min(100.0,float(pressure_trend))),"regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True,"disclaimer":WALL_INTELLIGENCE_DISCLAIMER}
+        derived={**chain_imbalances(metrics),**{key:metrics.get(key,0) for key in (
+            "pressure_composite_raw","speed_pct","zomma_pct","dex_pct","gex_pct","dealer_flow_pct","zero_gamma_pct","effective_gex_pct",
+            "pressure_flow_pct","pressure_roc_pct","pressure_div_pct","roc_vector","div_vector","qqq_norm_pct","mpi","mpi_trend",
+            "cvd_proxy_raw","cvd_proxy_pct","cvd_proxy_vector","is_strong_long","is_strong_short","is_fake_long","is_early_reversal","is_no_trade","confluence_confidence")}}
+        point={"timestamp":timestamp,"symbol":symbol,"spot":spot,"volume":float(volume),"walls":walls,"dex":float(metrics.get("dex",0)),"vol_hack":float(metrics.get("vol_hack",0)),"dealer_flow":float(metrics.get("dealer_flow",0)),"pos_inventory":float(metrics.get("pos_inventory",0)),"neg_inventory":float(metrics.get("neg_inventory",0)),"tw_gex":tw,"gex_density":float(metrics.get("gex_density",0)),"gex_dollar_density":float(metrics.get("gex_dollar_density",0)),"spoof_score":spoof,"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"pressure_trend":max(0.0,min(100.0,float(pressure_trend))),**derived,"regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True,"disclaimer":WALL_INTELLIGENCE_DISCLAIMER}
         return point,breaks
 
     def summary_due(self,timestamp:Any,interval_seconds:int=30)->bool:

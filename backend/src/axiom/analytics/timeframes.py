@@ -26,9 +26,9 @@ class _Bucket:
 class MultiTimeframeEngine:
     """Streaming, event-time bar synchronizer with bounded per-symbol history."""
 
-    def __init__(self, timeframes: list[int], max_bars: int = 1000):
+    def __init__(self, timeframes: list[int], max_bars: int = 20000):
         self.timeframes = sorted(set(timeframes)); self.max_bars = max_bars
-        self.history: dict[tuple[str,int], deque[MarketBar]] = defaultdict(lambda: deque(maxlen=max_bars))
+        self.history: dict[tuple[str,int], deque[MarketBar]] = defaultdict(deque)
         self._buckets: dict[tuple[str,int,int], _Bucket] = {}
 
     @staticmethod
@@ -52,7 +52,11 @@ class MultiTimeframeEngine:
             previous_key = (cached_bar.symbol, seconds, bucket_id - 1)
             if previous_key in self._buckets:
                 complete = self._buckets.pop(previous_key).aggregate(seconds)
-                self.history[(cached_bar.symbol, seconds)].append(complete); completed[seconds] = complete
+                history = self.history[(cached_bar.symbol, seconds)]
+                if len(history) >= self.max_bars:
+                    for _ in range(min(1000, len(history))):
+                        history.popleft()
+                history.append(complete); completed[seconds] = complete
         return completed
 
     def bars(self, symbol: str, timeframe: int) -> list[MarketBar]:

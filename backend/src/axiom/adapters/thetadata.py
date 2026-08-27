@@ -399,6 +399,12 @@ class ThetaDataV3Client(MarketDataPort):
         resistance = min(resistance_candidates, key=lambda strike: net_gex[strike]) if resistance_candidates else min(by_strike, key=lambda strike: abs(strike - spot))
         total_oi = sum(cls._number(row.get("open_interest")) for row in contracts)
         gamma_oi = sum(abs(cls._number(row.get("gamma"))) * cls._number(row.get("open_interest")) for row in contracts)
+        positive_gex = sum(max(0.0, value) for value in net_gex.values())
+        negative_gex = sum(min(0.0, value) for value in net_gex.values())
+        positive_dex = sum(max(0.0, value) for value in net_dex.values())
+        negative_dex = sum(min(0.0, value) for value in net_dex.values())
+        call_volume = sum(max(0.0, cls._number(row.get("volume"))) for row in contracts if cls._right_sign(row.get("right")) > 0)
+        put_volume = sum(max(0.0, cls._number(row.get("volume"))) for row in contracts if cls._right_sign(row.get("right")) < 0)
         max_flow = max((abs(value) for value in net_gex.values()), default=0.0)
         zero_gamma = sum(value * strike for strike, value in net_gex.items()) / gex_total if abs(gex_total) > 1e-12 else spot
         strike_oi = {strike: int(sum(cls._number(row.get("open_interest")) for row in items)) for strike, items in by_strike.items()}
@@ -515,6 +521,13 @@ class ThetaDataV3Client(MarketDataPort):
             "bad_liquidity": float(liquidity_available and liquidity < 1000.0),
             "gex_raw": gex_total,
             "gex_abs_total": abs_gex_total,
+            "positive_gex": positive_gex,
+            "negative_gex": negative_gex,
+            "positive_dex": positive_dex,
+            "negative_dex": negative_dex,
+            "call_volume": call_volume,
+            "put_volume": put_volume,
+            "is_estimated_oi_delayed": 1.0,
             "gex_density": gex_density,
             # ``gex_density`` is a dimensionless local concentration.  It
             # must not be multiplied by spot again and presented as dollars:

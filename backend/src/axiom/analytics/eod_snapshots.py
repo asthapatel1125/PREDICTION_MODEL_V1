@@ -24,14 +24,9 @@ def _wall(row:dict[str,Any],name:str)->float|None:
 
 def _derived(rows:list[dict[str,Any]])->list[dict[str,Any]]:
     if not rows:return []
-    flows=[abs(_number(row.get("dealer_flow")) or 0) for row in rows];max_flow=max(flows or [1]) or 1
-    output=[];cvd=0.0;trend=50.0
-    for index,row in enumerate(rows):
-        spot=_number(row.get("spot"));flow=_number(row.get("dealer_flow")) or 0;tpi=max(0,min(100,_number(row.get("pressure_trend")) or 50));previous=rows[index-1] if index else row
-        previous_tpi=max(0,min(100,_number(previous.get("pressure_trend")) or 50));dt=max((datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00"))-datetime.fromisoformat(str(previous["timestamp"]).replace("Z","+00:00"))).total_seconds(),1)
-        previous_spot=_number(previous.get("spot")) or spot or 0;roc=min(100,abs(tpi-previous_tpi)/dt*20);flow_pct=tpi*abs(flow)/max_flow;div=max(0,min(100,50+((spot or 0)-previous_spot)*250));mpi=.4*flow_pct+.3*roc+.3*div;trend=.1*mpi+.9*trend if index else mpi;cvd+=flow
-        output.append({**row,"spot":spot,"tpi":tpi,"mpi":mpi,"mpi_trend":trend,"cvd":cvd})
-    return output
+    return [{**row,"spot":_number(row.get("spot")),"tpi":_number(row.get("pressure_trend")) or 50,
+        "mpi":_number(row.get("mpi")) or 0,"mpi_trend":_number(row.get("mpi_trend")) or 0,
+        "cvd":_number(row.get("cvd_proxy_raw")) or 0} for row in rows]
 
 
 def render_eod_svg(rows:list[dict[str,Any]],map_name:str,market_timezone:str="America/New_York")->str:

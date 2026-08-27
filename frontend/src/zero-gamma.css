@@ -350,3 +350,7 @@ svg text[text-anchor="end"]{font-size:13px!important}
 /* API, Engine and Data are secondary health indicators. */
 .topbar .status-cluster>.status-chip:nth-last-child(-n+3){font-size:8px!important;padding-left:8px;padding-right:8px}
 .topbar .status-cluster>.status-chip:nth-last-child(-n+3) b{font-size:9px!important}
+
+/* Give the primary market readouts a little more visual weight. */
+.topbar .market-clock,.topbar .market-quote,.topbar .nq-impact{min-height:35px;font-size:11px!important;padding-left:11px;padding-right:11px}
+.topbar .market-clock b,.topbar .market-quote b,.topbar .nq-impact b{font-size:13px!important}
