@@ -2514,7 +2514,7 @@ export default function Home() {
     <div className="header-actions status-cluster" aria-live="polite">
       <span className="status-chip market-clock" title="Current Eastern Time">EST <b>{easternNow}</b></span>
       <span className="status-chip market-quote" title={`Latest persisted ${symbol} underlying price`}>{symbol} <b>{Number.isFinite(headerQuote)?headerQuote.toFixed(2):"—"}</b></span>
-      <span className="status-chip nq-impact" title={`Proportional QQQ-derived estimate using ${qqqPointsPer50Nq.toFixed(3)} QQQ points per 50 NQ points. Not a CME quote and not tradable.`}><span>QQQ {Number.isFinite(headerQuote)?headerQuote.toFixed(2):"—"}</span><b>NQ EST (QQQ-derived, not tradable) {Number.isFinite(estimatedNqPrice)?estimatedNqPrice.toFixed(2):"—"}</b></span>
+      <span className="status-chip nq-impact" title={`Proportional QQQ-derived estimate using ${qqqPointsPer50Nq.toFixed(3)} QQQ points per 50 NQ points. Not a CME quote and not tradable.`}><span>QQQ {Number.isFinite(headerQuote)?headerQuote.toFixed(2):"—"}</span><b>NQ EST {Number.isFinite(estimatedNqPrice)?estimatedNqPrice.toFixed(2):"—"}</b></span>
       <span className={`status-chip ${apiConnected?"is-good":"is-bad"}`}>API <b>{apiConnected?"ONLINE":"OFFLINE"}</b></span>
       <span className={`status-chip ${engine.running?"is-good":"is-idle"}`}>ENGINE <b>{engine.running?"ON":"IDLE"}</b></span>
       <span className={`status-chip ${dataFresh?"is-good":dataDelayed?"is-bad":"is-idle"}`}>DATA <b>{dataFresh?`${stateAge}s`:dataDelayed?"STALE":"IDLE"}</b></span>
