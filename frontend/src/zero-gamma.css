@@ -271,17 +271,17 @@
 .zero-gamma-canvas svg text,
 .dealer-flow-canvas .dealer-x-tick{font-size:13px!important}
 
-/* Halve only the top-bar controls/status text; preserve the AXIOM brand. */
+/* Restore the top-bar controls/status text at twice the compact size. */
 .topbar .section-launcher-trigger,
 .topbar .section-jump span,
 .topbar .section-jump select,
-.topbar .status-chip{font-size:5px!important}
-.topbar .section-launcher-icon{font-size:8px!important}
+.topbar .status-chip{font-size:10px!important}
+.topbar .section-launcher-icon{font-size:16px!important}
 .topbar .status-chip b,
 .topbar .status-chip.market-quote b,
-.topbar .status-chip.nq-quote b{font-size:6px!important}
-.topbar .status-chip.nq-quote small{font-size:4px!important}
-.topbar .nq-impact input{font-size:5px!important}
+.topbar .status-chip.nq-quote b{font-size:12px!important}
+.topbar .status-chip.nq-quote small{font-size:8px!important}
+.topbar .nq-impact input{font-size:10px!important}
 
 /* Compact recent-state cards; retain the information without covering data. */
 .zero-gamma-recent-states{height:38px;gap:6px}
