@@ -249,50 +249,10 @@
 .exposure-level-map:not(.expanded) .exposure-map-canvas,
 .exposure-level-map:not(.expanded) .exposure-live-rail{box-sizing:border-box;height:320px!important;min-height:0!important;max-height:320px!important}
 
-/* Dashboard readability pass. The brand typography is intentionally left at
-   its original size; surrounding top-bar information is enlarged. */
-@media(min-width:1101px){
-  .topbar{height:100px!important;padding:0 18px!important;gap:12px!important}
-  .sidebar{top:100px!important}
-  .workspace:before{inset:100px 0 0 0!important}
-  .content{padding-top:128px!important}
-  .topbar .section-launcher-trigger{min-height:46px;font-size:20px}
-  .topbar .section-launcher-icon{font-size:24px}
-  .topbar .section-jump span,.topbar .section-jump select{font-size:18px}
-  .topbar .status-cluster{gap:7px;flex-wrap:nowrap;min-width:0}
-  .topbar .status-chip{min-height:46px;padding:7px 9px;font-size:20px;letter-spacing:.015em}
-  .topbar .status-chip b,.topbar .status-chip.nq-quote b{font-size:20px}
-  .topbar .status-chip.nq-quote small{font-size:13px}
-}
-
 .nq-impact{gap:6px!important;border-color:rgba(98,200,255,.45)!important;background:#0a1d2a!important;color:#9fdfff!important}
 .nq-impact:before{background:#62c8ff!important;box-shadow:0 0 9px rgba(98,200,255,.65)!important}
-.nq-impact input{width:64px;height:30px;padding:2px 4px;border:1px solid #39718e;border-radius:4px;background:#06131d;color:#f1f8fc;font:700 16px var(--font-mono,monospace);text-align:center}
+.nq-impact input{width:52px;height:24px;padding:2px 4px;border:1px solid #39718e;border-radius:4px;background:#06131d;color:#f1f8fc;font:700 10px var(--font-mono,monospace);text-align:center}
 .nq-impact b{color:#8be1ff!important}
-
-/* Larger value scales, time labels, and left-side time-window controls. */
-.hedge-map-frame svg text,
-.exposure-map-canvas svg text,
-.mpi-dhl-viewport text,
-.dealer-flow-canvas text,
-.wi-chart text,
-.greek-chart-stage svg text,
-.chart-axis,
-.mpi-axis-label{font-size:14px!important}
-.hedge-y-axis,
-.hedge-y-axis span,
-.exposure-axes,
-.exposure-axes .exposure-axis-name,
-.exposure-axes .exposure-axis-tick,
-.mpi-dhl-axis,
-.mpi-dhl-axis b,
-.mpi-dhl-axis span{font-size:14px!important}
-.hedge-time-rail button,
-.exposure-time-rail button,
-.zero-gamma-time-rail button,
-.mpi-dhl-time-rail button,
-.timeframe-buttons button,
-.mpi-pane-time-controls button{font-size:14px!important}
 
 /* Information cards are easier to read but occupy less horizontal space. */
 .exposure-hover-card,
@@ -301,8 +261,27 @@
 .dealer-hover-popup,
 .dealer-flow-canvas .wi-hover,
 .graph-hover-card,
-.chart-coordinate-tooltip{width:210px!important;max-width:min(210px,calc(100% - 20px))!important;padding:10px 11px!important;font-size:14px!important;line-height:1.4!important}
+.chart-coordinate-tooltip{width:210px!important;max-width:min(210px,calc(100% - 20px))!important;padding:10px 11px!important}
 .exposure-hover-card span,.hedge-hover-popup span,.mpi-dhl-hover span,.dealer-hover-popup span{gap:8px!important}
+
+/* Targeted typography requested from the two visual references. */
+.exposure-map-canvas svg text:not(.exposure-panel-caption):not(.exposure-axis-heading),
+.hedge-map-frame svg text,
+.mpi-dhl-x-label,
+.zero-gamma-canvas svg text,
+.dealer-flow-canvas .dealer-x-tick{font-size:13px!important}
+
+/* Halve only the top-bar controls/status text; preserve the AXIOM brand. */
+.topbar .section-launcher-trigger,
+.topbar .section-jump span,
+.topbar .section-jump select,
+.topbar .status-chip{font-size:5px!important}
+.topbar .section-launcher-icon{font-size:8px!important}
+.topbar .status-chip b,
+.topbar .status-chip.market-quote b,
+.topbar .status-chip.nq-quote b{font-size:6px!important}
+.topbar .status-chip.nq-quote small{font-size:4px!important}
+.topbar .nq-impact input{font-size:5px!important}
 
 /* Compact recent-state cards; retain the information without covering data. */
 .zero-gamma-recent-states{height:38px;gap:6px}
@@ -349,3 +328,6 @@
 
 /* Readable time axes; the selected timeframe initially fits in one viewport. */
 .hedge-map-frame svg text,.exposure-map-canvas svg text{font-size:11px!important}.mpi-dhl-x-label{font-size:12px!important;font-weight:700}.hedge-plot-viewport,.exposure-map-scroll,.mpi-dhl-viewport{scrollbar-gutter:stable}.exposure-hover-card,.hedge-hover-popup,.mpi-dhl-hover{z-index:150!important;max-width:min(310px,calc(100% - 24px));box-sizing:border-box}
+
+/* Centered SVG labels are the time ticks along graph X axes. */
+svg text[text-anchor="middle"]{font-size:13px!important}
