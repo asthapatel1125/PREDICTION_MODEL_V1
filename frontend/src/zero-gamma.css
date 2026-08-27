@@ -343,5 +343,10 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .dealer-flow-canvas .wi-hover,.wi-hover,.graph-hover-card,
 .chart-coordinate-tooltip,.mpi-hover,.mpi-dhl-hover{font-size:12px!important;line-height:1.5!important}
 
-/* Make PRESSURE INTELLIGENCE use the same visual typography as AXIOM. */
-.topbar .brand small{font:700 15px/1.12 var(--font-sans,Arial,sans-serif)!important;letter-spacing:.18em}
+/* Keep the product title compact without changing the market-value chips. */
+.topbar .brand b{font-size:13px!important}
+.topbar .brand small{font:700 10px/1.12 var(--font-sans,Arial,sans-serif)!important;letter-spacing:.16em}
+
+/* API, Engine and Data are secondary health indicators. */
+.topbar .status-cluster>.status-chip:nth-last-child(-n+3){font-size:8px!important;padding-left:8px;padding-right:8px}
+.topbar .status-cluster>.status-chip:nth-last-child(-n+3) b{font-size:9px!important}
