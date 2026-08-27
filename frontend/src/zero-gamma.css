@@ -329,8 +329,19 @@
 /* Readable time axes; the selected timeframe initially fits in one viewport. */
 .hedge-map-frame svg text,.exposure-map-canvas svg text{font-size:11px!important}.mpi-dhl-x-label{font-size:12px!important;font-weight:700}.hedge-plot-viewport,.exposure-map-scroll,.mpi-dhl-viewport{scrollbar-gutter:stable}.exposure-hover-card,.hedge-hover-popup,.mpi-dhl-hover{z-index:150!important;max-width:min(310px,calc(100% - 24px));box-sizing:border-box}
 
-/* Centered SVG labels are the time ticks along graph X axes. */
-svg text[text-anchor="middle"]{font-size:13px!important}
+/* Slightly larger, consistent graph scales across Wall Intelligence and MPI. */
+svg text[text-anchor="middle"]{font-size:14px!important}
+svg text[text-anchor="end"]{font-size:13px!important}
+.hedge-y-axis,.hedge-y-axis span,
+.exposure-axes,.exposure-axes .exposure-axis-name,.exposure-axes .exposure-axis-tick,
+.zero-gamma-axis,.zero-gamma-axis span,
+.zero-gamma-histogram-axis,.zero-gamma-histogram-axis span,
+.mpi-dhl-axis,.mpi-dhl-axis b,.mpi-dhl-axis span{font-size:13px!important}
 
-/* Match the brand subtitle size to the AXIOM wordmark. */
-.topbar .brand small{font-size:15px!important;line-height:1.12}
+/* Slightly larger text in every graph hover/information card. */
+.exposure-hover-card,.zero-gamma-tooltip,.hedge-hover-popup,.dealer-hover-popup,
+.dealer-flow-canvas .wi-hover,.wi-hover,.graph-hover-card,
+.chart-coordinate-tooltip,.mpi-hover,.mpi-dhl-hover{font-size:12px!important;line-height:1.5!important}
+
+/* Make PRESSURE INTELLIGENCE use the same visual typography as AXIOM. */
+.topbar .brand small{font:700 15px/1.12 var(--font-sans,Arial,sans-serif)!important;letter-spacing:.18em}
