@@ -331,3 +331,6 @@
 
 /* Centered SVG labels are the time ticks along graph X axes. */
 svg text[text-anchor="middle"]{font-size:13px!important}
+
+/* Match the brand subtitle size to the AXIOM wordmark. */
+.topbar .brand small{font-size:15px!important;line-height:1.12}
