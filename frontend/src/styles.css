@@ -1245,3 +1245,11 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .axiom-two-hover{position:absolute;z-index:30;top:120px;width:335px;padding:12px 14px;border:1px solid #4d94b7;border-radius:9px;background:rgba(5,15,24,.97);box-shadow:0 12px 30px #000b;pointer-events:none;font:10px var(--font-mono)}.axiom-two-hover.right{right:190px}.axiom-two-hover.left{left:130px}.axiom-two-hover>b{display:block;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #294b61}.axiom-two-hover span{display:flex;justify-content:space-between;gap:12px;padding:3px 0;color:#a9c2d2}.axiom-two-hover strong{color:#e6edf3;text-align:right}
 .axiom-two-legend{display:flex;flex-wrap:wrap;gap:8px 18px;padding:9px 14px;border-top:1px solid var(--a2-border);background:#07121b;color:#a9c2d2;font:9px var(--font-mono)}.axiom-two-legend span{display:flex;align-items:center;gap:6px}.axiom-two-legend i{width:17px;height:3px}.axiom-two-empty{min-height:280px;display:grid;place-items:center;color:#8fa8b8;font:12px var(--font-mono)}.axiom-two-error{margin:0;padding:8px 12px;color:#ff8fa0;background:#2a0d14;font:10px var(--font-mono)}
 @media(max-width:1150px){.axiom-two-status{grid-template-columns:repeat(3,1fr)}.axiom-two-frame{grid-template-columns:102px minmax(0,1fr) 140px}.axiom-two-live{font-size:8px}.axiom-two-hover.right{right:150px}}
+
+/* Global wall-side convention: Call Wall is red; Put Wall is green. */
+.gamma-v2-wall-badges .call-wall{border-color:#9a3e5b;background:#271018;color:#ff9ab9}
+.gamma-v2-wall-badges .put-wall{border-color:#28745f;background:#0b211c;color:#77e5bf}
+.wall-name.call_wall,.wall-strength-board td:first-child b.call_wall{color:#ff4f69}
+.wall-name.put_wall,.wall-strength-board td:first-child b.put_wall{color:#00d084}
+.daily-levels-legend i.call{background:#ff4f69}
+.daily-levels-legend i.put{background:#00d084}

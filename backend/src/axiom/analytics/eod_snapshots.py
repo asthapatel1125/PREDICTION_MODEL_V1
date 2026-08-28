@@ -7,7 +7,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 
-COLORS={"qqq":"#e6edf3","call":"#00d084","put":"#ff4f69","zero_gamma":"#b56cff","zero_delta":"#62c8ff","dealer_flow":"#ff9f43","tpi":"#4dd4ac","mpi":"#ff6b9d","cvd":"#58a6ff"}
+COLORS={"qqq":"#e6edf3","call":"#ff4f69","put":"#00d084","zero_gamma":"#b56cff","zero_delta":"#62c8ff","dealer_flow":"#ff9f43","tpi":"#4dd4ac","mpi":"#ff6b9d","cvd":"#58a6ff"}
 
 
 def _number(value:Any)->float|None:
