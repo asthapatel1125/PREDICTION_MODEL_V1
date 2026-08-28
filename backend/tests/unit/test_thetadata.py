@@ -147,6 +147,21 @@ def test_valid_zero_delta_does_not_reject_other_live_first_order_values():
     client._require_live_first_order_values(rows)
 
 
+def test_zero_gamma_reprices_gamma_and_interpolates_nearest_crossing():
+    client=ThetaDataV3Client(api_key="test",max_dte=7)
+    observed=datetime(2026,8,27,15,0,tzinfo=timezone.utc)
+    common={"expiration":"20260828","open_interest":1000,"implied_volatility":.25,"bid":1,"ask":1.1}
+    result=client._repriced_zero_gamma([
+        {**common,"strike":695,"right":"call"},
+        {**common,"strike":715,"right":"put"},
+    ],705,observed,"QQQ")
+    assert result["method"]=="REPRICED_GEX_ZERO_CROSS"
+    assert 695<result["raw_level"]<715
+    assert result["level"]==pytest.approx(result["raw_level"])
+    assert result["contracts"]==2
+    assert 0<result["confidence"]<=100
+
+
 def test_dataframe_column_names_and_nested_greeks_are_normalized():
     rows=ThetaDataV3Client._normalize_rows([{
         "UnderlyingPrice":500,"Open Interest":12,"Greeks":{"Delta":.4,"Vanna":.2}

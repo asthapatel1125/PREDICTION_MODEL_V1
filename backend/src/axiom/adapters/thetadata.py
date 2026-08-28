@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import AsyncIterator
 from datetime import date, datetime, time, timedelta, timezone
+from math import exp, log, pi, sqrt
 import re
+from statistics import median
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -37,6 +40,8 @@ class ThetaDataV3Client(MarketDataPort):
         # without making the calculation more current.
         self.open_interest_cache_seconds = open_interest_cache_seconds
         self._open_interest_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
+        self._zero_gamma_history: dict[str, deque[float]] = {}
+        self._zero_gamma_ema: dict[str, float] = {}
         self._client: Any = None
 
     def _python_client(self) -> Any:
@@ -272,7 +277,7 @@ class ThetaDataV3Client(MarketDataPort):
                 greeks=Greeks(**{name: exposure(name) for name in Greeks.model_fields}),
                 contract_count=len(group),
                 open_interest=sum(self._number(row.get("open_interest")) for row in group),
-                gamma_metrics=self._gamma_metrics(group, price, ts),
+                gamma_metrics=self._gamma_metrics(group, price, ts, symbol),
                 # The current bar carries raw contracts only long enough for
                 # the live engine to persist one audit snapshot per minute.
                 gamma_ticks=self._gamma_ticks(group, symbol, price, ts)))
@@ -334,8 +339,88 @@ class ThetaDataV3Client(MarketDataPort):
                 if cls._optional_number(row.get("color")) is None:
                     row["color"] = -cls._number(row.get("theta")) * cls._number(row.get("gamma")) / max(spot, 1e-12)
 
-    @classmethod
-    def _gamma_metrics(cls, rows: list[dict[str, Any]], spot: float, observed_at: datetime) -> dict[str, Any]:
+    def _repriced_zero_gamma(self, rows: list[dict[str, Any]], spot: float,
+                             observed_at: datetime, symbol: str) -> dict[str, Any]:
+        """Solve the nearest signed-GEX zero crossing after repricing gamma.
+
+        OI remains previous-session OPRA inventory.  IV is held constant across
+        the scenario grid; this is a transparent sticky-strike approximation,
+        not a claim of observed dealer inventory.
+        """
+        observed_market = observed_at.astimezone(self.market_tz)
+        eligible: list[tuple[float, float, float, float]] = []
+        quoted = 0
+        for row in rows:
+            expiration = self._expiration_date(row.get("expiration"))
+            strike = self._optional_number(row.get("strike"))
+            oi = self._number(row.get("open_interest"))
+            iv = self._optional_number(row.get("implied_volatility") or row.get("implied_vol") or row.get("iv"))
+            bid, ask = self._optional_number(row.get("bid")), self._optional_number(row.get("ask"))
+            if expiration is None or strike is None or strike <= 0 or oi <= 0 or iv is None or not .01 <= iv <= 5.0:
+                continue
+            expiry_at = datetime.combine(expiration, time(16, 0), self.market_tz)
+            years = max((expiry_at-observed_market).total_seconds(), 60.0)/(365.0*24.0*3600.0)
+            if years > max(float(self.max_dte)+1.0, 1.0)/365.0:
+                continue
+            # Reject crossed, zero-bid and exceptionally wide markets.  A
+            # missing quote is retained but lowers the confidence score.
+            if bid is not None and ask is not None:
+                midpoint = (bid+ask)/2.0
+                if ask < bid or bid <= 0 or midpoint <= 0 or (ask-bid)/midpoint > 1.0:
+                    continue
+                quoted += 1
+            eligible.append((strike, oi, iv, years if years > 1e-9 else 1e-9))
+        if len(eligible) < 2:
+            return {"level":spot,"raw_level":spot,"method":"SPOT_FALLBACK","confidence":0.0,
+                    "contracts":len(eligible),"crossing_slope":0.0,"grid_low":spot,"grid_high":spot}
+
+        low = max(min(strike for strike, *_ in eligible), spot*.88)
+        high = min(max(strike for strike, *_ in eligible), spot*1.12)
+        if high <= low:
+            low, high = spot*.9, spot*1.1
+        scenarios = [low+(high-low)*index/200.0 for index in range(201)]
+        # Preserve call/put signs by evaluating directly from the filtered rows.
+        signed_contracts: list[tuple[float,float,float,float,float]]=[]
+        for row in rows:
+            expiration=self._expiration_date(row.get("expiration"));strike=self._optional_number(row.get("strike"));oi=self._number(row.get("open_interest"));iv=self._optional_number(row.get("implied_volatility") or row.get("implied_vol") or row.get("iv"))
+            if expiration is None or strike is None or oi<=0 or iv is None or not .01<=iv<=5.0:continue
+            expiry_at=datetime.combine(expiration,time(16,0),self.market_tz);years=max((expiry_at-observed_market).total_seconds(),60.0)/(365.0*24.0*3600.0)
+            if years>max(float(self.max_dte)+1.0,1.0)/365.0:continue
+            bid,ask=self._optional_number(row.get("bid")),self._optional_number(row.get("ask"))
+            if bid is not None and ask is not None:
+                mid=(bid+ask)/2.0
+                if ask<bid or bid<=0 or mid<=0 or (ask-bid)/mid>1.0:continue
+            signed_contracts.append((strike,oi,iv,max(years,1e-9),self._right_sign(row.get("right"))))
+        def signed_total(scenario:float)->float:
+            total=0.0
+            for strike,oi,iv,years,side in signed_contracts:
+                root_t=sqrt(years);d1=(log(max(scenario,1e-12)/strike)+.5*iv*iv*years)/(iv*root_t)
+                gamma=exp(-.5*d1*d1)/sqrt(2.0*pi)/(scenario*iv*root_t)
+                total+=side*oi*100.0*gamma*scenario*scenario*.01
+            return total
+        values=[signed_total(value) for value in scenarios]
+        crossings=[]
+        for index in range(1,len(scenarios)):
+            before,after=values[index-1],values[index]
+            if before==0:crossings.append((scenarios[index-1],index,abs(after-before)))
+            elif before*after<0:
+                ratio=abs(before)/(abs(before)+abs(after));level=scenarios[index-1]+ratio*(scenarios[index]-scenarios[index-1])
+                crossings.append((level,index,abs(after-before)))
+        if crossings:
+            raw,index,slope=min(crossings,key=lambda item:abs(item[0]-spot));method="REPRICED_GEX_ZERO_CROSS"
+        else:
+            index=min(range(len(values)),key=lambda item:abs(values[item]));raw=scenarios[index];slope=abs(values[min(index+1,len(values)-1)]-values[max(index-1,0)]);method="MIN_ABS_REPRICED_GEX"
+        history=self._zero_gamma_history.setdefault(symbol.upper(),deque(maxlen=5));history.append(raw)
+        filtered=median(history);previous=self._zero_gamma_ema.get(symbol.upper(),filtered);smoothed=.30*filtered+.70*previous
+        if abs(smoothed-previous)<.02:smoothed=previous
+        self._zero_gamma_ema[symbol.upper()]=smoothed
+        scale=max(max(abs(value) for value in values),1.0);slope_quality=min(1.0,slope/scale*25.0);quote_quality=quoted/max(len(eligible),1);cross_quality=1.0 if crossings else .35
+        confidence=100.0*(.45*slope_quality+.35*quote_quality+.20*cross_quality)
+        return {"level":smoothed,"raw_level":raw,"method":method,"confidence":max(0.0,min(100.0,confidence)),
+                "contracts":len(signed_contracts),"crossing_slope":slope,"grid_low":low,"grid_high":high}
+
+    def _gamma_metrics(cls, rows: list[dict[str, Any]], spot: float, observed_at: datetime,
+                       symbol: str = "QQQ") -> dict[str, Any]:
         """Calculate Gamma Dynamics 2.0 features from one option-chain snapshot."""
         dated = [row for row in rows if cls._expiration_date(row.get("expiration")) is not None]
         contracts = [row for row in dated if cls._expiration_date(row.get("expiration")) == observed_at.date()] if dated else rows
@@ -406,7 +491,8 @@ class ThetaDataV3Client(MarketDataPort):
         call_volume = sum(max(0.0, cls._number(row.get("volume"))) for row in contracts if cls._right_sign(row.get("right")) > 0)
         put_volume = sum(max(0.0, cls._number(row.get("volume"))) for row in contracts if cls._right_sign(row.get("right")) < 0)
         max_flow = max((abs(value) for value in net_gex.values()), default=0.0)
-        zero_gamma = sum(value * strike for strike, value in net_gex.items()) / gex_total if abs(gex_total) > 1e-12 else spot
+        zero_gamma_result = cls._repriced_zero_gamma(dated or rows, spot, observed_at, symbol)
+        zero_gamma = float(zero_gamma_result["level"])
         strike_oi = {strike: int(sum(cls._number(row.get("open_interest")) for row in items)) for strike, items in by_strike.items()}
         positive_walls = [strike for strike, gex in net_gex.items() if gex > 0]
         negative_walls = [strike for strike, gex in net_gex.items() if gex < 0]
@@ -537,6 +623,15 @@ class ThetaDataV3Client(MarketDataPort):
             "gex_dollar_density": near_gex,
             "gex_abs_dollar_density": near_abs_gex,
             "zero_gamma": zero_gamma,
+            "zero_gamma_raw": float(zero_gamma_result["raw_level"]),
+            "zero_gamma_method": str(zero_gamma_result["method"]),
+            "zero_gamma_confidence": float(zero_gamma_result["confidence"]),
+            "zero_gamma_contracts": int(zero_gamma_result["contracts"]),
+            "zero_gamma_crossing_slope": float(zero_gamma_result["crossing_slope"]),
+            "zero_gamma_grid_low": float(zero_gamma_result["grid_low"]),
+            "zero_gamma_grid_high": float(zero_gamma_result["grid_high"]),
+            "zero_gamma_gap_usd": float(spot-zero_gamma),
+            "zero_gamma_gap_bps": float((spot-zero_gamma)/max(spot,1e-12)*10_000.0),
             "call_wall_strike": float(call_wall or 0.0),
             "call_wall_gex": float(net_gex[call_wall]) if call_wall is not None else 0.0,
             "call_wall_oi": int(strike_oi[call_wall]) if call_wall is not None else 0,
