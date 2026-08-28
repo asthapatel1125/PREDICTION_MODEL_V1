@@ -61,6 +61,10 @@ def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
     assert metrics["call_wall_gex"]>0
     assert metrics["put_wall_strike"]==716
     assert metrics["put_wall_gex"]<0
+    assert metrics["call_wall_method"]=="WEIGHTED_EXPOSURE_CLUSTER_V2"
+    assert metrics["put_wall_method"]=="WEIGHTED_EXPOSURE_CLUSTER_V2"
+    assert 0<metrics["call_wall_score"]<=100
+    assert 0<metrics["put_wall_confidence"]<=100
     assert metrics["pin_status"]=="BETWEEN_WALLS"
     assert len(metrics["gex_walls"])==3
     assert metrics["gex_walls"]==sorted(metrics["gex_walls"],key=lambda wall:-wall["abs_gex"])
@@ -70,6 +74,39 @@ def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
     expected_near_gex=300*.08*100*722**2*.01
     assert metrics["gex_dollar_density"]==pytest.approx(expected_near_gex)
     assert metrics["gex_abs_dollar_density"]==pytest.approx(expected_near_gex)
+
+
+def test_weighted_wall_rejects_invalid_quote_and_uses_liquid_cluster():
+    client=ThetaDataV3Client(api_key="test")
+    common={"right":"call","open_interest":700,"underlying_price":500,"delta":.5,"gamma":.2,
+            "bid":1,"ask":1.1,"bid_size":100,"ask_size":100,"volume":100}
+    result=client._rank_exposure_wall([
+        {**common,"strike":505},
+        {**common,"strike":506},
+        {**common,"strike":520,"open_interest":5000,"gamma":.5,"bid":1,"ask":4},
+    ],500,"QQQ","call")
+    assert result is not None
+    assert result["strike"] in {505,506}
+    assert result["strike"]!=520
+    assert result["method"]=="WEIGHTED_EXPOSURE_CLUSTER_V2"
+
+
+def test_weighted_wall_hysteresis_rejects_a_small_one_snapshot_rank_flip():
+    client=ThetaDataV3Client(api_key="test")
+    common={"right":"call","underlying_price":500,"delta":.5,"gamma":.2,"bid":1,"ask":1.1,
+            "bid_size":100,"ask_size":100,"volume":100}
+    first=client._rank_exposure_wall([
+        {**common,"strike":500,"open_interest":1000},
+        {**common,"strike":501,"open_interest":900},
+    ],500,"QQQ","call")
+    second=client._rank_exposure_wall([
+        {**common,"strike":500,"open_interest":900},
+        {**common,"strike":501,"open_interest":1200},
+    ],500,"QQQ","call")
+    assert first is not None and second is not None
+    assert first["strike"]==500
+    assert second["raw_strike"]==501
+    assert second["strike"]==500
 
 
 def test_zero_delta_uses_nearest_balance_strike_when_no_crossing():

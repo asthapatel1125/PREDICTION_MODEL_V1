@@ -98,6 +98,16 @@ class WallIntelligenceService:
                 else float(estimates.get(kind,{}).get("gex",0.0))
             )
             reading={"strike":strike,"raw":raw,"dollar":dollar,"z":z,"percentile":pct,"tier":tier_for_delta(z,pct,dollar) if kind in {"DELTA_WALL","ZERO_DELTA"} else tier_for(z,pct,dollar,tw),"tw_gex":tw,"spoof":spoof,"edge":edge,"exposure":"DEX" if kind in {"DELTA_WALL","ZERO_DELTA"} else "GEX","signed_exposure":signed_exposure,"is_estimated_oi_delayed":True}
+            if kind in {"CALL_WALL","PUT_WALL"}:
+                estimate=estimates.get(kind,{})
+                reading.update({"selection_method":estimate.get("method","LEGACY_MAX_GEX"),
+                                "score":float(estimate.get("score",0)),
+                                "confidence":float(estimate.get("confidence",0)),
+                                "persistence":float(estimate.get("persistence",0)),
+                                "raw_strike":float(estimate.get("raw_strike",strike)),
+                                "cluster_gex":float(estimate.get("cluster_gex",0)),
+                                "open_interest":int(estimate.get("open_interest",0)),
+                                "contract_volume":float(estimate.get("volume",0))})
             if kind=="ZERO_GAMMA":reading.update({"calculation_method":metrics.get("zero_gamma_method","LEGACY"),"raw_strike":float(metrics.get("zero_gamma_raw",strike)),"confidence":float(metrics.get("zero_gamma_confidence",0)),"contracts_used":int(metrics.get("zero_gamma_contracts",0)),"gap_usd":float(metrics.get("zero_gamma_gap_usd",spot-strike)),"gap_bps":float(metrics.get("zero_gamma_gap_bps",(spot-strike)/max(spot,1e-12)*10_000))})
             walls[kind]=reading;prior=self.previous.get((symbol,kind));direction=detect_break(prior[0],spot,prior[1]) if prior else None
             if direction:breaks.append({"timestamp":timestamp,"symbol":symbol,"wall_type":kind,"strike":strike,"direction":direction,"tier":reading["tier"],"spot":spot,"gex_dollar":dollar,"build_intensity":max(.01,(pct/100)*max(tw,.25)/(max(spoof,0)+.5)),"edge":edge,"liquidity":float(metrics.get("liquidity_score",0)),"vix":float(metrics.get("vix",0)),"volume":float(volume) if float(volume)>0 else None,"volume_surge":surge,"delta_change":0.,"spot_change":spot-prior[0],"qqq_return":(spot-prior[0])/prior[0] if prior[0] else 0.,"retest_count":0,"path_efficiency_5m":None,"outcome":"PENDING","regime":regime,"is_point_in_time":True,"is_estimated_oi_delayed":True})

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import deque
 from collections.abc import AsyncIterator
 from datetime import date, datetime, time, timedelta, timezone
-from math import exp, log, pi, sqrt
-import re
+from itertools import pairwise
+from math import exp, isfinite, log, pi, sqrt
 from statistics import median
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -42,6 +43,8 @@ class ThetaDataV3Client(MarketDataPort):
         self._open_interest_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
         self._zero_gamma_history: dict[str, deque[float]] = {}
         self._zero_gamma_ema: dict[str, float] = {}
+        self._wall_candidate_history: dict[tuple[str, str], deque[float]] = {}
+        self._wall_selected: dict[tuple[str, str], float] = {}
         self._client: Any = None
 
     def _python_client(self) -> Any:
@@ -419,6 +422,90 @@ class ThetaDataV3Client(MarketDataPort):
         return {"level":smoothed,"raw_level":raw,"method":method,"confidence":max(0.0,min(100.0,confidence)),
                 "contracts":len(signed_contracts),"crossing_slope":slope,"grid_low":low,"grid_high":high}
 
+    def _rank_exposure_wall(self, rows: list[dict[str, Any]], spot: float, symbol: str,
+                            right: str) -> dict[str, Any] | None:
+        """Select a stable wall from exposure, activity, and quote quality."""
+        wanted = 1 if right == "call" else -1
+        by_strike: dict[float, dict[str, float]] = {}
+        for row in rows:
+            if self._right_sign(row.get("right")) != wanted:
+                continue
+            strike = self._optional_number(row.get("strike"))
+            oi = self._number(row.get("open_interest"))
+            gamma = abs(self._number(row.get("gamma")))
+            delta = abs(self._number(row.get("delta")))
+            if strike is None or strike <= 0 or oi <= 0 or not all(isfinite(value) for value in (strike, oi, gamma, delta)):
+                continue
+            bid = self._optional_number(row.get("bid"))
+            ask = self._optional_number(row.get("ask"))
+            if bid is not None and ask is not None:
+                mid = (bid + ask) / 2.0
+                if bid <= 0 or ask < bid or mid <= 0 or (ask - bid) / mid > 1.0:
+                    continue
+                spread_quality = max(0.0, 1.0 - (ask - bid) / mid)
+            else:
+                spread_quality = 0.25
+            bid_size = max(0.0, self._number(row.get("bid_size")))
+            ask_size = max(0.0, self._number(row.get("ask_size")))
+            item = by_strike.setdefault(float(strike), {"gex": 0.0, "dex": 0.0, "oi": 0.0,
+                                                         "volume": 0.0, "liquidity": 0.0, "contracts": 0.0})
+            item["gex"] += gamma * oi * 100.0 * spot ** 2 * .01
+            item["dex"] += delta * oi * 100.0 * spot
+            item["oi"] += oi
+            item["volume"] += max(0.0, self._number(row.get("volume")))
+            item["liquidity"] += spread_quality * sqrt(bid_size + ask_size + 1.0)
+            item["contracts"] += 1.0
+        if not by_strike:
+            return None
+
+        strikes = sorted(by_strike)
+        gaps = sorted(right_value - left for left, right_value in pairwise(strikes) if right_value > left)
+        typical_gap = gaps[len(gaps) // 2] if gaps else max(1.0, spot * .0025)
+        cluster_radius = max(typical_gap * 2.0, spot * .005)
+        for strike, item in by_strike.items():
+            item["cluster_gex"] = sum(
+                neighbor["gex"] * max(0.0, 1.0 - abs(other_strike - strike) / cluster_radius)
+                for other_strike, neighbor in by_strike.items()
+                if abs(other_strike - strike) <= cluster_radius
+            )
+
+        maxima = {name: max((item[name] for item in by_strike.values()), default=0.0)
+                  for name in ("cluster_gex", "dex", "oi", "volume", "liquidity")}
+        key = (symbol.upper(), right)
+        history = self._wall_candidate_history.setdefault(key, deque(maxlen=12))
+        candidates: dict[float, dict[str, Any]] = {}
+        for strike, item in by_strike.items():
+            normalized = {name: item[name] / maxima[name] if maxima[name] > 0 else 0.0 for name in maxima}
+            persistence = sum(previous == strike for previous in history) / max(len(history), 1) if history else .5
+            score = (.30 * normalized["cluster_gex"] + .20 * normalized["dex"] + .15 * normalized["oi"]
+                     + .15 * normalized["volume"] + .10 * normalized["liquidity"] + .10 * persistence)
+            candidates[strike] = {**item, "score": score, "persistence": persistence,
+                                  "components": normalized}
+
+        raw_strike = max(candidates, key=lambda strike: (candidates[strike]["score"], -abs(strike - spot)))
+        history.append(raw_strike)
+        filtered_center = median(history)
+        filtered_strike = min(candidates, key=lambda strike: (abs(strike - filtered_center),
+                                                               -candidates[strike]["score"]))
+        previous = self._wall_selected.get(key)
+        selected = filtered_strike
+        if (previous in candidates and previous != filtered_strike
+                and candidates[filtered_strike]["score"] < candidates[previous]["score"] + .08):
+            selected = float(previous)
+        self._wall_selected[key] = selected
+        ranked = sorted(candidates.items(), key=lambda item: item[1]["score"], reverse=True)
+        selected_data = candidates[selected]
+        runner_up = next((data["score"] for strike, data in ranked if strike != selected), 0.0)
+        margin = max(0.0, selected_data["score"] - runner_up)
+        confidence = 100.0 * min(1.0, .75 * selected_data["score"] + .25 * min(1.0, margin / .20))
+        return {"strike": float(selected), "raw_strike": float(raw_strike),
+                "gex": float(wanted * selected_data["gex"]), "dex": float(wanted * selected_data["dex"]),
+                "open_interest": int(selected_data["oi"]), "volume": float(selected_data["volume"]),
+                "score": float(selected_data["score"] * 100.0), "confidence": float(confidence),
+                "persistence": float(selected_data["persistence"] * 100.0),
+                "cluster_gex": float(wanted * selected_data["cluster_gex"]),
+                "method": "WEIGHTED_EXPOSURE_CLUSTER_V2"}
+
     def _gamma_metrics(cls, rows: list[dict[str, Any]], spot: float, observed_at: datetime,
                        symbol: str = "QQQ") -> dict[str, Any]:
         """Calculate Gamma Dynamics 2.0 features from one option-chain snapshot."""
@@ -494,10 +581,10 @@ class ThetaDataV3Client(MarketDataPort):
         zero_gamma_result = cls._repriced_zero_gamma(dated or rows, spot, observed_at, symbol)
         zero_gamma = float(zero_gamma_result["level"])
         strike_oi = {strike: int(sum(cls._number(row.get("open_interest")) for row in items)) for strike, items in by_strike.items()}
-        positive_walls = [strike for strike, gex in net_gex.items() if gex > 0]
-        negative_walls = [strike for strike, gex in net_gex.items() if gex < 0]
-        call_wall = max(positive_walls, key=lambda strike: net_gex[strike]) if positive_walls else None
-        put_wall = min(negative_walls, key=lambda strike: net_gex[strike]) if negative_walls else None
+        call_wall_result = cls._rank_exposure_wall(contracts, spot, symbol, "call")
+        put_wall_result = cls._rank_exposure_wall(contracts, spot, symbol, "put")
+        call_wall = call_wall_result["strike"] if call_wall_result else None
+        put_wall = put_wall_result["strike"] if put_wall_result else None
         positive_delta_walls = [strike for strike, dex in net_dex.items() if dex > 0]
         negative_delta_walls = [strike for strike, dex in net_dex.items() if dex < 0]
         call_delta_wall = max(positive_delta_walls, key=lambda strike: net_dex[strike]) if positive_delta_walls else None
@@ -536,7 +623,7 @@ class ThetaDataV3Client(MarketDataPort):
         else:
             direct_candidates: list[float] = []
             ordered_strikes = sorted(net_dex)
-            for left_strike, right_strike in zip(ordered_strikes, ordered_strikes[1:]):
+            for left_strike, right_strike in pairwise(ordered_strikes):
                 left_dex, right_dex = net_dex[left_strike], net_dex[right_strike]
                 if left_dex == 0.0:
                     direct_candidates.append(float(left_strike))
@@ -572,8 +659,8 @@ class ThetaDataV3Client(MarketDataPort):
         # observations only; Gamma Dynamics continues to use its own features.
         zero_gamma_nearest = min(net_gex, key=lambda strike: abs(strike - zero_gamma))
         wall_estimates = {
-            "CALL_WALL": {"strike": float(call_wall or 0.0), "gex": float(net_gex[call_wall]) if call_wall is not None else 0.0},
-            "PUT_WALL": {"strike": float(put_wall or 0.0), "gex": float(net_gex[put_wall]) if put_wall is not None else 0.0},
+            "CALL_WALL": dict(call_wall_result or {"strike": 0.0, "gex": 0.0}),
+            "PUT_WALL": dict(put_wall_result or {"strike": 0.0, "gex": 0.0}),
             "ZERO_GAMMA": {"strike": float(zero_gamma), "gex": float(net_gex[zero_gamma_nearest])},
             "SUPPORT": {"strike": float(support), "gex": float(net_gex.get(support, 0.0))},
             "RESISTANCE": {"strike": float(resistance), "gex": float(net_gex.get(resistance, 0.0))},
@@ -633,11 +720,19 @@ class ThetaDataV3Client(MarketDataPort):
             "zero_gamma_gap_usd": float(spot-zero_gamma),
             "zero_gamma_gap_bps": float((spot-zero_gamma)/max(spot,1e-12)*10_000.0),
             "call_wall_strike": float(call_wall or 0.0),
-            "call_wall_gex": float(net_gex[call_wall]) if call_wall is not None else 0.0,
-            "call_wall_oi": int(strike_oi[call_wall]) if call_wall is not None else 0,
+            "call_wall_gex": float(call_wall_result["gex"]) if call_wall_result else 0.0,
+            "call_wall_oi": int(call_wall_result["open_interest"]) if call_wall_result else 0,
+            "call_wall_score": float(call_wall_result["score"]) if call_wall_result else 0.0,
+            "call_wall_confidence": float(call_wall_result["confidence"]) if call_wall_result else 0.0,
+            "call_wall_persistence": float(call_wall_result["persistence"]) if call_wall_result else 0.0,
+            "call_wall_method": str(call_wall_result["method"]) if call_wall_result else "UNAVAILABLE",
             "put_wall_strike": float(put_wall or 0.0),
-            "put_wall_gex": float(net_gex[put_wall]) if put_wall is not None else 0.0,
-            "put_wall_oi": int(strike_oi[put_wall]) if put_wall is not None else 0,
+            "put_wall_gex": float(put_wall_result["gex"]) if put_wall_result else 0.0,
+            "put_wall_oi": int(put_wall_result["open_interest"]) if put_wall_result else 0,
+            "put_wall_score": float(put_wall_result["score"]) if put_wall_result else 0.0,
+            "put_wall_confidence": float(put_wall_result["confidence"]) if put_wall_result else 0.0,
+            "put_wall_persistence": float(put_wall_result["persistence"]) if put_wall_result else 0.0,
+            "put_wall_method": str(put_wall_result["method"]) if put_wall_result else "UNAVAILABLE",
             "gex_walls": gex_walls,
             "dex_walls": dex_walls,
             "delta_wall_strike": float(delta_wall),
