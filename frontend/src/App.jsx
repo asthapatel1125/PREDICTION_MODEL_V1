@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import SignedPressureChart from "./SignedPressureChart";
 import MagnitudeSignedChart from "./MagnitudeSignedChart";
+import CvdPriceChart from "./CvdPriceChart";
 import {
   fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchEodSnapshot, fetchInstruments, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory, fetchWallDayLevels,
   startReplay, subscribeToEvents, toDashboardAlert,
@@ -2399,7 +2399,7 @@ function MarketPressureIndexModule({symbol}){
   // 4-hour window and still keeps the browser bounded.
   useEffect(()=>{const controller=new AbortController();const load=()=>{if(document.hidden)return Promise.resolve();return fetchWallSpectrum(symbol,controller.signal,5000).then(result=>setRows(current=>{const next=(result.rows??[]).slice(-5000);return current.at(-1)?.timestamp===next.at(-1)?.timestamp?current:next})).catch(error=>{if(error.name!=="AbortError")setRows(current=>current)})};load();const id=window.setInterval(load,15000);return()=>{controller.abort();window.clearInterval(id)}},[symbol]);
   const ranges={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"ALL":null};
-  return <div className={expanded?"mpi-module-shell mpi-module-expanded":"mpi-module-shell"}><div className="mpi-module-toolbar"><span>INDEPENDENT MARKET PRESSURE INDEX</span><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND FULL VIEW"}</button></div><EodSnapshotArchive symbol={symbol} module="mpi"/><div className="mpi-dhl-workspace"><MagnitudeSignedChart rows={rows} kind="tpi"/><MagnitudeSignedChart rows={rows} kind="mpi"/><SignedPressureChart rows={rows} kind="cvd"/></div></div>;
+  return <div className={expanded?"mpi-module-shell mpi-module-expanded":"mpi-module-shell"}><div className="mpi-module-toolbar"><span>INDEPENDENT MARKET PRESSURE INDEX</span><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND FULL VIEW"}</button></div><EodSnapshotArchive symbol={symbol} module="mpi"/><div className="mpi-dhl-workspace"><MagnitudeSignedChart rows={rows} kind="tpi"/><MagnitudeSignedChart rows={rows} kind="mpi"/><CvdPriceChart rows={rows}/></div></div>;
 }
 
 function ZoneIntelligenceFixed({symbol}){
