@@ -1,13 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import AxiomTwoModule from "./AxiomTwoModule";
 import {
   fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchEodSnapshot, fetchInstruments, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory, fetchWallDayLevels,
   startReplay, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["Market Pressure Index (MPI)", "market-pressure-index"], ["Axiom 2.0", "axiom-2"], ["Gamma Dynamics 1.0", "gamma-dynamics"], ["Gamma Dynamics 2.0", "gamma-dynamics-v2"], ["Gamma Dynamics 3.0", "gamma-dynamics-v3"], ["Delta Dynamics", "six-greek-dynamics"], ["Live alerts", "live-alerts"],
+  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["Market Pressure Index (MPI)", "market-pressure-index"], ["Gamma Dynamics 1.0", "gamma-dynamics"], ["Gamma Dynamics 2.0", "gamma-dynamics-v2"], ["Gamma Dynamics 3.0", "gamma-dynamics-v3"], ["Delta Dynamics", "six-greek-dynamics"], ["Live alerts", "live-alerts"],
 ];
 const DEFAULT_MODULE_ORDER=["wall-intelligence","market-pressure-index","gamma-dynamics","gamma-dynamics-v2","gamma-dynamics-v3","six-greek-dynamics","live-alerts"];
 // Keep every dynamics implementation in the bundle and backend, but pause its
@@ -2529,7 +2528,6 @@ export default function Home() {
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">
     <OverviewDisclosure id="market-pressure-index" title="Market Pressure Index (MPI) · Independent Market Module" description="Standalone pressure, acceleration, QQQ price, and flow confirmation; not part of Wall Intelligence"><MarketPressureIndexModule symbol={symbol}/></OverviewDisclosure>
-    <OverviewDisclosure id="axiom-2" title="Axiom 2.0 · Normalized Options Pressure" description="Pressure Trend, MPI vectors, GEX/DEX/volume imbalances, CVD proxy direction and four-layer confluence"><AxiomTwoModule symbol={symbol}/></OverviewDisclosure>
     </section>
     <DraggableOverviewModule id="gamma-dynamics" index={moduleOrder.indexOf("gamma-dynamics")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics" title="Gamma Dynamics 1.0 · Four-Greek Engine" description="Zomma · Color · Speed · Gamma" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]}/>}> <GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={1}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={1}/></article><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS?.calls??[]} version={1}/><OutcomeAttributionMini system="GAMMA_DYNAMICS" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <DraggableOverviewModule id="gamma-dynamics-v2" index={moduleOrder.indexOf("gamma-dynamics-v2")} {...draggableProps}><OverviewDisclosure id="gamma-dynamics-v2" title="Gamma Dynamics 2.0 · Six-Greek Engine" description="Zomma · Color · Speed · Gamma · Vomma · Ultima" summaryScore={<DynamicsScoreSummary calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]}/>}> <GammaDynamicsModule state={state} history={visualHistory} symbol={symbol} engine={engine} version={2}/><article className="panel chart-panel triad-history-panel"><GammaDynamicsChart history={visualHistory} state={state} symbol={symbol} gammaVersion={2}/></article><GammaDynamicsV2FlowLogCompact history={visualHistory} state={state} symbol={symbol}/><GammaDynamicsLog history={visualHistory} state={state} symbol={symbol} calls={attribution?.systems?.GAMMA_DYNAMICS_V2?.calls??[]} version={2}/><OutcomeAttributionMini system="GAMMA_DYNAMICS_V2" data={attribution} symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
