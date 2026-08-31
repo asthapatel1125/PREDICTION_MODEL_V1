@@ -1251,5 +1251,17 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .gamma-v2-wall-badges .put-wall{border-color:#28745f;background:#0b211c;color:#77e5bf}
 .wall-name.call_wall,.wall-strength-board td:first-child b.call_wall{color:#ff4f69}
 .wall-name.put_wall,.wall-strength-board td:first-child b.put_wall{color:#00d084}
+
+/* Strength board readability: use an unslashed-zero face and slightly larger table type. */
+.wall-strength-board table{
+  font-family:Arial,"Segoe UI",sans-serif;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"zero" 0;
+}
+.wall-strength-board th{font-size:11px}
+.wall-strength-board td.active b{font-size:14px}
+.wall-strength-board td.active small,
+.wall-strength-board td:first-child small{font-size:11px}
 .daily-levels-legend i.call{background:#ff4f69}
 .daily-levels-legend i.put{background:#00d084}
