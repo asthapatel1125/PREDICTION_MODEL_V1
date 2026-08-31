@@ -1254,10 +1254,19 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 
 /* Strength board readability: use an unslashed-zero face and slightly larger table type. */
 .wall-strength-board table{
-  font-family:Arial,"Segoe UI",sans-serif;
+  font-family:"Segoe UI",Arial,sans-serif;
   font-size:12px;
   font-variant-numeric:tabular-nums;
-  font-feature-settings:"zero" 0;
+  font-feature-settings:normal;
+}
+.wall-strength-board table th,
+.wall-strength-board table td,
+.wall-strength-board table b,
+.wall-strength-board table small{
+  font-family:"Segoe UI",Arial,sans-serif!important;
+  font-style:normal;
+  font-feature-settings:normal!important;
+  font-variant-numeric:tabular-nums;
 }
 .wall-strength-board th{font-size:11px}
 .wall-strength-board td.active b{font-size:14px}
