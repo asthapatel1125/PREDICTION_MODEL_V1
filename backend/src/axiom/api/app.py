@@ -18,6 +18,7 @@ from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
 from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
 from axiom.analytics.eod_snapshots import render_eod_svg
+from axiom.analytics.nasdaq_range_atlas import build_range_atlas,load_nas100_monthly_levels
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -52,6 +53,7 @@ class Container:
     settings:PlatformSettings;config:StrategyConfig;repository:SqlAlchemyRepository;bus:InMemoryEventBus
     data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
+    nasdaq_range_atlas:dict[str,Any]|None
 
 
 def create_app(settings:PlatformSettings|None=None)->FastAPI:
@@ -79,7 +81,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.live.pipeline.restore_history(await container.repository.stream_archive("QQQ",9_000))
         # Resume persisted active-call lifecycles after a Render restart.
         container.live.attribution.restore_active(await container.repository.active_system_outcomes())
-        container.replay_runs={};container.replay_tasks=set()
+        container.replay_runs={};container.replay_tasks=set();container.nasdaq_range_atlas=None
         async def automatic_live_stream()->None:
             """Keep the licensed QQQ stream active on market weekdays, 7:00 AM–6:00 PM Eastern."""
             market_tz=ZoneInfo(cfg.market_timezone)
@@ -229,6 +231,22 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 if (not requested_types or name in requested_types) and (not requested_tiers or str(value.get("tier","")) in requested_tiers)}
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":rows,"is_point_in_time":True,"is_estimated_oi_delayed":True,
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
+
+    @api.get("/walls/nasdaq-range-atlas")
+    async def nasdaq_range_atlas(symbol:str="QQQ"):
+        if symbol.upper() != "QQQ":
+            raise HTTPException(422,"NASDAQ-100 range translation is defined for QQQ only")
+        if container.nasdaq_range_atlas is None:
+            source_path=Path(__file__).parents[4]/"config"/"nas100_monthly_levels.csv"
+            try:
+                levels=load_nas100_monthly_levels(source_path)
+                qqq_rows=await container.data.stock_eod("QQQ",date(2020,1,1),date(2026,1,31))
+            except Exception as exc:
+                raise HTTPException(503,f"NASDAQ range source or ThetaData QQQ EOD calibration is unavailable: {exc}") from exc
+            container.nasdaq_range_atlas=build_range_atlas(levels,qqq_rows)
+        return {**container.nasdaq_range_atlas,"market_timezone":cfg.market_timezone,
+            "source_note":"NAS100 monthly endpoints supplied by the user; matching-month QQQ EOD highs/lows supplied by ThetaData.",
+            "freshness_note":"January 2026 is the latest supplied NAS100 month. No later month is inferred."}
 
     @api.get("/walls/day-levels")
     async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None):
