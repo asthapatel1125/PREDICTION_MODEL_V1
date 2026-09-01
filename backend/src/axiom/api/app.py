@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import date,datetime,time,timedelta,timezone
 from pathlib import Path
@@ -237,7 +238,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         if symbol.upper() != "QQQ":
             raise HTTPException(422,"NASDAQ-100 range translation is defined for QQQ only")
         if container.nasdaq_range_atlas is None:
-            source_path=Path(__file__).parents[4]/"config"/"nas100_monthly_levels.csv"
+            source_path=Path(os.getenv("NAS100_LEVELS_PATH") or Path(__file__).parents[4]/"config"/"nas100_monthly_levels.csv")
             try:
                 levels=load_nas100_monthly_levels(source_path)
                 qqq_rows=await container.data.stock_eod("QQQ",date(2020,1,1),date(2026,1,31))
