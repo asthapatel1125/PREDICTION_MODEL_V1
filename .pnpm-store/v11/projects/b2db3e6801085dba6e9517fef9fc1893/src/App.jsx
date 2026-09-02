@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import MagnitudeSignedChart from "./MagnitudeSignedChart";
 import CvdPriceChart from "./CvdPriceChart";
+import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
   fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchEodSnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory, fetchWallDayLevels,
   setDynamicsDirectionGate, startReplay, subscribeToEvents, toDashboardAlert,
@@ -2411,7 +2412,7 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
   const alter=(axis,factor)=>{
     const current=view||autoDomain;
     if(axis==="x"){const mid=(current.x0+current.x1)/2,span=(current.x1-current.x0)/factor;setView({...current,x0:mid-span/2,x1:mid+span/2})}
-    else {const mid=(current.y0+current.y1)/2,span=(current.y1-current.y0)/factor;setManualY(true);setView({...current,y0:mid-span/2,y1:mid+span/2})}
+    else {const next=zoomAtlasPrice(current,autoDomain,1/factor);setManualY(next.manualY);setView(next.view)}
   };
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;const dpr=window.devicePixelRatio||1,ctx=canvas.getContext("2d"),W=size.width,H=size.height,right=104,bottom=58,plotW=W-right,plotH=H-bottom;
@@ -2421,10 +2422,11 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     const y=value=>{if(!compressed)return(domain.y1-value)/Math.max(domain.y1-domain.y0,.0001)*plotH;if(value>liveFocusDomain.y1)return focusTop*(domain.y1-value)/Math.max(domain.y1-liveFocusDomain.y1,.0001);if(value<liveFocusDomain.y0)return focusBottom+(plotH-focusBottom)*(liveFocusDomain.y0-value)/Math.max(liveFocusDomain.y0-domain.y0,.0001);return focusTop+(liveFocusDomain.y1-value)/Math.max(liveFocusDomain.y1-liveFocusDomain.y0,.0001)*(focusBottom-focusTop)};
     const valueAtY=py=>{if(!compressed)return domain.y1-py/plotH*(domain.y1-domain.y0);if(py<focusTop)return domain.y1-py/focusTop*(domain.y1-liveFocusDomain.y1);if(py>focusBottom)return liveFocusDomain.y0-(py-focusBottom)/Math.max(plotH-focusBottom,1)*(liveFocusDomain.y0-domain.y0);return liveFocusDomain.y1-(py-focusTop)/Math.max(focusBottom-focusTop,1)*(liveFocusDomain.y1-liveFocusDomain.y0)};
     ctx.fillStyle="#03070a";ctx.fillRect(0,0,W,H);ctx.fillStyle="#071018";ctx.fillRect(plotW,0,right,H);ctx.fillRect(0,plotH,plotW,bottom);
-    ctx.font="12px Arial, sans-serif";ctx.textBaseline="middle";
+    const chartFont=getComputedStyle(canvas).getPropertyValue("--range-atlas-font").trim()||'"Courier New", monospace';
+    ctx.font=`500 12px ${chartFont}`;ctx.textBaseline="middle";
     for(let i=0;i<=6;i++){const py=i*plotH/6,value=valueAtY(py);ctx.strokeStyle="#18303d";ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(0,py+.5);ctx.lineTo(plotW,py+.5);ctx.stroke();ctx.fillStyle="#9db4c4";ctx.fillText(value.toFixed(2),plotW+12,py)}
-    if(compressed){[focusTop,focusBottom].forEach(py=>{ctx.strokeStyle="#57dcff";ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(plotW+4,py-4);ctx.lineTo(plotW+10,py);ctx.lineTo(plotW+4,py+4);ctx.lineTo(plotW+10,py+8);ctx.stroke()});ctx.fillStyle="#5e8295";ctx.font="8px 'IBM Plex Mono', monospace";ctx.textAlign="right";ctx.fillText("COMPRESSED",plotW-8,focusTop-7);ctx.fillText("COMPRESSED",plotW-8,focusBottom+9)}
-    ctx.font="13px Arial, sans-serif";for(let i=0;i<=6;i++){const px=i*plotW/6,stamp=domain.x0+i*(domain.x1-domain.x0)/6;ctx.strokeStyle="#142a35";ctx.beginPath();ctx.moveTo(px+.5,0);ctx.lineTo(px+.5,plotH);ctx.stroke();ctx.fillStyle="#9db4c4";ctx.textAlign=i===0?"left":i===6?"right":"center";ctx.fillText(new Date(stamp).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"}),px,plotH+18)}
+    if(compressed){[focusTop,focusBottom].forEach(py=>{ctx.strokeStyle="#57dcff";ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(plotW+4,py-4);ctx.lineTo(plotW+10,py);ctx.lineTo(plotW+4,py+4);ctx.lineTo(plotW+10,py+8);ctx.stroke()});ctx.fillStyle="#5e8295";ctx.font=`500 8px ${chartFont}`;ctx.textAlign="right";ctx.fillText("COMPRESSED",plotW-8,focusTop-7);ctx.fillText("COMPRESSED",plotW-8,focusBottom+9)}
+    ctx.font=`500 13px ${chartFont}`;for(let i=0;i<=6;i++){const px=i*plotW/6,stamp=domain.x0+i*(domain.x1-domain.x0)/6;ctx.strokeStyle="#142a35";ctx.beginPath();ctx.moveTo(px+.5,0);ctx.lineTo(px+.5,plotH);ctx.stroke();ctx.fillStyle="#9db4c4";ctx.textAlign=i===0?"left":i===6?"right":"center";ctx.fillText(new Date(stamp).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"}),px,plotH+18)}
     ctx.textAlign="left";const candidates=[];ctx.save();ctx.beginPath();ctx.rect(0,0,plotW,plotH);ctx.clip();
     lineLevels.forEach(level=>{const py=y(level.price);if(py<0||py>plotH)return;const near=latestSpot>0&&Math.abs(latestSpot-level.price)<=threshold,isLatest=level.cohort==="latest",isRecent=level.cohort==="recent";
       ctx.strokeStyle=near?"#ff365f":isLatest?"#31d6ff":isRecent?"rgba(137,105,255,.62)":"rgba(128,143,154,.34)";
@@ -2432,12 +2434,12 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
       candidates.push({...level,py,near,priority:near?4:isLatest?3:isRecent?2:1});
     });
     ctx.setLineDash([]);if(priceRows.length){ctx.strokeStyle="#e9f5ff";ctx.lineWidth=2.2;ctx.beginPath();priceRows.forEach((row,index)=>{const px=x(row.time),py=y(row.price);if(index===0)ctx.moveTo(px,py);else ctx.lineTo(px,py)});ctx.stroke();const last=priceRows.at(-1),lx=Math.max(0,Math.min(plotW,x(last.time))),ly=y(last.price);ctx.fillStyle="#5dffbf";ctx.beginPath();ctx.arc(lx,ly,4,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#5dffbf";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,ly);ctx.lineTo(plotW,ly);ctx.stroke()}ctx.restore();
-    const occupied=[];candidates.sort((a,b)=>b.priority-a.priority||a.py-b.py).forEach(level=>{if(occupied.some(py=>Math.abs(py-level.py)<15))return;occupied.push(level.py);ctx.font="11px Arial, sans-serif";ctx.fillStyle=level.near?"#ff365f":level.cohort==="latest"?"#31d6ff":level.cohort==="recent"?"#aa94ff":"#667987";ctx.textAlign="left";ctx.fillText(level.month+" "+level.side,8,level.py-7);ctx.textAlign="right";ctx.fillText(level.price.toFixed(2),plotW-7,level.py-7)});
-    if(latestSpot){const py=y(latestSpot);ctx.fillStyle="#5dffbf";ctx.fillRect(plotW+6,py-11,right-12,22);ctx.fillStyle="#03100b";ctx.font="bold 13px Arial, sans-serif";ctx.textAlign="center";ctx.fillText(latestSpot.toFixed(2),plotW+right/2,py)}
+    const occupied=[];candidates.sort((a,b)=>b.priority-a.priority||a.py-b.py).forEach(level=>{if(occupied.some(py=>Math.abs(py-level.py)<15))return;occupied.push(level.py);ctx.font=`500 11px ${chartFont}`;ctx.fillStyle=level.near?"#ff365f":level.cohort==="latest"?"#31d6ff":level.cohort==="recent"?"#aa94ff":"#667987";ctx.textAlign="left";ctx.fillText(level.month+" "+level.side,8,level.py-7);ctx.textAlign="right";ctx.fillText(level.price.toFixed(2),plotW-7,level.py-7)});
+    if(latestSpot){const py=y(latestSpot);ctx.fillStyle="#5dffbf";ctx.fillRect(plotW+6,py-11,right-12,22);ctx.fillStyle="#03100b";ctx.font=`700 13px ${chartFont}`;ctx.textAlign="center";ctx.fillText(latestSpot.toFixed(2),plotW+right/2,py)}
     if(pointer){const px=Math.max(0,Math.min(plotW,pointer.x)),py=Math.max(0,Math.min(plotH,pointer.y));ctx.strokeStyle="rgba(210,232,244,.5)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,plotH);ctx.moveTo(0,py);ctx.lineTo(plotW,py);ctx.stroke();ctx.setLineDash([])}
   },[size,domain,manualY,liveFocusDomain,priceRows,lineLevels,latestSpot,threshold,pointer]);
   const onWheel=event=>{event.preventDefault();const rect=event.currentTarget.getBoundingClientRect(),current=view||autoDomain,plotW=Math.max(size.width-104,1),plotH=Math.max(size.height-58,1),overScale=event.clientX-rect.left>plotW;
-    if(overScale||event.ctrlKey||event.metaKey){const focus=Math.max(0,Math.min(1,(event.clientY-rect.top)/plotH)),span=current.y1-current.y0,nextSpan=span*(event.deltaY>0?1.18:.84),anchor=current.y1-focus*span;setManualY(true);setView({...current,y1:anchor+focus*nextSpan,y0:anchor-(1-focus)*nextSpan})}
+    if(overScale||event.ctrlKey||event.metaKey){const focus=Math.max(0,Math.min(1,(event.clientY-rect.top)/plotH)),next=zoomAtlasPrice(current,autoDomain,event.deltaY>0?1.18:.84,focus);setManualY(next.manualY);setView(next.view)}
     else if(event.shiftKey){const shift=event.deltaY/(plotW)*(.45*(current.x1-current.x0));setView({...current,x0:current.x0+shift,x1:current.x1+shift})}
     else {const focus=Math.max(0,Math.min(1,(event.clientX-rect.left)/plotW)),span=current.x1-current.x0,nextSpan=span*(event.deltaY>0?1.18:.84),anchor=current.x0+focus*span;setView({...current,x0:anchor-focus*nextSpan,x1:anchor+(1-focus)*nextSpan})}};
   useEffect(()=>{const node=frameRef.current;if(!node)return;const handler=event=>onWheel(event);node.addEventListener("wheel",handler,{passive:false});return()=>node.removeEventListener("wheel",handler)},[view,autoDomain,size]);
