@@ -2414,7 +2414,7 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     else {const mid=(current.y0+current.y1)/2,span=(current.y1-current.y0)/factor;setManualY(true);setView({...current,y0:mid-span/2,y1:mid+span/2})}
   };
   useEffect(()=>{
-    const canvas=canvasRef.current;if(!canvas)return;const dpr=window.devicePixelRatio||1,ctx=canvas.getContext("2d"),W=size.width,H=size.height,right=104,bottom=34,plotW=W-right,plotH=H-bottom;
+    const canvas=canvasRef.current;if(!canvas)return;const dpr=window.devicePixelRatio||1,ctx=canvas.getContext("2d"),W=size.width,H=size.height,right=104,bottom=58,plotW=W-right,plotH=H-bottom;
     canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);canvas.style.width=W+"px";canvas.style.height=H+"px";ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
     const x=value=>(value-domain.x0)/Math.max(domain.x1-domain.x0,1)*plotW;
     const compressed=!manualY&&(domain.y0<liveFocusDomain.y0-.001||domain.y1>liveFocusDomain.y1+.001),focusTop=compressed?plotH*.14:0,focusBottom=compressed?plotH*.86:plotH;
@@ -2436,12 +2436,12 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     if(latestSpot){const py=y(latestSpot);ctx.fillStyle="#5dffbf";ctx.fillRect(plotW+6,py-11,right-12,22);ctx.fillStyle="#03100b";ctx.font="bold 12px 'IBM Plex Mono', monospace";ctx.textAlign="center";ctx.fillText(latestSpot.toFixed(2),plotW+right/2,py)}
     if(pointer){const px=Math.max(0,Math.min(plotW,pointer.x)),py=Math.max(0,Math.min(plotH,pointer.y));ctx.strokeStyle="rgba(210,232,244,.5)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,plotH);ctx.moveTo(0,py);ctx.lineTo(plotW,py);ctx.stroke();ctx.setLineDash([])}
   },[size,domain,manualY,liveFocusDomain,priceRows,lineLevels,latestSpot,threshold,pointer]);
-  const onWheel=event=>{event.preventDefault();const rect=event.currentTarget.getBoundingClientRect(),current=view||autoDomain,plotW=Math.max(size.width-104,1),plotH=Math.max(size.height-34,1),overScale=event.clientX-rect.left>plotW;
+  const onWheel=event=>{event.preventDefault();const rect=event.currentTarget.getBoundingClientRect(),current=view||autoDomain,plotW=Math.max(size.width-104,1),plotH=Math.max(size.height-58,1),overScale=event.clientX-rect.left>plotW;
     if(overScale||event.ctrlKey||event.metaKey){const focus=Math.max(0,Math.min(1,(event.clientY-rect.top)/plotH)),span=current.y1-current.y0,nextSpan=span*(event.deltaY>0?1.18:.84),anchor=current.y1-focus*span;setManualY(true);setView({...current,y1:anchor+focus*nextSpan,y0:anchor-(1-focus)*nextSpan})}
     else if(event.shiftKey){const shift=event.deltaY/(plotW)*(.45*(current.x1-current.x0));setView({...current,x0:current.x0+shift,x1:current.x1+shift})}
     else {const focus=Math.max(0,Math.min(1,(event.clientX-rect.left)/plotW)),span=current.x1-current.x0,nextSpan=span*(event.deltaY>0?1.18:.84),anchor=current.x0+focus*span;setView({...current,x0:anchor-focus*nextSpan,x1:anchor+(1-focus)*nextSpan})}};
   const onPointerDown=event=>{if(event.button!==0)return;dragRef.current={x:event.clientX,y:event.clientY,domain:{...(view||autoDomain)}};event.currentTarget.setPointerCapture(event.pointerId)};
-  const onPointerMove=event=>{const rect=event.currentTarget.getBoundingClientRect();setPointer({x:event.clientX-rect.left,y:event.clientY-rect.top});if(!dragRef.current)return;const start=dragRef.current,dx=event.clientX-start.x,dy=event.clientY-start.y,xSpan=start.domain.x1-start.domain.x0,ySpan=start.domain.y1-start.domain.y0,xShift=-dx/Math.max(size.width-104,1)*xSpan,yShift=dy/Math.max(size.height-34,1)*ySpan;if(Math.abs(dy)>1)setManualY(true);setView({...start.domain,x0:start.domain.x0+xShift,x1:start.domain.x1+xShift,y0:start.domain.y0+yShift,y1:start.domain.y1+yShift})};
+  const onPointerMove=event=>{const rect=event.currentTarget.getBoundingClientRect();setPointer({x:event.clientX-rect.left,y:event.clientY-rect.top});if(!dragRef.current)return;const start=dragRef.current,dx=event.clientX-start.x,dy=event.clientY-start.y,xSpan=start.domain.x1-start.domain.x0,ySpan=start.domain.y1-start.domain.y0,xShift=-dx/Math.max(size.width-104,1)*xSpan,yShift=dy/Math.max(size.height-58,1)*ySpan;if(Math.abs(dy)>1)setManualY(true);setView({...start.domain,x0:start.domain.x0+xShift,x1:start.domain.x1+xShift,y0:start.domain.y0+yShift,y1:start.domain.y1+yShift})};
   const stop=()=>{dragRef.current=null};
   const fullY=useMemo(()=>{const values=[...lineLevels.map(level=>level.price),...priceRows.map(row=>row.price)].filter(Number.isFinite);const min=values.length?Math.min(...values):0,max=values.length?Math.max(...values):1;return {min,max,span:Math.max(max-min,1)}},[lineLevels,priceRows]);
   const verticalPosition=Math.max(0,Math.min(100,100*((domain.y0+domain.y1)/2-fullY.min)/fullY.span));
