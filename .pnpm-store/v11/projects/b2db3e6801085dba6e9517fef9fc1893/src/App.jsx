@@ -14,7 +14,7 @@ const DEFAULT_MODULE_ORDER=["wall-intelligence","market-pressure-index","gamma-d
 // Keep every dynamics implementation in the bundle and backend, but pause its
 // browser-side panels/history while the lightweight Wall Intelligence view is
 // active. Setting this to false restores the panels without changing model code.
-const DYNAMICS_STREAMS_PAUSED=true;
+const DYNAMICS_STREAMS_PAUSED=false;
 const PAUSED_DYNAMICS_MODULES=["gamma-dynamics","gamma-dynamics-v2","gamma-dynamics-v3","six-greek-dynamics"];
 // Paused means "freeze the model panels at their last snapshot", not "remove
 // the panels". The model classes, payload shape, and API remain unchanged.
