@@ -177,6 +177,23 @@ class ModelVersionRow(Base):
 class SqlAlchemyRepository:
     def __init__(self,session_factory:async_sessionmaker[AsyncSession]):self.sessions=session_factory
 
+    async def load_direction_gate(self):
+        async with self.sessions() as s:
+            row=(await s.execute(select(ConfigurationRow).where(ConfigurationRow.version=="runtime:dynamics-direction-gate"))).scalar_one_or_none()
+            return dict(row.payload) if row else None
+
+    async def save_direction_gate(self,payload):
+        async with self.sessions() as s:
+            if s.get_bind().dialect.name=="postgresql":
+                from sqlalchemy.dialects.postgresql import insert
+            else:
+                from sqlalchemy.dialects.sqlite import insert
+            values={"version":"runtime:dynamics-direction-gate","created_at":datetime.now(timezone.utc),
+                    "created_by":"dynamics-direction-control","payload":payload,"active":False}
+            statement=insert(ConfigurationRow).values(**values)
+            await s.execute(statement.on_conflict_do_update(index_elements=["version"],set_={"payload":payload,"created_at":values["created_at"]}))
+            await s.commit()
+
     async def save_state(self,state:MarketState)->None:
         async with self.sessions() as s:
             zone=state.zone_intelligence

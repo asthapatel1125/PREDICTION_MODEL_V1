@@ -22,6 +22,7 @@ from axiom.analytics.eod_snapshots import render_eod_svg
 from axiom.analytics.nasdaq_range_atlas import build_range_atlas,load_nas100_monthly_levels
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
+from axiom.application.direction_gate import DailyDirectionGate
 from axiom.config.schema import PlatformSettings,StrategyConfig
 from axiom.infrastructure.database import SqlAlchemyRepository,create_database
 
@@ -81,6 +82,10 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
             cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
+        container.direction_gate=DailyDirectionGate(container.repository,
+            [container.live.attribution,container.training.attribution],cfg.market_timezone)
+        await container.direction_gate.sync()
+        container.live.direction_gate_service=container.direction_gate
         # Rehydrate compact Greek/chain histories before the automatic stream
         # begins. This preserves the model warm-up through a Render restart.
         container.live.pipeline.restore_history(await container.repository.stream_archive("QQQ",9_000))
@@ -92,6 +97,13 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             market_tz=ZoneInfo(cfg.market_timezone)
             while True:
                 now=datetime.now(market_tz)
+                try:
+                    await container.direction_gate.sync(now)
+                except Exception:
+                    # Retry without starting an unchecked stream. Existing live
+                    # workers also verify the durable gate before each bar.
+                    await asyncio.sleep(15)
+                    continue
                 within_window=now.weekday()<5 and time(7,0)<=now.time()<time(18,0)
                 running=container.live_task and not container.live_task.done()
                 if within_window and not running:
@@ -210,9 +222,12 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return record
 
     @api.get("/system")
-    async def system():return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
+    async def system():
+        gate=await container.direction_gate.sync()
+        return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),
         "dynamics_direction_gate":container.live.attribution.direction_gate,
+        "dynamics_direction_gate_details":gate,
         "theta_transport":cfg.thetadata_transport,"theta_poll_seconds":cfg.thetadata_poll_seconds,
         "outcome_price_provider":"TWELVE_DATA" if cfg.twelve_data_api_key else "THETADATA_OPTIONS_UNDERLYING",
         "outcome_horizon_minutes":cfg.outcome_horizon_minutes,
@@ -221,14 +236,15 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
     @api.post("/dynamics/direction-gate")
     async def set_dynamics_direction_gate(body:DynamicsDirectionGateRequest):
-        live_mode=container.live.attribution.set_direction_gate(body.mode)
-        container.training.attribution.set_direction_gate(body.mode)
+        gate=await container.direction_gate.set(body.mode)
+        live_mode=gate["mode"]
         payload={
+            **gate,
             "mode":live_mode,
             "applies_to":["GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3","DELTA_DYNAMICS"],
             "admission_scope":"NEW_CALLS_ONLY",
             "open_calls":"CONTINUE_TRACKING",
-            "updated_at":datetime.now(timezone.utc),
+            "updated_at":gate["updated_at"],
         }
         await container.bus.publish("dynamics_direction_gate",payload)
         return payload

@@ -431,7 +431,7 @@ class OutcomeAttributionTracker:
         record["lifecycle_state"]=lifecycle
 
     @staticmethod
-    def _update_risk_family(record:dict[str,Any],price:float,now:datetime,state:MarketState)->None:
+    def _update_risk_family(record:dict[str,Any],price:float,now:datetime,state:MarketState,allow_new_children:bool=True)->None:
         """Activate child legs, requalifying deeper Gamma levels before entry."""
         legs=record.get("family_legs")
         if not legs:
@@ -447,6 +447,8 @@ class OutcomeAttributionTracker:
         active_thresholds={float(leg["trigger_adverse_points"]) for leg in legs}
         rechecks=dict(record.get("family_gamma_rechecks") or {})
         for leg_number,threshold in enumerate(thresholds[1:],start=2):
+            if not allow_new_children:
+                break
             if adverse<threshold or threshold in active_thresholds:
                 continue
             gamma=(getattr(state,"gamma_dynamics_v2",None) if record.get("system")=="GAMMA_DYNAMICS_V2" else getattr(state,"gamma_dynamics_v3",None) if record.get("system")=="GAMMA_DYNAMICS_V3" else state.gamma_dynamics) if gamma_family else None
@@ -709,7 +711,7 @@ class OutcomeAttributionTracker:
             record["price_source_timestamp"] = price_source_timestamp
             record["dynamic_high"] = record["highest_price"]
             record["dynamic_low"] = record["lowest_price"]
-            self._update_risk_family(record,price,now,state)
+            self._update_risk_family(record,price,now,state,self._direction_allowed(record["system"],Direction(record["direction"])))
             self._update_lifecycle(record,now)
             if record.get("target_reached_at") is None and now >= record["expires_at"]:
                 self._expire(record)

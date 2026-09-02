@@ -66,6 +66,9 @@ class _EngineRunner:
         self._last_gamma_tick_persist_at:dict[str,datetime]={}
 
     async def handle(self,bar,mode:EngineMode,price_observation:dict|None=None)->PipelineResult:
+        gate_service=getattr(self,"direction_gate_service",None)
+        if mode==EngineMode.LIVE and gate_service is not None:
+            await gate_service.sync()
         result=self.pipeline.process(bar,mode); await self.repository.save_state(result.state)
         # Retain an audit-quality raw chain once per minute. The decision
         # engine remains five-second; this cap avoids the old memory/IO path.
