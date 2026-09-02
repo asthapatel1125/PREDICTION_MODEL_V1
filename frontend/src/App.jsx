@@ -2384,12 +2384,12 @@ function MarketPressureIndexModule({symbol}){
 
 function NasdaqRangeAtlas({symbol,rows=[]}){
   const canvasRef=useRef(null),frameRef=useRef(null),dragRef=useRef(null);
-  const [atlas,setAtlas]=useState(null),[error,setError]=useState(""),[size,setSize]=useState({width:1200,height:520}),[view,setView]=useState(null),[manualY,setManualY]=useState(false),[pointer,setPointer]=useState(null),[threshold,setThreshold]=useState(1),[timeframe,setTimeframe]=useState(900),[draftYears,setDraftYears]=useState([]),[appliedYears,setAppliedYears]=useState([]),[draftMonth,setDraftMonth]=useState("ALL"),[appliedMonth,setAppliedMonth]=useState("ALL");
+  const [atlas,setAtlas]=useState(null),[error,setError]=useState(""),[size,setSize]=useState({width:1200,height:390}),[view,setView]=useState(null),[manualY,setManualY]=useState(false),[pointer,setPointer]=useState(null),[threshold,setThreshold]=useState(1),[timeframe,setTimeframe]=useState(900),[draftYears,setDraftYears]=useState([]),[appliedYears,setAppliedYears]=useState([]),[draftMonth,setDraftMonth]=useState("ALL"),[appliedMonth,setAppliedMonth]=useState("ALL");
   const atlasFrames=[["5s",5],["15s",15],["1m",60],["3m",180],["5m",300],["15m",900],["30m",1800],["1h",3600],["2h",7200],["3h",10800],["4h",14400],["6h",21600]];
   useEffect(()=>{const controller=new AbortController();setError("");fetchNasdaqRangeAtlas(symbol,controller.signal).then(setAtlas).catch(reason=>{if(reason.name!=="AbortError")setError(reason.message)});return()=>controller.abort()},[symbol]);
   const years=useMemo(()=>[...new Set((atlas?.levels||[]).map(level=>String(level.month).slice(0,4)))].sort().reverse(),[atlas]);
   useEffect(()=>{if(years.length&&!draftYears.length&&!appliedYears.length){setDraftYears(years);setAppliedYears(years)}},[years]);
-  useEffect(()=>{const node=frameRef.current;if(!node)return;const observer=new ResizeObserver(([entry])=>setSize({width:Math.max(620,Math.floor(entry.contentRect.width)),height:520}));observer.observe(node);return()=>observer.disconnect()},[]);
+  useEffect(()=>{const node=frameRef.current;if(!node)return;const observer=new ResizeObserver(([entry])=>setSize({width:Math.max(620,Math.floor(entry.contentRect.width)),height:390}));observer.observe(node);return()=>observer.disconnect()},[]);
   const rawPriceRows=useMemo(()=>(rows||[]).map(row=>({time:Date.parse(row.timestamp),price:number(row.spot),timestamp:row.timestamp})).filter(row=>Number.isFinite(row.time)&&row.price>0).sort((a,b)=>a.time-b.time),[rows]);
   const priceRows=useMemo(()=>{const last=rawPriceRows.at(-1)?.time;if(!last)return [];return rawPriceRows.filter(row=>row.time>=last-timeframe*1000)},[rawPriceRows,timeframe]);
   const filteredLevels=useMemo(()=>atlas?.levels?.filter(level=>level.calibrated&&appliedYears.includes(String(level.month).slice(0,4))&&(appliedMonth==="ALL"||String(level.month).slice(5,7)===appliedMonth))||[],[atlas,appliedYears,appliedMonth]);
