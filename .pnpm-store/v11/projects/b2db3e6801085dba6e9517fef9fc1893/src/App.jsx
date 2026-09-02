@@ -2404,6 +2404,7 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     const prices=[...live,...nearestWalls],lo=prices.length?Math.min(...prices):liveMid-1,hi=prices.length?Math.max(...prices):liveMid+1,pad=Math.max((hi-lo)*.055,.08);
     return {x0:first===now?now-30*60*1000:first,x1:first===now?now+30*60*1000:now,y0:lo-pad,y1:hi+pad};
   },[priceRows,lineLevels]);
+  const liveFocusDomain=useMemo(()=>{const values=priceRows.map(row=>row.price).filter(Number.isFinite),lo=values.length?Math.min(...values):0,hi=values.length?Math.max(...values):1,pad=Math.max((hi-lo)*.28,.06);return {y0:lo-pad,y1:hi+pad}},[priceRows]);
   const domain=view||autoDomain,latestSpot=priceRows.at(-1)?.price||0;
   const errorMessage=useMemo(()=>{if(!error)return "";try{return JSON.parse(error)?.detail||error}catch{return error}},[error]);
   const reset=()=>setView(null),applyFilters=()=>{setAppliedYears(draftYears);setAppliedMonth(draftMonth);setView(null)},toggleYear=year=>setDraftYears(current=>current.includes(year)?current.filter(item=>item!==year):[...current,year]);
@@ -2416,10 +2417,13 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     const canvas=canvasRef.current;if(!canvas)return;const dpr=window.devicePixelRatio||1,ctx=canvas.getContext("2d"),W=size.width,H=size.height,right=104,bottom=34,plotW=W-right,plotH=H-bottom;
     canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);canvas.style.width=W+"px";canvas.style.height=H+"px";ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
     const x=value=>(value-domain.x0)/Math.max(domain.x1-domain.x0,1)*plotW;
-    const y=value=>(domain.y1-value)/Math.max(domain.y1-domain.y0,.0001)*plotH;
+    const compressed=!view&&(autoDomain.y0<liveFocusDomain.y0-.001||autoDomain.y1>liveFocusDomain.y1+.001),focusTop=compressed?plotH*.14:0,focusBottom=compressed?plotH*.86:plotH;
+    const y=value=>{if(!compressed)return(domain.y1-value)/Math.max(domain.y1-domain.y0,.0001)*plotH;if(value>liveFocusDomain.y1)return focusTop*(domain.y1-value)/Math.max(domain.y1-liveFocusDomain.y1,.0001);if(value<liveFocusDomain.y0)return focusBottom+(plotH-focusBottom)*(liveFocusDomain.y0-value)/Math.max(liveFocusDomain.y0-domain.y0,.0001);return focusTop+(liveFocusDomain.y1-value)/Math.max(liveFocusDomain.y1-liveFocusDomain.y0,.0001)*(focusBottom-focusTop)};
+    const valueAtY=py=>{if(!compressed)return domain.y1-py/plotH*(domain.y1-domain.y0);if(py<focusTop)return domain.y1-py/focusTop*(domain.y1-liveFocusDomain.y1);if(py>focusBottom)return liveFocusDomain.y0-(py-focusBottom)/Math.max(plotH-focusBottom,1)*(liveFocusDomain.y0-domain.y0);return liveFocusDomain.y1-(py-focusTop)/Math.max(focusBottom-focusTop,1)*(liveFocusDomain.y1-liveFocusDomain.y0)};
     ctx.fillStyle="#03070a";ctx.fillRect(0,0,W,H);ctx.fillStyle="#071018";ctx.fillRect(plotW,0,right,H);ctx.fillRect(0,plotH,plotW,bottom);
     ctx.font="11px 'IBM Plex Mono', monospace";ctx.textBaseline="middle";
-    for(let i=0;i<=6;i++){const py=i*plotH/6,value=domain.y1-i*(domain.y1-domain.y0)/6;ctx.strokeStyle="#18303d";ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(0,py+.5);ctx.lineTo(plotW,py+.5);ctx.stroke();ctx.fillStyle="#9db4c4";ctx.fillText(value.toFixed(2),plotW+12,py)}
+    for(let i=0;i<=6;i++){const py=i*plotH/6,value=valueAtY(py);ctx.strokeStyle="#18303d";ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(0,py+.5);ctx.lineTo(plotW,py+.5);ctx.stroke();ctx.fillStyle="#9db4c4";ctx.fillText(value.toFixed(2),plotW+12,py)}
+    if(compressed){[focusTop,focusBottom].forEach(py=>{ctx.strokeStyle="#57dcff";ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(plotW+4,py-4);ctx.lineTo(plotW+10,py);ctx.lineTo(plotW+4,py+4);ctx.lineTo(plotW+10,py+8);ctx.stroke()});ctx.fillStyle="#5e8295";ctx.font="8px 'IBM Plex Mono', monospace";ctx.textAlign="right";ctx.fillText("COMPRESSED",plotW-8,focusTop-7);ctx.fillText("COMPRESSED",plotW-8,focusBottom+9)}
     for(let i=0;i<=6;i++){const px=i*plotW/6,stamp=domain.x0+i*(domain.x1-domain.x0)/6;ctx.strokeStyle="#142a35";ctx.beginPath();ctx.moveTo(px+.5,0);ctx.lineTo(px+.5,plotH);ctx.stroke();ctx.fillStyle="#8196a4";ctx.textAlign=i===0?"left":i===6?"right":"center";ctx.fillText(new Date(stamp).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"}),px,plotH+17)}
     ctx.textAlign="left";const candidates=[];
     lineLevels.forEach(level=>{const py=y(level.price);if(py<0||py>plotH)return;const near=latestSpot>0&&Math.abs(latestSpot-level.price)<=threshold,isLatest=level.cohort==="latest",isRecent=level.cohort==="recent";
@@ -2431,7 +2435,7 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     const occupied=[];candidates.sort((a,b)=>b.priority-a.priority||a.py-b.py).forEach(level=>{if(occupied.some(py=>Math.abs(py-level.py)<15))return;occupied.push(level.py);ctx.font="10px 'IBM Plex Mono', monospace";ctx.fillStyle=level.near?"#ff365f":level.cohort==="latest"?"#31d6ff":level.cohort==="recent"?"#aa94ff":"#667987";ctx.textAlign="left";ctx.fillText(level.month+" "+level.side,8,level.py-7);ctx.textAlign="right";ctx.fillText(level.price.toFixed(2),plotW-7,level.py-7)});
     if(latestSpot){const py=y(latestSpot);ctx.fillStyle="#5dffbf";ctx.fillRect(plotW+6,py-11,right-12,22);ctx.fillStyle="#03100b";ctx.font="bold 12px 'IBM Plex Mono', monospace";ctx.textAlign="center";ctx.fillText(latestSpot.toFixed(2),plotW+right/2,py)}
     if(pointer){const px=Math.max(0,Math.min(plotW,pointer.x)),py=Math.max(0,Math.min(plotH,pointer.y));ctx.strokeStyle="rgba(210,232,244,.5)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,plotH);ctx.moveTo(0,py);ctx.lineTo(plotW,py);ctx.stroke();ctx.setLineDash([])}
-  },[size,domain,priceRows,lineLevels,latestSpot,threshold,pointer]);
+  },[size,domain,view,autoDomain,liveFocusDomain,priceRows,lineLevels,latestSpot,threshold,pointer]);
   const onWheel=event=>{event.preventDefault();const rect=event.currentTarget.getBoundingClientRect(),current=view||autoDomain,plotW=Math.max(size.width-104,1),plotH=Math.max(size.height-34,1),overScale=event.clientX-rect.left>plotW;
     if(overScale||event.ctrlKey||event.metaKey){const focus=Math.max(0,Math.min(1,(event.clientY-rect.top)/plotH)),span=current.y1-current.y0,nextSpan=span*(event.deltaY>0?1.18:.84),anchor=current.y1-focus*span;setView({...current,y1:anchor+focus*nextSpan,y0:anchor-(1-focus)*nextSpan})}
     else if(event.shiftKey){const shift=event.deltaY/(plotW)*(.45*(current.x1-current.x0));setView({...current,x0:current.x0+shift,x1:current.x1+shift})}
