@@ -238,7 +238,17 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         if symbol.upper() != "QQQ":
             raise HTTPException(422,"NASDAQ-100 range translation is defined for QQQ only")
         if container.nasdaq_range_atlas is None:
-            source_path=Path(os.getenv("NAS100_LEVELS_PATH") or Path(__file__).parents[4]/"config"/"nas100_monthly_levels.csv")
+            configured_source=os.getenv("NAS100_LEVELS_PATH")
+            if configured_source:
+                source_path=Path(configured_source).expanduser()
+            else:
+                # Docker copies runtime configuration to /app/config, while
+                # this module is installed under /usr/local/lib/site-packages.
+                # The strategy path reliably identifies the real config folder.
+                strategy_path=Path(cfg.strategy_config_path).expanduser()
+                if not strategy_path.is_absolute():
+                    strategy_path=Path.cwd()/strategy_path
+                source_path=strategy_path.parent/"nas100_monthly_levels.csv"
             try:
                 levels=load_nas100_monthly_levels(source_path)
                 qqq_rows=await container.data.stock_eod("QQQ",date(2020,1,1),date(2026,1,31))

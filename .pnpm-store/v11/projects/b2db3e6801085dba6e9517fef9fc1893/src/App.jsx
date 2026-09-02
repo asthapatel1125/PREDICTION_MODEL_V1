@@ -2399,6 +2399,7 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
     return {x0:first===now?now-30*60*1000:first,x1:first===now?now+30*60*1000:now,y0:lo-pad,y1:hi+pad};
   },[priceRows,lineLevels]);
   const domain=view||autoDomain,latestSpot=priceRows.at(-1)?.price||0;
+  const errorMessage=useMemo(()=>{if(!error)return "";try{return JSON.parse(error)?.detail||error}catch{return error}},[error]);
   const reset=()=>setView(null);
   const alter=(axis,factor)=>{
     const current=view||autoDomain;
@@ -2434,8 +2435,8 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
   const stop=()=>{dragRef.current=null};
   const nearest=lineLevels.slice().sort((a,b)=>Math.abs(a.price-latestSpot)-Math.abs(b.price-latestSpot)).slice(0,6);
   return <section className="nasdaq-range-atlas"><header><div><span>NASDAQ-100 / QQQ RANGE ATLAS</span><h3>Index-to-ETF monthly level translation</h3></div><b>THETADATA QQQ · 5-SEC LIVE</b></header>
-    <div className="range-atlas-method"><strong>RANGE-PRESERVING CONVERSION</strong><code>{atlas?.formula||"Loading calibration…"}</code><span>{atlas?.freshness_note||"Only matching-month observed data is accepted."}</span></div>
-    {error?<div className="range-atlas-error"><b>CALIBRATION UNAVAILABLE</b><span>{error}</span><small>No NAS100 line is guessed while ThetaData history is unavailable.</small></div>:<>
+    <div className="range-atlas-method"><strong>RANGE-PRESERVING CONVERSION</strong><code>{error?"Calibration request stopped":atlas?.formula||"Loading calibration…"}</code><span>{atlas?.freshness_note||"Only matching-month observed data is accepted."}</span></div>
+    {error?<div className="range-atlas-error"><b>CALIBRATION UNAVAILABLE</b><span>{errorMessage}</span><small>No NAS100 line is guessed while the required source data is unavailable.</small></div>:<>
       <div className="range-atlas-stats"><span>LATEST SUPPLIED <b>{atlas?.latest_supplied_month||"—"}</b></span><span>CALIBRATED <b>{atlas?.calibrated_count||0} / {atlas?.source_count||0}</b></span><span>LIVE QQQ <b>{latestSpot?latestSpot.toFixed(2):"WAITING"}</b></span><label>RED PROXIMITY ≤ <input type="number" min=".01" step=".25" value={threshold} onChange={event=>setThreshold(Math.max(.01,number(event.target.value)))}/> PT</label></div>
       <div className="range-atlas-toolbar"><button onClick={()=>alter("x",1.25)}>TIME +</button><button onClick={()=>alter("x",.8)}>TIME −</button><button onClick={()=>alter("y",1.25)}>PRICE +</button><button onClick={()=>alter("y",.8)}>PRICE −</button><button onClick={reset}>FIT ALL</button><span>Wheel: time zoom · Ctrl/wheel or price scale: price zoom · Shift/wheel: pan · drag: move both axes</span></div>
       <div className="range-atlas-canvas-frame" ref={frameRef}><canvas ref={canvasRef} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stop} onPointerCancel={stop} onPointerLeave={()=>{stop();setPointer(null)}} onDoubleClick={reset}/></div>
