@@ -101,14 +101,6 @@ class ThetaDataV3Client(MarketDataPort):
             for row in rows:row["_bucket_timestamp"]=snapshot_time
         return rows
 
-    async def stock_eod(self, symbol: str, start_date: date, end_date: date) -> list[dict[str, Any]]:
-        """Return provider EOD rows without synthesizing missing history."""
-        params = {"symbol": symbol.upper(), "start_date": start_date, "end_date": end_date}
-        if self.transport == "terminal":
-            terminal_params = {key: value.strftime("%Y%m%d") if isinstance(value, date) else value for key, value in params.items()}
-            return await self._terminal_rows("/stock/history/eod", terminal_params)
-        return await self._python_rows("stock_history_eod", **params)
-
     async def historical_bars(self, symbol: str, start: datetime, end: datetime,
                               resolution_seconds: int) -> AsyncIterator[MarketBar]:
         interval = self._interval(resolution_seconds)

@@ -251,12 +251,11 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 source_path=strategy_path.parent/"nas100_monthly_levels.csv"
             try:
                 levels=load_nas100_monthly_levels(source_path)
-                qqq_rows=await container.data.stock_eod("QQQ",date(2020,1,1),date(2026,1,31))
             except Exception as exc:
-                raise HTTPException(503,f"NASDAQ range source or ThetaData QQQ EOD calibration is unavailable: {exc}") from exc
-            container.nasdaq_range_atlas=build_range_atlas(levels,qqq_rows)
+                raise HTTPException(503,f"Precomputed NASDAQ/QQQ range source is unavailable: {exc}") from exc
+            container.nasdaq_range_atlas=build_range_atlas(levels)
         return {**container.nasdaq_range_atlas,"market_timezone":cfg.market_timezone,
-            "source_note":"NAS100 monthly endpoints supplied by the user; matching-month QQQ EOD highs/lows supplied by ThetaData.",
+            "source_note":"NAS100 monthly endpoints supplied by the user; QQQ endpoints precomputed from matching-month official Nasdaq daily highs/lows.",
             "freshness_note":"January 2026 is the latest supplied NAS100 month. No later month is inferred."}
 
     @api.get("/walls/day-levels")
