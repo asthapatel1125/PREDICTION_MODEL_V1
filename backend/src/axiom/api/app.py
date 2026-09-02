@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date,datetime,time,timedelta,timezone
 from pathlib import Path
-from typing import Any
+from typing import Any,Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -48,6 +48,10 @@ class ReplayRequestBody(BaseModel):
 class LiveEngineRequest(BaseModel):
     symbol:str=Field(min_length=1,max_length=16)
     resolution_seconds:int=Field(default=5,gt=0)
+
+
+class DynamicsDirectionGateRequest(BaseModel):
+    mode:Literal["BOTH","LONG_ONLY","SHORT_ONLY"]="BOTH"
 
 
 class Container:
@@ -208,11 +212,26 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/system")
     async def system():return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),
+        "dynamics_direction_gate":container.live.attribution.direction_gate,
         "theta_transport":cfg.thetadata_transport,"theta_poll_seconds":cfg.thetadata_poll_seconds,
         "outcome_price_provider":"TWELVE_DATA" if cfg.twelve_data_api_key else "THETADATA_OPTIONS_UNDERLYING",
         "outcome_horizon_minutes":cfg.outcome_horizon_minutes,
         "outcome_qqq_points_per_50_nq":cfg.outcome_qqq_points_per_50_nq,
         "outcome_target_note":"Estimated QQQ proxy until a synchronized licensed NQ feed is connected."}
+
+    @api.post("/dynamics/direction-gate")
+    async def set_dynamics_direction_gate(body:DynamicsDirectionGateRequest):
+        live_mode=container.live.attribution.set_direction_gate(body.mode)
+        container.training.attribution.set_direction_gate(body.mode)
+        payload={
+            "mode":live_mode,
+            "applies_to":["GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3","DELTA_DYNAMICS"],
+            "admission_scope":"NEW_CALLS_ONLY",
+            "open_calls":"CONTINUE_TRACKING",
+            "updated_at":datetime.now(timezone.utc),
+        }
+        await container.bus.publish("dynamics_direction_gate",payload)
+        return payload
 
     def _wall_time(value:datetime|None)->datetime|None:
         return value.astimezone(timezone.utc) if value else None

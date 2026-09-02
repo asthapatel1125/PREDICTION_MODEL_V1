@@ -105,6 +105,7 @@ async function post(path, body) {
 export const startLiveEngine = (symbol, resolutionSeconds = 5) =>
   post("/api/v1/live/start", { symbol, resolution_seconds: resolutionSeconds });
 export const stopLiveEngine = () => post("/api/v1/live/stop");
+export const setDynamicsDirectionGate = (mode) => post("/api/v1/dynamics/direction-gate", { mode });
 export const startReplay = (body) => post("/api/v1/replay", body);
 export const fetchReplay = (id, signal) => request(`/api/v1/replay/${id}`, { signal });
 

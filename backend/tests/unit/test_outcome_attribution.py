@@ -80,6 +80,35 @@ def test_short_target_is_recorded_as_intraminute_low():
     assert record["minute_bars"][0]["low"] == 498.75
 
 
+def test_direction_gate_blocks_new_opposite_dynamics_calls_but_keeps_open_tracking():
+    tracker = OutcomeAttributionTracker(horizon_minutes=30)
+    start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    assert tracker.set_direction_gate("LONG_ONLY") == "LONG_ONLY"
+    assert tracker.process(state(start,500,Direction.DOWN),EngineMode.LIVE,500,"THETADATA",start) == []
+    created=tracker.process(state(start+timedelta(seconds=5),500,Direction.UP),EngineMode.LIVE,500,"THETADATA",start+timedelta(seconds=5))
+    assert len(created) == 1
+    assert created[0]["direction"] == Direction.UP.value
+    tracker.set_direction_gate("SHORT_ONLY")
+    updates=tracker.process(state(start+timedelta(seconds=10),500.1,Direction.DOWN),EngineMode.LIVE,500.1,"THETADATA",start+timedelta(seconds=10))
+    assert any(item["id"]==created[0]["id"] for item in updates)
+    fresh=OutcomeAttributionTracker(horizon_minutes=30)
+    fresh.set_direction_gate("SHORT_ONLY")
+    short=fresh.process(state(start,500,Direction.DOWN),EngineMode.LIVE,500,"THETADATA",start)
+    assert len(short) == 1
+    assert short[0]["direction"] == Direction.DOWN.value
+
+
+def test_direction_gate_reset_allows_both_dynamics_directions():
+    tracker=OutcomeAttributionTracker()
+    tracker.set_direction_gate("SHORT_ONLY")
+    tracker.set_direction_gate("BOTH")
+    assert tracker._direction_allowed("GAMMA_DYNAMICS",Direction.UP)
+    assert tracker._direction_allowed("GAMMA_DYNAMICS_V2",Direction.DOWN)
+    assert tracker._direction_allowed("GAMMA_DYNAMICS_V3",Direction.UP)
+    assert tracker._direction_allowed("DELTA_DYNAMICS",Direction.DOWN)
+    assert tracker._direction_allowed("PRIMARY_OPTIONS",Direction.UP)
+
+
 def test_flicker_does_not_open_duplicate_same_direction_call():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)

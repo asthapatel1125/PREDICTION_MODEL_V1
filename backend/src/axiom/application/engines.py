@@ -18,7 +18,8 @@ try:
 except ModuleNotFoundError:
     class OutcomeAttributionTracker:
         """No-op compatibility layer until optional attribution files are deployed."""
-        def __init__(self,horizon_minutes:int=30,cooldown_seconds:int=300):pass
+        def __init__(self,horizon_minutes:int=30,cooldown_seconds:int=300,*args):self.direction_gate="BOTH"
+        def set_direction_gate(self,mode:str)->str:self.direction_gate=mode;return mode
         def process(self,*args,**kwargs)->list[dict]:return []
         def finalize_active(self,*args,**kwargs)->list[dict]:return []
 from axiom.application.pipeline import DecisionPipeline

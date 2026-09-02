@@ -17,6 +17,8 @@ SYSTEM_GREEKS = {
     "DELTA_DYNAMICS": ("ultima", "zomma", "gamma", "speed", "color", "delta"),
 }
 GAMMA_SYSTEMS = {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2", "GAMMA_DYNAMICS_V3"}
+DYNAMICS_SYSTEMS = GAMMA_SYSTEMS | {"DELTA_DYNAMICS"}
+DIRECTION_GATES = {"BOTH", "LONG_ONLY", "SHORT_ONLY"}
 
 
 class OutcomeAttributionTracker:
@@ -43,6 +45,29 @@ class OutcomeAttributionTracker:
             lambda: defaultdict(lambda: deque(maxlen=100))
         )
         self.eastern = ZoneInfo("America/New_York")
+        self.direction_gate = "BOTH"
+
+    def set_direction_gate(self, mode: str) -> str:
+        """Gate new Dynamics call admissions without altering open call paths."""
+        normalized = str(mode).upper()
+        if normalized not in DIRECTION_GATES:
+            raise ValueError(f"Unsupported Dynamics direction gate: {mode}")
+        self.direction_gate = normalized
+        # A mode change starts a fresh admission boundary. Active calls remain
+        # protected by duplicate checks and continue their original tracking.
+        for key in [key for key in self._episode_direction if key[1] in DYNAMICS_SYSTEMS]:
+            del self._episode_direction[key]
+        self._gamma_v1_reversal.clear()
+        return self.direction_gate
+
+    def _direction_allowed(self, system: str, direction: Direction) -> bool:
+        if system not in DYNAMICS_SYSTEMS:
+            return True
+        if self.direction_gate == "LONG_ONLY":
+            return direction == Direction.UP
+        if self.direction_gate == "SHORT_ONLY":
+            return direction == Direction.DOWN
+        return True
 
     @staticmethod
     def _restore_datetime(value: Any) -> Any:
@@ -216,8 +241,7 @@ class OutcomeAttributionTracker:
                 shadow.update(status="COMPLETE",completed_at=now,completion_reason=reason,final_price=shadow_price,hypothetical_pnl_points=shadow_pnl,
                     comparison={"active_pnl_points":active_pnl,"shadow_pnl_points":shadow_pnl,"better_path":"SHADOW" if shadow_pnl>active_pnl else "ACTIVE" if active_pnl>shadow_pnl else "TIE"})
 
-    @staticmethod
-    def _qualified_systems(state: MarketState) -> list[tuple[str, Direction]]:
+    def _qualified_systems(self, state: MarketState) -> list[tuple[str, Direction]]:
         systems: list[tuple[str, Direction]] = []
         if state.options_bias_qualified and state.options_bias != Direction.NEUTRAL:
             systems.append(("PRIMARY_OPTIONS", state.options_bias))
@@ -233,7 +257,7 @@ class OutcomeAttributionTracker:
         zone = getattr(state,"zone_intelligence",None)
         if zone and zone.qualified and zone.direction != Direction.NEUTRAL:
             systems.append(("DELTA_DYNAMICS", zone.direction))
-        return systems
+        return [(system,direction) for system,direction in systems if self._direction_allowed(system,direction)]
 
     def _relative_scores(self, symbol: str, system: str, state: MarketState, direction: Direction) -> dict[str, float]:
         greeks = state.greeks
