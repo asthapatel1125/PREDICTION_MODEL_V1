@@ -12,4 +12,3 @@ __pycache__/
 .coverage
 .DS_Store
 .vercel/
-config/nas100_monthly_levels.csv
