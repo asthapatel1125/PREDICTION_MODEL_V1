@@ -1567,53 +1567,6 @@ function ModulePage({ view, state, history, alerts, performance, system, config,
   return <><PageHead eyebrow="PLATFORM OPERATIONS" title="System monitoring" subtitle="Live health from Render, Supabase, ThetaData, and the decision engine." action={<span className={`health-banner ${system?.database_connected ? "" : "error"}`}>● {system?.database_connected ? "DATABASE CONNECTED" : "DEGRADED"}</span>} /><div className="health-grid">{[["PostgreSQL",system?.database_connected?"Connected":"Down"],["Theta transport",system?.theta_transport??"—"],["Live engine",engine.running?"Running":"Idle"],["Bars processed",engine.bars_processed??0],["Alerts",engine.alerts_generated??0],["Retries",engine.retries??0]].map(([name,value])=><article className="panel health-card" key={name}><span>{name}</span><b>{value}</b><i><em style={{width:system?.database_connected?"100%":"20%"}}/></i><small>{engine.last_error && name==="Live engine"?engine.last_error:"Real backend telemetry"}</small></article>)}</div></>;
 }
 
-const UI_HOVER_LABELS={
-  "GEX · RAW":"Raw gamma exposure from the reported open interest.",
-  "GEX · REAL":"Forward-filled gamma exposure adjusted for inferred flow during the open-interest delay.",
-  "GEX $ DENSITY":"Dollar gamma exposure concentrated within 0.5% of spot.",
-  "TW GEX":"Time-weighted gamma-density persistence over the recent ten-minute window.",
-  "FLOW HACK":"Inferred options flow from the change in GEX after Color and Speed effects.",
-  "VOL HACK":"Inferred volume proxy derived from the flow estimate.",
-  "RR · T+10":"Projected ten-minute buy-to-sell flow ratio.",
-  "DR · T+10":"Projected ten-minute dealer-risk/outflow ratio.",
-  "SPOOF":"GEX change relative to inferred volume; higher values indicate lower confidence.",
-  "FADE":"Mean-reversion hedge-power score.",
-  "AMP":"Breakout/amplification hedge-power score.",
-  "FINAL · CLEAN":"Filtered final Gamma Dynamics 2.0 setup score.",
-  "SL":"Stop-loss level.","TP":"Take-profit level.","LIQ":"Liquidity score: spread divided by available depth.",
-  "TS":"Tracking call currently moving in the call’s favorable direction.",
-  "TF":"Tracking call currently moving against the call’s direction.",
-  "DIRECTION":"The signal’s expected price direction: upward/long or downward/short.",
-  "CALL STATE":"Current observed outcome of the call: succeeded, failed, or still tracking.",
-  "EVENT DASHBOARD":"Open the full graphical tracking card, signal context, and outcome path for this event.",
-  "VIEW DASHBOARD":"Open the full graphical tracking card for this event.",
-  "HIDE DASHBOARD":"Close this event's graphical tracking card.",
-  "TIME · EASTERN":"Signal date and time displayed in Eastern time.",
-  "ZONE":"Delta Dynamics market-time zone that qualified this call.",
-  "ZONE MATCH":"Percent of Delta Dynamics zone gates satisfied at the alert.",
-  "CONFIDENCE":"Delta Dynamics confidence score at the alert.",
-  "STREAM DURATION":"Elapsed observed time since the call was created.",
-  "HIGH CHANGE":"Favorable or adverse movement from the alert datum to the highest observed price.",
-  "TIME · MS":"Event time in Eastern time, including milliseconds when available.",
-  "DATE · EASTERN":"Calendar date of the signal in Eastern time.",
-  "MARKET HOUR":"Trading-session bucket assigned to the alert time.",
-  "SOURCE":"Instrument and live data source used for the signal.",
-  "DATUM / ALERT PRICE":"Observed underlying price at the time the call was created.",
-  "SESSION TARGET":"Model target price for the active session and signal direction.",
-  "STRIKE / REFERENCE":"Option strike used by the model, or the nearest price reference when no strike is available.",
-  "DYNAMIC / EXTREME HIGH":"Highest observed price while this call has been tracked.",
-  "DYNAMIC / EXTREME LOW":"Lowest observed price while this call has been tracked.",
-  "TIME TO HIGH":"Elapsed time from alert to the tracked high.",
-  "TIME TO LOW":"Elapsed time from alert to the tracked low.",
-  "CURRENT / FINAL":"Latest tracked price, or final price after the observation window closes.",
-  "CURRENT / FINAL CHANGE":"Price change from the alert datum to the current or final observation.",
-  "STRONGEST GREEK":"Greek with the strongest directional contribution at this call state.",
-  "WEAKEST GREEK":"Greek with the weakest directional contribution at this call state.",
-  "INTENSITY":"Model strength score at the time of the signal.",
-  "PRESSURE":"Signed directional pressure produced by the model.",
-  "EVENT ID":"Unique identifier for this event; click its button to copy it.",
-  "COPY GREEKS":"Copy the timestamped Greek values currently visible in this graph, with raw and normalized columns.",
-};
 function WallIntelligenceModule({symbol}){
   const [spectrum,setSpectrum]=useState([]),[breaks,setBreaks]=useState([]),[flow,setFlow]=useState([]),[layers,setLayers]=useState(new Set(["CALL_WALL","PUT_WALL","ZERO_GAMMA","SUPPORT","RESISTANCE","DEALER_FLOW"])),[timeframe,setTimeframe]=useState("15M");
   useEffect(()=>{const controller=new AbortController();const refresh=()=>Promise.all([fetchWallSpectrum(symbol,controller.signal),fetchWallBreaks(symbol,controller.signal),fetchWallDealerFlow(symbol,controller.signal)]).then(([s,b,f])=>{setSpectrum(s.rows??[]);setBreaks(b.rows??[]);setFlow(f.rows??[])}).catch(()=>{});refresh();const id=window.setInterval(refresh,5000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
@@ -2407,6 +2360,10 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
   },[priceRows,lineLevels]);
   const liveFocusDomain=useMemo(()=>{const values=priceRows.map(row=>row.price).filter(Number.isFinite),lo=values.length?Math.min(...values):0,hi=values.length?Math.max(...values):1,pad=Math.max((hi-lo)*.28,.06);return {y0:lo-pad,y1:hi+pad}},[priceRows]);
   const domain=view||autoDomain,latestSpot=priceRows.at(-1)?.price||0;
+  const nearestAbove=useMemo(()=>latestSpot?lineLevels.filter(level=>Number.isFinite(level.price)&&level.price>latestSpot).sort((a,b)=>a.price-b.price)[0]||null:null,[lineLevels,latestSpot]);
+  const nearestBelow=useMemo(()=>latestSpot?lineLevels.filter(level=>Number.isFinite(level.price)&&level.price<latestSpot).sort((a,b)=>b.price-a.price)[0]||null:null,[lineLevels,latestSpot]);
+  const pointDistance=level=>level&&latestSpot?level.price-latestSpot:null;
+  const signedPoints=value=>Number.isFinite(value)?`${value>=0?"+":""}${value.toFixed(2)} PTS`:"—";
   const errorMessage=useMemo(()=>{if(!error)return "";try{return JSON.parse(error)?.detail||error}catch{return error}},[error]);
   const reset=()=>{setView(null);setManualY(false)},fitAllLevels=()=>{const current=view||autoDomain,values=[...lineLevels.map(level=>level.price),...priceRows.map(row=>row.price)].filter(Number.isFinite);if(!values.length)return;const lo=Math.min(...values),hi=Math.max(...values),pad=Math.max((hi-lo)*.04,.1);setManualY(true);setView({...current,y0:lo-pad,y1:hi+pad})},applyFilters=()=>{setAppliedYears(draftYears);setAppliedMonth(draftMonth);setView(null);setManualY(false)},toggleYear=year=>setDraftYears(current=>current.includes(year)?current.filter(item=>item!==year):[...current,year]);
   const alter=(axis,factor)=>{
@@ -2456,6 +2413,11 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
       <div className="range-atlas-stats"><span>LATEST SUPPLIED <b>{atlas?.latest_supplied_month||"—"}</b></span><span>CALIBRATED <b>{atlas?.calibrated_count||0} / {atlas?.source_count||0}</b></span><span>LIVE QQQ <b>{latestSpot?latestSpot.toFixed(2):"WAITING"}</b></span><label>RED PROXIMITY ≤ <input type="number" min=".01" step=".25" value={threshold} onChange={event=>setThreshold(Math.max(.01,number(event.target.value)))}/> PT</label></div>
       <div className="range-atlas-filters"><details><summary>{appliedYears.length===years.length?"ALL YEARS":`${appliedYears.length} YEARS`}</summary><div className="range-atlas-year-menu"><button type="button" onClick={()=>setDraftYears(years)}>SELECT ALL</button><button type="button" onClick={()=>setDraftYears([])}>CLEAR</button>{years.map(year=><label key={year}><input type="checkbox" checked={draftYears.includes(year)} onChange={()=>toggleYear(year)}/>{year}</label>)}</div></details><label>MONTH<select value={draftMonth} onChange={event=>setDraftMonth(event.target.value)}><option value="ALL">ALL MONTHS</option>{Array.from({length:12},(_,index)=>String(index+1).padStart(2,"0")).map(month=><option key={month} value={month}>{new Date(2020,number(month)-1,1).toLocaleString("en-US",{month:"long"}).toUpperCase()}</option>)}</select></label><button type="button" onClick={applyFilters}>FILTER</button><small>{lineLevels.length} plotted levels</small></div>
       <div className="range-atlas-toolbar"><button onClick={()=>alter("x",1.25)}>TIME +</button><button onClick={()=>alter("x",.8)}>TIME −</button><button onClick={()=>alter("y",1.25)}>PRICE +</button><button onClick={()=>alter("y",.8)}>PRICE −</button><button onClick={reset}>FIT LIVE</button><button onClick={fitAllLevels}>FIT ALL LEVELS</button><span>Plot wheel: horizontal time zoom · right price scale wheel: vertical zoom · drag: pan</span></div>
+      <div className="range-atlas-market-strip" aria-label="QQQ distance to nearest mapped levels">
+        <article className="qqq"><span>QQQ · LIVE PRICE</span><b>{latestSpot?latestSpot.toFixed(2):"WAITING"}</b><small>THETADATA · USD</small></article>
+        <article className="above"><span>FIRST LEVEL ABOVE QQQ</span><b>{nearestAbove?`${nearestAbove.month} ${nearestAbove.side} · ${nearestAbove.price.toFixed(2)}`:"NO LEVEL ABOVE"}</b><strong>[{signedPoints(pointDistance(nearestAbove))}]</strong></article>
+        <article className="below"><span>CLOSEST LEVEL BELOW QQQ</span><b>{nearestBelow?`${nearestBelow.month} ${nearestBelow.side} · ${nearestBelow.price.toFixed(2)}`:"NO LEVEL BELOW"}</b><strong>[{signedPoints(pointDistance(nearestBelow))}]</strong></article>
+      </div>
       <div className="range-atlas-chart-shell"><aside className="range-atlas-time-rail"><b>TIME</b>{atlasFrames.map(([label,seconds])=><button type="button" className={timeframe===seconds?"active":""} onClick={()=>{setTimeframe(seconds);setView(null);setManualY(false)}} key={label}>{label}</button>)}</aside><div className="range-atlas-canvas-frame" ref={frameRef}><canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stop} onPointerCancel={stop} onPointerLeave={()=>{stop();setPointer(null)}} onDoubleClick={reset}/><input className="range-atlas-vscroll" aria-label="Scroll price range vertically" type="range" min="0" max="100" step=".1" value={verticalPosition} onChange={event=>panVertical(event.target.value)}/><input className="range-atlas-hscroll" aria-label="Scroll timeline horizontally" type="range" min="0" max="100" step=".1" value={horizontalPosition} onChange={event=>panHorizontal(event.target.value)}/></div></div>
       <div className="range-atlas-legend"><b><i className="live"/>QQQ LIVE</b><b><i className="latest"/>LATEST SUPPLIED · SOLID</b><b><i className="recent"/>PRIOR 12 MONTHS · DASHED</b><b><i className="archive"/>OLDER · GREY DASHED</b><b><i className="near"/>WITHIN PROXIMITY · RED SOLID</b></div>
     </>}
@@ -2513,14 +2475,6 @@ function WallStrengthDashboard({symbol,latest={}}){
   return <section className="wall-strength-board"><header><div><span>WALL INTELLIGENCE · STRENGTH BOARD</span><h3>{symbol} · market-condition anchor by relative strength</h3></div><b>CONDITION ANCHOR · 5 MIN</b></header><div className="wall-strength-scroll"><table><thead><tr><th className="wall-variable">WALL VARIABLE</th>{tiers.map(tier=><th className={tier.toLowerCase()} key={tier}>{tier}</th>)}</tr></thead><tbody>{items.map(([label,key])=>{const wall=walls[key]||{},tier=String(wall.tier||"WEAKEST").toUpperCase(),liveStrike=number(wall.strike),anchorStrike=number(anchor?.levels?.[key]),strike=Number.isFinite(anchorStrike)&&anchorStrike>0?anchorStrike:liveStrike;return <tr key={key}><td className="wall-variable"><b className={key.toLowerCase()}>{label}</b><small>{anchor?`${anchor.phase} anchor`:`Live strike ${liveStrike.toFixed(2)}`}</small></td>{tiers.map(rank=><td className={rank===tier?`active ${rank.toLowerCase()}`:""} key={rank}>{rank===tier?<><b>{strike.toFixed(2)}</b><small>{anchor?"CONDITION EST.":"LIVE EST."} {compact(wall.dollar)}</small></>:"—"}</td>)}</tr>})}</tbody></table></div><footer>Anchor = the dominant weighted median of the first five minutes of the active market phase. Stronger, larger, nearer-to-spot and newer observations carry more weight; the map rail remains the raw latest five-second estimate. ZERO DELTA uses OI-based signed DEX balance, not GEX.</footer></section>;
 }
 
-function interfaceHoverLabel(element){
-  const text=(element.getAttribute("aria-label")||element.textContent||"").replace(/\s+/g," ").trim();
-  if(/ @ STRIKE · RAW$/.test(text))return `${text.replace(" @ STRIKE · RAW","")} exposure at the alert strike, in its original stored units.`;
-  if(/ @ STRIKE · NORM$/.test(text))return `${text.replace(" @ STRIKE · NORM","")} exposure at the alert strike, normalized against its rolling history.`;
-  if(/ (HIGH|LOW)$/.test(text)&&["ZOMMA","COLOR","SPEED","GAMMA","VOMMA","ULTIMA","DELTA"].some(name=>text.startsWith(name)))return `${text.replace(/ (HIGH|LOW)$/,"")} value at the call’s observed $1 price extreme.`;
-  return UI_HOVER_LABELS[text]||text;
-}
-
 export default function Home() {
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
@@ -2532,7 +2486,6 @@ export default function Home() {
   const [activeSection,setActiveSection]=useState("system-scorecard"),[clock,setClock]=useState(Date.now()),[sectionMenuOpen,setSectionMenuOpen]=useState(false);
   const sectionMenuRef=useRef(null);
   const [moduleOrder,setModuleOrder]=useState(()=>{try{const saved=JSON.parse(window.localStorage.getItem("axiom-overview-module-order")??"null");return Array.isArray(saved)&&saved.length===DEFAULT_MODULE_ORDER.length&&DEFAULT_MODULE_ORDER.every(id=>saved.includes(id))?saved:DEFAULT_MODULE_ORDER}catch{return DEFAULT_MODULE_ORDER}}),[draggedModule,setDraggedModule]=useState(null),[dragOverModule,setDragOverModule]=useState(null);
-  useEffect(()=>{const tooltip=document.createElement("div");tooltip.className="interface-hover-tooltip";tooltip.setAttribute("role","tooltip");document.body.append(tooltip);let active=null;const targetFor=element=>element instanceof Element?element.closest("th,button"):null;const position=event=>{tooltip.style.left=`${Math.min(window.innerWidth-24,event.clientX+14)}px`;tooltip.style.top=`${Math.min(window.innerHeight-24,event.clientY+16)}px`};const show=event=>{const target=targetFor(event.target);if(!target)return;active=target;tooltip.textContent=interfaceHoverLabel(target);position(event);tooltip.dataset.visible="true"};const move=event=>{if(active)position(event)};const hide=event=>{const next=targetFor(event.relatedTarget);if(next===active)return;active=null;tooltip.dataset.visible="false"};document.addEventListener("pointerover",show);document.addEventListener("pointermove",move);document.addEventListener("pointerout",hide);return()=>{document.removeEventListener("pointerover",show);document.removeEventListener("pointermove",move);document.removeEventListener("pointerout",hide);tooltip.remove()}},[]);
   const state=dashboard.state, history=dashboard.history??[], alerts=dashboard.alerts??[], engine=dashboard.engine??{}, performance=dashboard.performance??{};
   const notify=text=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
   const changeDirectionGate=async mode=>{if(directionGateBusy||mode===directionGate)return;setDirectionGateBusy(true);directionGateVersionRef.current+=1;try{const result=await setDynamicsDirectionGate(mode);directionGateVersionRef.current+=1;setDirectionGate(result.mode);notify(result.mode==="BOTH"?"Dynamics direction gate reset: long and short enabled":result.mode==="LONG_ONLY"?"Dynamics gate: long calls only":"Dynamics gate: short calls only")}catch(error){notify(error.message)}finally{setDirectionGateBusy(false)}};
@@ -2577,10 +2530,10 @@ export default function Home() {
     <div className="brand"><div className="brandmark"><span/><span/><span/></div><div><b>AXIOM</b><small>PRESSURE INTELLIGENCE</small></div></div>
     <label className="section-jump"><span>Section</span><select value={activeSection} onChange={event=>jumpTo(event.target.value)}>{orderedOverviewSections.map(([label,id])=><option value={id} key={id}>{OVERVIEW_NUMBERS[id]} · {label}</option>)}</select></label>
     <div className="header-actions status-cluster" aria-live="polite">
-      <span className={`status-chip direction-gate-status ${(directionGate||"CHECKING").toLowerCase()}`} title="Saved daily Dynamics gate · automatic reset at 6 PM Eastern"><span>DYNAMICS</span><b>{!apiConnected?"UNVERIFIED":directionGate==="LONG_ONLY"?"LONG ONLY":directionGate==="SHORT_ONLY"?"SHORT ONLY":directionGate==="BOTH"?"BOTH ALLOWED":"CHECKING"}</b></span>
+      <span className={`status-chip direction-gate-status ${(directionGate||"CHECKING").toLowerCase()}`} title="Saved daily regime · automatic reset at 6 PM Eastern"><span>REGIME</span><b>{!apiConnected?"UNVERIFIED":directionGate==="LONG_ONLY"?"LONG ONLY":directionGate==="SHORT_ONLY"?"SHORT ONLY":directionGate==="BOTH"?"BOTH ALLOWED":"CHECKING"}</b></span>
       <span className="status-chip market-clock" title="Current Eastern Time">EST <b>{easternNow}</b></span>
       <span className="status-chip market-quote" title={`Latest persisted ${symbol} underlying price`}>{symbol} <b>{Number.isFinite(headerQuote)?headerQuote.toFixed(2):"—"}</b></span>
-      <span className="status-chip nq-impact" title={`Proportional QQQ-derived estimate using ${qqqPointsPer50Nq.toFixed(3)} QQQ points per 50 NQ points. Not a CME quote and not tradable.`}><span>QQQ {Number.isFinite(headerQuote)?headerQuote.toFixed(2):"—"}</span><b>NQ EST {Number.isFinite(estimatedNqPrice)?estimatedNqPrice.toFixed(2):"—"}</b></span>
+      <span className="status-chip nq-impact" title={`Proportional QQQ-derived estimate using ${qqqPointsPer50Nq.toFixed(3)} QQQ points per 50 NQ points. Not a CME quote and not tradable.`}><b>NQ EST {Number.isFinite(estimatedNqPrice)?estimatedNqPrice.toFixed(2):"—"}</b></span>
       <span className={`status-chip ${apiConnected?"is-good":"is-bad"}`}>API <b>{apiConnected?"ONLINE":"OFFLINE"}</b></span>
       <span className={`status-chip ${engine.running?"is-good":"is-idle"}`}>ENGINE <b>{engine.running?"ON":"IDLE"}</b></span>
       <span className={`status-chip ${dataFresh?"is-good":dataDelayed?"is-bad":"is-idle"}`}>DATA <b>{dataFresh?`${stateAge}s`:dataDelayed?"STALE":"IDLE"}</b></span>
