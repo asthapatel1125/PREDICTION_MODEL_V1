@@ -1313,3 +1313,42 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .range-atlas-nearest{max-height:210px;overflow:auto}.range-atlas-nearest table{width:100%;border-collapse:collapse;font:12px var(--font-mono)}.range-atlas-nearest th{position:sticky;top:0;background:#071018;color:#67dfff;text-align:left;padding:10px 14px;border-bottom:1px solid #23536a}.range-atlas-nearest td{padding:9px 14px;border-bottom:1px solid #102b38;color:#b8cbd6}.range-atlas-nearest tr.near td{color:#ff6682;background:rgba(255,54,95,.09)}
 .nasdaq-range-atlas>footer{padding:10px 18px;color:#6f8999;font:10px/1.5 var(--font-mono)}.range-atlas-error{display:flex;flex-direction:column;gap:8px;margin:18px;padding:18px;border:1px solid #a22d46;background:rgba(120,18,42,.16);color:#ff7890}.range-atlas-error span{color:#ffd2da;font:12px/1.5 var(--font-mono)}.range-atlas-error small{color:#a98a91}
 @media(max-width:900px){.range-atlas-stats{grid-template-columns:repeat(2,minmax(140px,1fr))}.range-atlas-toolbar,.range-atlas-filters{flex-wrap:wrap}.range-atlas-toolbar span,.range-atlas-filters small{width:100%;margin:4px 0 0}.range-atlas-market-strip{margin-left:10px;margin-right:10px}.range-atlas-method{grid-template-columns:1fr}.range-atlas-method span{grid-column:auto}.range-atlas-chart-shell{grid-template-columns:50px minmax(0,1fr)}}
+
+/* Overview and Wall Intelligence cleanup requested from the annotated UI. */
+.overview-command>div:first-child>p,
+.dynamics-direction-gate small,
+.dynamics-direction-gate nav button:nth-child(3),
+#wall-intelligence.overview-disclosure>summary small:not(.section-category),
+.refined-wall>.panel-head>b,
+.eod-snapshot-archive>header>small,
+.daily-levels-panel>header h3,
+.daily-levels-panel>header>small,
+.nasdaq-range-atlas>header h3,
+.nasdaq-range-atlas>header>b,
+.range-atlas-stats>span:nth-child(2),
+.range-atlas-filters>small,
+.range-atlas-toolbar>span,
+.nasdaq-range-atlas>footer,
+.wall-strength-board>header h3,
+.wall-strength-board>header>b,
+.wall-strength-board td.wall-variable small,
+.wall-strength-board>footer,
+.dealer-flow-graph>header>small{display:none!important}
+
+/* Align the green-marked control groups and legends on stable grids. */
+.overview-command{display:grid!important;grid-template-columns:minmax(300px,1fr) minmax(430px,.72fr);align-items:center;gap:32px}
+.overview-command .controls{display:grid;grid-template-columns:minmax(220px,1fr) minmax(190px,.7fr);align-items:end;gap:14px;width:100%;margin:0}
+.overview-command .controls label{min-width:0}.overview-command .controls select{height:46px;border-radius:10px}
+.daily-levels-legend{display:grid;grid-template-columns:repeat(4,max-content);align-items:center;justify-content:start;gap:10px 26px;padding:12px 18px}
+.range-atlas-stats{grid-template-columns:repeat(3,minmax(190px,1fr));align-items:stretch}.range-atlas-stats>span,.range-atlas-stats>label{min-height:48px;border-radius:10px}
+.wall-strength-board>header{min-height:38px}.wall-strength-board td.wall-variable{vertical-align:middle}.wall-strength-board td.wall-variable b{margin:0}
+.dealer-custom-card>header{align-items:center}.dealer-custom-card .custom-time-row{justify-content:flex-start;padding:10px 12px}.dealer-custom-card .greek-chart-controls{justify-content:flex-start!important}.dealer-card-actions{align-items:center}
+
+/* Softer themed controls and cards replace the sharp yellow-marked rectangles. */
+.dynamics-direction-gate{border-radius:14px;background:linear-gradient(120deg,#0d1b27,#09121b);box-shadow:0 12px 30px #0005}.dynamics-direction-gate button{border-radius:10px;min-height:42px;background:linear-gradient(180deg,#102234,#0a1622)}
+.range-atlas-filters,.range-atlas-toolbar{gap:9px}.range-atlas-filters summary,.range-atlas-filters select,.range-atlas-filters>button,.range-atlas-toolbar button{border-radius:9px;min-height:38px;background:linear-gradient(180deg,#102637,#091722);box-shadow:inset 0 1px rgba(255,255,255,.04);transition:border-color .16s,background .16s,transform .16s}.range-atlas-filters>button{background:linear-gradient(135deg,#64e2ff,#3eb8df);color:#031018;box-shadow:0 5px 16px rgba(79,207,245,.22)}.range-atlas-filters>button:hover,.range-atlas-toolbar button:hover{transform:translateY(-1px)}
+.range-atlas-market-strip{border-radius:11px;background:linear-gradient(105deg,#0b1d29,#071018);box-shadow:0 8px 22px #0007,inset 0 1px rgba(105,220,255,.08)}
+.wall-spectrum{gap:12px!important}.wall-spectrum article{padding:14px 16px;border-radius:14px!important;background:linear-gradient(145deg,#0d1a25,#071018)!important;box-shadow:0 10px 24px #0005,inset 0 1px rgba(255,255,255,.035)}.wall-spectrum article.strong{border-color:#f3a33b;box-shadow:0 10px 25px #0005,0 0 18px rgba(243,163,59,.08)}.wall-spectrum article.normal{border-style:solid;border-color:#63798b}.wall-spectrum article i{height:6px;border-radius:999px}
+.category-workspace>header{border-radius:14px;background:linear-gradient(120deg,#0b1d2a,#09131c)}.category-workspace .category-add{gap:12px;padding:12px 14px;border-radius:12px!important;background:linear-gradient(135deg,rgba(10,73,61,.35),rgba(7,28,30,.72))!important;box-shadow:inset 0 1px rgba(125,255,214,.08)}.category-add select,.category-add button,.category-add .category-hint{min-height:42px;border-radius:9px!important}.category-add button{padding-inline:16px!important;background:linear-gradient(135deg,#125c49,#0a3c31)!important;box-shadow:0 6px 18px rgba(24,167,123,.16)}
+.dealer-custom-card{border-radius:14px!important;background:linear-gradient(150deg,#0a1823,#071019)!important;box-shadow:0 12px 28px #0005}.dealer-custom-card>header{background:linear-gradient(100deg,#102333,#09151f);padding:14px 16px}.dealer-card-actions button{width:36px;height:36px;padding:0!important;border-radius:50%!important;background:#0d2637!important}.dealer-variable-dropdown>summary{border-radius:9px}.custom-time-row{border-radius:11px;background:linear-gradient(100deg,#091721,#071019)}
+@media(max-width:900px){.overview-command{grid-template-columns:1fr}.overview-command .controls{grid-template-columns:1fr 1fr}.range-atlas-stats{grid-template-columns:1fr 1fr}.daily-levels-legend{grid-template-columns:repeat(2,max-content)}}

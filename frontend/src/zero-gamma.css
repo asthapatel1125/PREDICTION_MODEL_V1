@@ -304,6 +304,22 @@
   .call-put-wall-map .hedge-live-scale>span{left:3px;right:3px}
 }
 
+/* Wall-map presentation cleanup: remove annotated helper copy, align the
+   fixed rails, and soften the controls/state cards without changing data. */
+.exposure-map-head-actions>small,
+.delta-exposure-map>header h3,
+.delta-exposure-map>header>small,
+.delta-exposure-map .exposure-level-map>header h3,
+.call-put-wall-map>header>small{display:none!important}
+.exposure-level-map>header{align-items:center;min-height:48px}.exposure-map-head-actions{margin-left:auto}
+.exposure-level-frame{grid-template-columns:56px 96px minmax(0,1fr) 132px!important;align-items:stretch}
+.exposure-time-rail nav{inset:8px 6px 10px}.exposure-time-rail button{border-radius:9px;background:linear-gradient(180deg,#102638,#091927)}
+.exposure-axes{overflow:hidden}.exposure-axes .exposure-axis-name{left:12px;top:14px;line-height:1.25}.exposure-axes .exposure-axis-tick{right:10px;font-variant-numeric:tabular-nums}
+.exposure-map-controls{top:8px;left:10px;height:30px;padding:4px 5px;gap:5px;border-radius:10px;background:rgba(7,24,36,.96);box-shadow:0 7px 18px #0008}.exposure-map-controls button{min-width:32px;height:26px;border-radius:7px;background:linear-gradient(180deg,#12354a,#0a2232)}
+.zero-gamma-recent-states{left:132px!important;top:8px!important;height:42px;gap:8px}.zero-gamma-state-box{min-width:138px;height:42px;padding:5px 10px;border-radius:11px;border-width:1px;background:linear-gradient(145deg,rgba(16,38,53,.97),rgba(7,18,28,.98));box-shadow:0 8px 20px #0008,inset 0 1px rgba(255,255,255,.05)}.zero-gamma-state-box strong{font-size:12px}.zero-gamma-state-box.strong{background:linear-gradient(145deg,rgba(123,62,25,.92),rgba(68,35,20,.96))}.zero-gamma-state-box.normal{background:linear-gradient(145deg,rgba(61,73,84,.94),rgba(34,43,52,.97))}.zero-gamma-state-box.weak{background:linear-gradient(145deg,rgba(30,82,121,.92),rgba(18,47,75,.97))}
+.exposure-live-rail{padding:10px 6px}.exposure-live-rail .exposure-end-label{right:7px;width:116px;border-radius:8px;box-shadow:0 5px 14px #0006}.exposure-level-map{border-radius:14px;box-shadow:0 12px 30px #0004}.delta-exposure-map,.call-put-wall-map{border-radius:14px!important}
+@media(max-width:850px){.exposure-level-frame{grid-template-columns:46px 72px minmax(0,1fr) 112px!important}.zero-gamma-recent-states{left:104px!important}.zero-gamma-state-box{min-width:112px}.exposure-live-rail .exposure-end-label{width:98px}}
+
 .mpi-dhl-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}.mpi-dhl-header-actions small{margin-right:4px}.mpi-dhl-header-actions button{padding:5px 8px;border:1px solid #39718e;border-radius:4px;background:#0b2638;color:#a9e6fa;font:700 9px var(--font-mono,monospace);cursor:pointer}.mpi-dhl-y-tools{display:none!important}.mpi-dhl-expanded{position:fixed!important;z-index:2147483646!important;inset:0!important;margin:0!important;padding:12px!important;overflow:auto!important;background:#071019!important}.mpi-dhl-expanded .mpi-dhl-frame{min-height:calc(100dvh - 84px)}.mpi-confluence-marker line,.wall-confluence-marker line{stroke-width:1.35;stroke-dasharray:2 5}.mpi-confluence-marker text,.wall-confluence-marker text{font:700 8px var(--font-mono,monospace);letter-spacing:.06em;paint-order:stroke;stroke:#061019;stroke-width:3px}.mpi-confluence-marker.long line,.wall-confluence-marker.long line{stroke:#00d084}.mpi-confluence-marker.long text,.wall-confluence-marker.long text{fill:#00d084}.mpi-confluence-marker.short line,.wall-confluence-marker.short line{stroke:#ff4f69}.mpi-confluence-marker.short text,.wall-confluence-marker.short text{fill:#ff4f69}.hedge-map-expanded{position:fixed!important;z-index:2147483646!important;inset:0!important;margin:0!important;padding:12px!important;overflow:auto!important;background:#071019!important}.hedge-map-expanded .hedge-map-frame{min-height:calc(100dvh - 24px)}
 
 /* Daily Hedge Map control placement: keep only zoom/reset grouped over the
