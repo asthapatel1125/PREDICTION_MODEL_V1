@@ -363,6 +363,40 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .topbar .brand b{font-size:13px!important}
 .topbar .brand small{font:700 10px/1.12 var(--font-sans,Arial,sans-serif)!important;letter-spacing:.16em}
 
+/* Give the Gamma/Delta data viewport more room while keeping its chrome
+   compact, aligned, and readable. */
+.exposure-level-map:not(.expanded)>header{min-height:40px;padding:8px 14px;align-items:center}
+.exposure-level-map:not(.expanded)>header span{font-size:9px}
+.exposure-level-map:not(.expanded)>header h3{margin-top:3px;font-size:14px}
+.exposure-level-map:not(.expanded) .exposure-map-head-actions>button{padding:5px 8px;font-size:8px}
+.exposure-level-map:not(.expanded) .exposure-level-frame{grid-template-columns:44px 76px minmax(0,1fr) 112px!important;height:380px!important;min-height:380px!important;max-height:380px!important}
+.exposure-level-map:not(.expanded) .exposure-time-rail,
+.exposure-level-map:not(.expanded) .exposure-axes,
+.exposure-level-map:not(.expanded) .exposure-map-scroll,
+.exposure-level-map:not(.expanded) .exposure-map-canvas,
+.exposure-level-map:not(.expanded) .exposure-live-rail{height:380px!important;max-height:380px!important}
+.exposure-level-map:not(.expanded) .exposure-time-rail nav{inset:6px 4px 8px;justify-content:space-between}
+.exposure-level-map:not(.expanded) .exposure-time-rail button{height:25px;padding:1px;font-size:9px;border-radius:7px}
+.exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-name{left:9px;top:12px;font-size:9px!important}
+.exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-tick{right:7px;font-size:12px!important;font-variant-numeric:tabular-nums}
+.exposure-level-map:not(.expanded) .exposure-map-canvas svg text:not(.exposure-panel-caption):not(.exposure-axis-heading){font-size:12px!important;font-weight:600}
+.exposure-level-map:not(.expanded) .exposure-panel-caption{font-size:9px!important}
+.exposure-level-map:not(.expanded) .exposure-map-controls{top:7px;left:8px;height:27px;padding:3px 4px;gap:4px}
+.exposure-level-map:not(.expanded) .exposure-map-controls button{min-width:29px;height:23px;font-size:9px}
+.exposure-level-map:not(.expanded) .zero-gamma-recent-states{left:116px!important;top:7px!important;height:37px;gap:6px}
+.exposure-level-map:not(.expanded) .zero-gamma-state-box{min-width:104px;height:37px;padding:3px 6px;border-radius:8px}
+.exposure-level-map:not(.expanded) .zero-gamma-state-box b{font-size:7px}
+.exposure-level-map:not(.expanded) .zero-gamma-state-box strong{font-size:11px}
+.exposure-level-map:not(.expanded) .zero-gamma-state-box small{font-size:6px}
+.exposure-level-map:not(.expanded) .exposure-live-rail{padding:7px 4px}
+.exposure-level-map:not(.expanded) .exposure-live-rail .exposure-end-label{right:4px;width:102px;padding:5px 4px;font-size:9px;border-radius:7px}
+@media(max-width:850px){
+  .exposure-level-map:not(.expanded) .exposure-level-frame{grid-template-columns:42px 68px minmax(0,1fr) 104px!important}
+  .exposure-level-map:not(.expanded) .zero-gamma-recent-states{left:106px!important}
+  .exposure-level-map:not(.expanded) .zero-gamma-state-box{min-width:96px}
+  .exposure-level-map:not(.expanded) .exposure-live-rail .exposure-end-label{width:94px}
+}
+
 /* API, Engine and Data are secondary health indicators. */
 .topbar .status-cluster>.status-chip:nth-last-child(-n+3){font-size:8px!important;padding-left:8px;padding-right:8px}
 .topbar .status-cluster>.status-chip:nth-last-child(-n+3) b{font-size:9px!important}
