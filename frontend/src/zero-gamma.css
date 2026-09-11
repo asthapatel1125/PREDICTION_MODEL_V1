@@ -439,3 +439,4 @@ svg text[text-anchor="end"]{font-size:13px!important}
 /* Give the primary market readouts a little more visual weight. */
 .topbar .market-clock,.topbar .market-quote,.topbar .nq-impact{min-height:35px;font-size:11px!important;padding-left:11px;padding-right:11px}
 .topbar .market-clock b,.topbar .market-quote b,.topbar .nq-impact b{font-size:13px!important}
+.exposure-time-rail nav{align-content:start!important;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#315b75 #07111b}.exposure-time-rail button{flex:0 0 auto;min-height:24px}

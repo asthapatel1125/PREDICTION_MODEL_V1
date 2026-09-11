@@ -149,7 +149,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,"count":len(rows),"rows":rows}
 
     @api.get("/dynamics-history/{symbol}")
-    async def dynamics_history(symbol:str,limit:int=Query(720,ge=1,le=5_000)):
+    async def dynamics_history(symbol:str,limit:int=Query(150_000,ge=1,le=150_000),display_bucket_seconds:int=Query(60,ge=5,le=3600)):
         """Return a bounded chart window ordered from the first retained tick.
 
         The full archive remains in Supabase.  Returning an unbounded archive
@@ -157,7 +157,13 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         market-state payloads and exhaust small production instances.
         """
         rows=await container.repository.stream_archive(symbol,limit)
-        return {"symbol":symbol.upper(),"source":"PERSISTED_LIVE_STREAM_ARCHIVE","bounded":True,"count":len(rows),"rows":rows}
+        compact=[];last_bucket=None
+        for row in rows:
+            timestamp=row.timestamp
+            bucket=int(timestamp.timestamp())//display_bucket_seconds
+            if bucket==last_bucket:compact[-1]=row
+            else:compact.append(row);last_bucket=bucket
+        return {"symbol":symbol.upper(),"source":"PERSISTED_LIVE_STREAM_ARCHIVE","bounded":True,"raw_count":len(rows),"count":len(compact),"display_bucket_seconds":display_bucket_seconds,"rows":compact}
 
     @api.get("/delta-dynamics/history/{symbol}")
     async def delta_dynamics_history(symbol:str,start_date:date=Query(date(2026,8,4)),
@@ -294,7 +300,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "freshness_note":"January 2026 is the latest supplied NAS100 month. No later month is inferred."}
 
     @api.get("/walls/day-levels")
-    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None):
+    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None,days:int=Query(1,ge=1,le=10)):
         """Return the compact Wall Intelligence stream for one 07:00-18:00 ET session.
 
         This purpose-built endpoint avoids loading nested MarketState payloads
@@ -304,18 +310,20 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         """
         market_tz=ZoneInfo(cfg.market_timezone)
         day=session_date or datetime.now(market_tz).date()
-        session_start=datetime.combine(day,time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
+        session_start=datetime.combine(day-timedelta(days=max(0,days*2)),time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
         end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
         requested_bucket=5 if int(display_bucket_seconds)<=5 else 60
         requested_since=_wall_time(since)
         start=max(session_start,requested_since) if requested_since else session_start
-        rows=await container.repository.wall_intelligence_points(symbol,start,end,8_000)
+        rows=await container.repository.wall_intelligence_points(symbol,start,end,100_000)
         def observed_at(row:dict[str,Any])->datetime:
             return datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)
 
         # The database retains each five-second observation.  The default
         # response remains one-minute compact data; callers that need an exact
         # short-range view can explicitly request the stored five-second bars.
+        available_days=sorted({observed_at(row).date() for row in rows})[-days:]
+        rows=[row for row in rows if observed_at(row).date() in available_days]
         minute_buckets:dict[str,dict[str,Any]]={}
         for row in rows:
             observed=observed_at(row)

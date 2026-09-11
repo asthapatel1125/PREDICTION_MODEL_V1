@@ -60,7 +60,7 @@ export const fetchDynamicsSessionHistory = (symbol, sessionDate, signal) =>
   request(`/api/v1/dynamics-session/${encodeURIComponent(symbol)}?session_date=${encodeURIComponent(sessionDate)}`, { signal });
 
 export const fetchDynamicsHistory = (symbol, signal) =>
-  request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}`, { signal });
+  request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}?limit=150000&display_bucket_seconds=60`, { signal });
 export const fetchWallSpectrum = (symbol, signal, limit = null) =>
   request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}${limit ? `&limit=${encodeURIComponent(limit)}` : ""}`, { signal });
 export const fetchWallBreaks = (symbol, signal) =>
@@ -69,8 +69,8 @@ export const fetchWallDealerFlow = (symbol, signal) =>
   request(`/api/v1/walls/dealerflow?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallSummaryHistory = (symbol, signal) =>
   request(`/api/v1/walls/summary-history?symbol=${encodeURIComponent(symbol)}`, { signal });
-export const fetchWallDayLevels = (symbol, sessionDate, signal, displayBucketSeconds = 60, since = null) =>
-  request(`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${sessionDate ? `&session_date=${encodeURIComponent(sessionDate)}` : ""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}${since ? `&since=${encodeURIComponent(since)}` : ""}`, { signal });
+export const fetchWallDayLevels = (symbol, sessionDate, signal, displayBucketSeconds = 60, since = null, days = 1) =>
+  request(`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${sessionDate ? `&session_date=${encodeURIComponent(sessionDate)}` : ""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}&days=${encodeURIComponent(days)}${since ? `&since=${encodeURIComponent(since)}` : ""}`, { signal });
 export const fetchNasdaqRangeAtlas = (symbol, signal) =>
   request(`/api/v1/walls/nasdaq-range-atlas?symbol=${encodeURIComponent(symbol)}`, { signal });
 export async function fetchEodSnapshot(symbol,module,mapName,sessionDate,signal){

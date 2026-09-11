@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const ET="America/New_York";
-const WINDOWS={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"6H":21600};
+const WINDOWS={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"6H":21600,"2D":172800,"3D":259200,"5D":432000,"10D":864000,"ALL":null};
 const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const fmt=(timestamp,seconds)=>new Date(timestamp).toLocaleTimeString("en-US",{timeZone:ET,hour12:true,hour:"2-digit",minute:"2-digit",...(seconds<=900?{second:"2-digit"}:{})})+" EST";
@@ -10,7 +10,7 @@ export default function CvdPriceChart({rows=[]}){
   const [period,setPeriod]=useState("1H"),[zoom,setZoom]=useState(1),[yZoom,setYZoom]=useState([1,1]),[hover,setHover]=useState(null),[expanded,setExpanded]=useState(false);
   const viewport=useRef(null),frame=useRef(null),follow=useRef(true);
   const source=useMemo(()=>rows.filter(row=>row?.timestamp&&Number.isFinite(Number(row.spot))).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).map(row=>({...row,cvdPct:clamp(num(row.cvd_proxy_pct),-100,100)})),[rows]);
-  const end=Date.parse(source.at(-1)?.timestamp||"")||0,seconds=WINDOWS[period],points=source.filter(row=>Date.parse(row.timestamp)>=end-seconds*1000),latest=points.at(-1),n=Math.max(points.length-1,1);
+  const end=Date.parse(source.at(-1)?.timestamp||"")||0,seconds=WINDOWS[period],points=seconds?source.filter(row=>Date.parse(row.timestamp)>=end-seconds*1000):source,latest=points.at(-1),n=Math.max(points.length-1,1);
   const prices=points.map(row=>num(row.spot)),minimum=prices.length?Math.min(...prices):0,maximum=prices.length?Math.max(...prices):1,pad=Math.max((maximum-minimum)*.15,.04),qBaseLow=minimum-pad,qBaseHigh=maximum+pad,qMid=(qBaseHigh+qBaseLow)/2,qHalf=(qBaseHigh-qBaseLow)/2/Math.max(yZoom[0],.01),qLow=qMid-qHalf,qHigh=qMid+qHalf,cHalf=100/Math.max(yZoom[1],.01),cLow=-cHalf,cHigh=cHalf;
   const W=Math.round(1380*zoom),H=470,left=20,right=20,inner=W-left-right,panelH=170,p1=20,p2=225,bottom=50,x=index=>left+index*inner/n,yQ=value=>p1+(qHigh-clamp(num(value),qLow,qHigh))/Math.max(qHigh-qLow,.01)*panelH,yC=value=>p2+(cHigh-clamp(num(value),cLow,cHigh))/Math.max(cHigh-cLow,.01)*panelH;
   const ticks=points.length?Array.from({length:Math.min(10,points.length)},(_,index)=>Math.round(index*(points.length-1)/Math.max(Math.min(10,points.length)-1,1))):[];

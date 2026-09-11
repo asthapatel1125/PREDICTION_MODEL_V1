@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const ET="America/New_York";
-const WINDOWS={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600};
+const WINDOWS={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"2D":172800,"3D":259200,"5D":432000,"10D":864000,"ALL":null};
 const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const sign=value=>value>0?1:value<0?-1:0;
@@ -19,7 +19,7 @@ export default function SignedPressureChart({rows=[],kind="tpi"}){
     const direction=kind==="tpi"?clamp(tpiDirection,-1,1):kind==="mpi"?clamp(mpiDirection,-1,1):sign(num(row.cvd_proxy_vector));
     return {...row,magnitude,direction,signed:kind==="cvd"?cvdValue:clamp(magnitude*direction,-100,100)};
   }),[source,kind]);
-  const end=Date.parse(enriched.at(-1)?.timestamp||"")||0,seconds=WINDOWS[period],points=enriched.filter(row=>Date.parse(row.timestamp)>=end-seconds*1000),latest=points.at(-1),n=Math.max(points.length-1,1);
+  const end=Date.parse(enriched.at(-1)?.timestamp||"")||0,seconds=WINDOWS[period],points=seconds?enriched.filter(row=>Date.parse(row.timestamp)>=end-seconds*1000):enriched,latest=points.at(-1),n=Math.max(points.length-1,1);
   const W=Math.round(1350*zoom),H=360,left=24,right=22,top=24,bottom=54,inner=W-left-right,x=index=>left+index*inner/n,y=value=>top+(100-clamp(num(value),-100,100))/200*(H-top-bottom);
   const ticks=points.length?Array.from({length:Math.min(10,points.length)},(_,index)=>Math.round(index*(points.length-1)/Math.max(Math.min(10,points.length)-1,1))):[];
   useEffect(()=>{if(!viewport.current||!follow.current)return;requestAnimationFrame(()=>{viewport.current.scrollLeft=viewport.current.scrollWidth})},[points.length,zoom,period]);
