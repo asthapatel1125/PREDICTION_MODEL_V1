@@ -380,6 +380,20 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-name{left:9px;top:12px;font-size:9px!important}
 .exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-tick{right:7px;font-size:12px!important;font-variant-numeric:tabular-nums}
 .exposure-level-map:not(.expanded) .exposure-map-canvas svg text:not(.exposure-panel-caption):not(.exposure-axis-heading){font-size:12px!important;font-weight:600}
+
+/* Exact-point readout lives outside the plotting viewport so it never hides data. */
+.exposure-info-strip{box-sizing:border-box;display:flex;align-items:center;gap:12px;width:100%;min-height:42px;padding:8px 14px;border-bottom:1px solid #28546b;background:linear-gradient(90deg,#081722,#050d14);color:#91aebe;font:700 11px var(--font-mono,monospace);overflow-x:auto;overflow-y:hidden;white-space:nowrap}
+.exposure-info-strip b{padding-right:12px;border-right:1px solid #284d61;color:#eef8ff}
+.exposure-info-strip span{display:inline-flex;align-items:center;gap:7px}
+.exposure-info-strip strong{color:inherit;font-size:12px}
+.exposure-map-canvas{cursor:grab;user-select:none;touch-action:none;overscroll-behavior:contain}
+.exposure-map-canvas.is-panning{cursor:grabbing}
+.exposure-map-controls button{min-width:30px}
+.exposure-map-controls button[title="Autoscale values"]{min-width:43px;font-size:8px}
+.exposure-hover-point{stroke:#061018;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}
+.exposure-hover-point.qqq{fill:#eef8ff}
+.exposure-level-map:not(.expanded) .exposure-level-frame{width:100%;min-width:0}
+.exposure-level-map:not(.expanded) .exposure-map-scroll{width:100%;min-width:0}
 .exposure-level-map:not(.expanded) .exposure-panel-caption{font-size:9px!important}
 .exposure-level-map:not(.expanded) .exposure-map-controls{top:7px;left:8px;height:27px;padding:3px 4px;gap:4px}
 .exposure-level-map:not(.expanded) .exposure-map-controls button{min-width:29px;height:23px;font-size:9px}
