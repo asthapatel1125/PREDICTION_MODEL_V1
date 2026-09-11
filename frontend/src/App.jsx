@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import MagnitudeSignedChart from "./MagnitudeSignedChart";
 import CvdPriceChart from "./CvdPriceChart";
+import InteractiveTimeSeriesChart from "./components/InteractiveTimeSeriesChart";
+import {exposureRowsToTraces} from "./components/interactiveChartData";
 import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
   fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchEodSnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory, fetchWallDayLevels,
@@ -1947,7 +1949,15 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
 }
 
 function ZeroGammaExposureChart(props){
-  return <ModernExposureLevelChart {...props}/>;
+  return <StandardExposureLevelChart {...props}/>;
+}
+
+function StandardExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",embedded=false}){
+  const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600},[period,setPeriod]=useState("1H"),[expanded,setExpanded]=useState(false);
+  const points=useMemo(()=>{const seconds=periods[period],valid=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))),latest=Date.parse(valid.at(-1)?.timestamp||"");return !Number.isFinite(latest)?[]:valid.filter(row=>Date.parse(row.timestamp)>=latest-seconds*1000)},[rows,period]);
+  const traces=useMemo(()=>exposureRowsToTraces(points,wallKey),[points,wallKey]),last=points.at(-1),spot=number(last?.spot),level=number(last?.walls?.[wallKey]?.strike),axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ",levelColor=Number.isFinite(spot)&&Number.isFinite(level)&&level<=spot?"#00d084":"#ff4f69";
+  const content=<section className={`exposure-level-map plotly-standard ${embedded?"embedded":""} ${expanded?"expanded":""}`}><header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>RAW USD · EXACT STORED TIMESTAMPS</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header><div className="standard-exposure-frame"><aside className="exposure-time-rail"><nav aria-label={`${title} time interval`}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>setPeriod(name)}>{name}</button>)}</nav></aside><InteractiveTimeSeriesChart title={heading} traces={traces} xAxisTitle="Eastern Time" yAxisTitle="Price (USD)" unit="USD" selectedDatasetId={`${wallKey}-${period}`} height={expanded?Math.max(560,window.innerHeight-78):422} showRangeSlider marketHoursOnly/></div><div className="standard-exposure-live"><span style={{"--accent":levelColor}}><i/>{axisName}<strong>{Number.isFinite(level)?level.toFixed(2):"—"}</strong></span><span className="qqq"><i/>QQQ<strong>{Number.isFinite(spot)?spot.toFixed(2):"—"}</strong></span></div></section>;
+  return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
 function ExposureSeparationZones({points=[],wallKey="ZERO_GAMMA"}){
