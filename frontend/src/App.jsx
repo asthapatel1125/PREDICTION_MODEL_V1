@@ -1835,6 +1835,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const canvasRef=useRef(null);
   const followingLiveRef=useRef(true);
   const dragRef=useRef(null);
+  const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,SESSION:null};
   const allPoints=useMemo(()=>rows.map(row=>{
     const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike),tier=String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase();
@@ -1874,9 +1875,11 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   // at every timestamp. A lower Gamma value is therefore always drawn below
   // QQQ, while rank compression prevents a large empty USD gap from making
   // the smaller QQQ moves appear flat.
-  const orderedValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,point.level]).filter(Number.isFinite))].sort((a,b)=>a-b),scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
+  const incomingValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,point.level]).filter(Number.isFinite))].sort((a,b)=>a-b);
+  if(scaleValuesRef.current.period!==period||!scaleValuesRef.current.values.length||scaleValuesRef.current.values.length<24)scaleValuesRef.current={period,values:incomingValues};
+  const orderedValues=scaleValuesRef.current.values,scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
   const valueRank=value=>{if(orderedValues.length<2)return .5;let lowIndex=0,highIndex=orderedValues.length-1;while(lowIndex<=highIndex){const middle=(lowIndex+highIndex)>>1;if(orderedValues[middle]<value)lowIndex=middle+1;else highIndex=middle-1}const upper=Math.min(orderedValues.length-1,lowIndex),lower=Math.max(0,upper-1),lowerValue=orderedValues[lower],upperValue=orderedValues[upper],fraction=upperValue===lowerValue?0:(value-lowerValue)/(upperValue-lowerValue);return (lower+(upper-lower)*fraction)/(orderedValues.length-1)};
-  const compressedRatio=value=>.90*valueRank(value)+.10*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom+yPan;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
+  const compressedRatio=value=>.90*valueRank(value)+.10*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
   const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
   const displayTicks=[0,.25,.5,.75,1].map((ratio,index)=>{const value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
   const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
@@ -1887,8 +1890,8 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const zoomXAt=(event,factor)=>{const viewport=scrollRef.current,canvas=canvasRef.current;if(!viewport||!canvas){setXZoom(current=>clamp(current*factor,1,180));return}const viewportRect=viewport.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect(),oldWidth=Math.max(canvasRect.width,1),pointerInViewport=clamp(event.clientX-viewportRect.left,0,viewport.clientWidth),contentX=viewport.scrollLeft+pointerInViewport,anchorRatio=clamp(contentX/oldWidth,0,1);followingLiveRef.current=false;setXZoom(current=>{const next=clamp(current*factor,1,180),nextWidth=1100*next;requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=clamp(anchorRatio*nextWidth-pointerInViewport,0,Math.max(0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth))});return next})};
   const wheel=event=>{event.preventDefault();event.stopPropagation();zoomXAt(event,event.deltaY<0?1.12:.89)};
   const wheelY=event=>{event.preventDefault();event.stopPropagation();const factor=event.deltaY<0?1.12:.89;setYZoom(current=>clamp(current*factor,.35,8))};
-  const beginPan=event=>{if(event.button!==0||event.target.closest("button"))return;event.preventDefault();followingLiveRef.current=false;dragRef.current={x:event.clientX,y:event.clientY,scrollLeft:scrollRef.current?.scrollLeft??0,yPan,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId);event.currentTarget.classList.add("is-panning")};
-   const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1),index=Math.round(ratio*Math.max(points.length-1,0));setHover(index);setHoverPoint({x:event.clientX-rect.left,y:event.clientY-rect.top});const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth);setYPan(clamp(drag.yPan+(event.clientY-drag.y)/Math.max(80,rect.height),-4,4))}};
+  const beginPan=event=>{if(event.button!==0||event.target.closest("button"))return;event.preventDefault();followingLiveRef.current=false;dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId);event.currentTarget.classList.add("is-panning")};
+   const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1),index=Math.round(ratio*Math.max(points.length-1,0));setHover(index);setHoverPoint({x:event.clientX-rect.left,y:event.clientY-rect.top});const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
   const stopPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null;event.currentTarget?.classList.remove("is-panning")};
   const last=points.at(-1),gammaColor=point=>point.positive?"#00d084":"#ff4f69",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ",hoverTime=value=>new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).format(new Date(value));
   // Render each dashed portion using the relationship at that portion. This
@@ -1931,8 +1934,9 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
         </div>
       </div>
       <aside className="exposure-live-rail" onWheel={wheelY} title="Mouse wheel: vertical price zoom">
-        <span className="exposure-end-label gamma" style={{top:clamp(gammaY(last.level)+42,48,356),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
-        <span className="exposure-end-label qqq" style={{top:clamp(qqqY(last.spot)+42,48,356)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
+        <div className="exposure-live-updated"><small>LAST UPDATED</small><strong>{hoverTime(last.timestamp)}</strong></div>
+        <span className="exposure-end-label gamma" style={{top:clamp(gammaY(last.level)+42,72,356),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
+        <span className="exposure-end-label qqq" style={{top:clamp(qqqY(last.spot)+42,72,356)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
   </section>;
