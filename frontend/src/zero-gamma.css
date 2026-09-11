@@ -394,6 +394,15 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-hover-point.qqq{fill:#eef8ff}
 .exposure-level-map:not(.expanded) .exposure-level-frame{width:100%;min-width:0}
 .exposure-level-map:not(.expanded) .exposure-map-scroll{width:100%;min-width:0}
+.exposure-map-toolbar{box-sizing:border-box;display:flex;align-items:center;gap:6px;width:100%;min-height:42px;padding:6px 14px;border-bottom:1px solid #28546b;background:#050d14}
+.exposure-map-toolbar button{min-width:45px;height:30px;padding:0 9px;border:1px solid #39718e;border-radius:7px;background:#0b2638;color:#83ddff;font:700 11px var(--font-mono,monospace);cursor:pointer}
+.exposure-map-toolbar button:hover{background:#13425b;color:#effbff}
+.exposure-map-toolbar button[title="Autoscale values"]{min-width:54px;font-size:9px}
+.exposure-map-scroll{display:flex;flex-direction:column;min-height:0}
+.exposure-map-scroll>.exposure-info-strip{position:sticky;z-index:12;left:0;flex:0 0 42px;width:100%;min-width:100%;height:42px}
+.exposure-level-map:not(.expanded) .exposure-map-canvas{flex:1 1 auto;height:338px!important;min-height:338px!important;max-height:338px!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas svg{height:338px!important;min-height:338px!important;max-height:338px!important;overflow:hidden}
+.exposure-map-canvas svg{overflow:hidden}
 .exposure-level-map:not(.expanded) .exposure-panel-caption{font-size:9px!important}
 .exposure-level-map:not(.expanded) .exposure-map-controls{top:7px;left:8px;height:27px;padding:3px 4px;gap:4px}
 .exposure-level-map:not(.expanded) .exposure-map-controls button{min-width:29px;height:23px;font-size:9px}

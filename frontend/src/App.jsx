@@ -1855,7 +1855,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
    // Restore the full-height coordinate geometry used by the former zone
    // plot. The zones are gone, but both price regions should still occupy the
    // plotting surface instead of being letterboxed in a short 320px SVG.
-   const width=1100*xZoom,height=320,left=76,right=16,plotTop=34,plotBottom=282,plotWidth=width-left-right;
+   const width=1100*xZoom,height=338,left=76,right=16,plotTop=18,plotBottom=300,plotWidth=width-left-right;
   const scaleFor=(values,kind)=>{
     const finite=values.filter(value=>Number.isFinite(value));
     if(!finite.length)return {low:0,high:1};
@@ -1907,38 +1907,39 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   });
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
     <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
-    <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{active.regime}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
+    <div className="exposure-map-toolbar" aria-label="Chart view controls">
+      <button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in horizontally">+</button>
+      <button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out horizontally">−</button>
+      <button type="button" onClick={()=>setYZoom(value=>clamp(value*1.12,.15,120))} title="Zoom in vertically">Y+</button>
+      <button type="button" onClick={()=>setYZoom(value=>clamp(value*.89,.15,120))} title="Zoom out vertically">Y−</button>
+      <button type="button" onClick={()=>{setYZoom(1);setYPan(0)}} title="Autoscale values">AUTO</button>
+      <button type="button" onClick={reset} title="Reset chart view">↺</button>
+    </div>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).filter(name=>name!=="SESSION").map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
         <b className="exposure-axis-name qqq">PRICE<br/>USD</b>
-        {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y}}>{item.value.toFixed(2)}</span>)}
+        {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y+42}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
+         <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{active.regime}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${xZoom*100}%`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
-          <div className="exposure-map-controls" aria-label="Chart zoom controls">
-            <button type="button" onClick={()=>setXZoom(value=>clamp(value*1.12,1,180))} title="Zoom in horizontally">+</button>
-            <button type="button" onClick={()=>setXZoom(value=>clamp(value*.89,1,180))} title="Zoom out horizontally">−</button>
-            <button type="button" onClick={()=>setYZoom(value=>clamp(value*1.12,.15,120))} title="Zoom in vertically">Y+</button>
-            <button type="button" onClick={()=>setYZoom(value=>clamp(value*.89,.15,120))} title="Zoom out vertically">Y−</button>
-            <button type="button" onClick={()=>{setYZoom(1);setYPan(0)}} title="Autoscale values">AUTO</button>
-            <button type="button" onClick={reset} title="Reset chart view">↺</button>
-          </div>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
+            <defs><clipPath id={`exposure-plot-${wallKey}`}><rect x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/></clipPath></defs>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime)}</text></g>)}
-            <polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
+            <g clipPath={`url(#exposure-plot-${wallKey})`}><polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
-            {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(active.level)} r="4" style={{fill:gammaColor(active)}}/></>}
+            {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(active.level)} r="4" style={{fill:gammaColor(active)}}/></>}</g>
           </svg>
         </div>
       </div>
       <aside className="exposure-live-rail">
-        <span className="exposure-end-label gamma" style={{top:gammaY(last.level),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
-        <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
+        <span className="exposure-end-label gamma" style={{top:gammaY(last.level)+42,"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
+        <span className="exposure-end-label qqq" style={{top:qqqY(last.spot)+42}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
   </section>;
