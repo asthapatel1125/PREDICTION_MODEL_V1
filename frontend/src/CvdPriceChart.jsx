@@ -4,7 +4,7 @@ const ET="America/New_York";
 const WINDOWS={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"6H":21600,"2D":172800,"3D":259200,"5D":432000,"10D":864000,"ALL":null};
 const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
-const fmt=(timestamp,seconds)=>new Date(timestamp).toLocaleTimeString("en-US",{timeZone:ET,hour12:true,hour:"2-digit",minute:"2-digit",...(seconds<=900?{second:"2-digit"}:{})})+" EST";
+const fmt=(timestamp,seconds)=>{const date=new Date(timestamp);return seconds==null||seconds>=86400?date.toLocaleDateString("en-US",{timeZone:ET,month:"short",day:"numeric"}):date.toLocaleTimeString("en-US",{timeZone:ET,hour12:true,hour:"2-digit",minute:"2-digit",...(seconds<=900?{second:"2-digit"}:{})})};
 
 export default function CvdPriceChart({rows=[]}){
   const [period,setPeriod]=useState("1H"),[zoom,setZoom]=useState(1),[yZoom,setYZoom]=useState([1,1]),[hover,setHover]=useState(null),[expanded,setExpanded]=useState(false);

@@ -1880,9 +1880,9 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const orderedValues=scaleValuesRef.current.values,scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
   const valueRank=value=>{if(orderedValues.length<2)return .5;let lowIndex=0,highIndex=orderedValues.length-1;while(lowIndex<=highIndex){const middle=(lowIndex+highIndex)>>1;if(orderedValues[middle]<value)lowIndex=middle+1;else highIndex=middle-1}const upper=Math.min(orderedValues.length-1,lowIndex),lower=Math.max(0,upper-1),lowerValue=orderedValues[lower],upperValue=orderedValues[upper],fraction=upperValue===lowerValue?0:(value-lowerValue)/(upperValue-lowerValue);return (lower+(upper-lower)*fraction)/(orderedValues.length-1)};
   const compressedRatio=value=>.90*valueRank(value)+.10*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
-  const tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,compactTime=periods[period]>=1800||points.length>36,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1)));
+  const selectedSpan=periods[period]||Math.max(0,Date.parse(points.at(-1)?.timestamp||"")-Date.parse(points[0]?.timestamp||""))/1000,effectiveSpan=selectedSpan/Math.max(xZoom,1),multiDay=selectedSpan>=86400,axisStamp=value=>{const date=new Date(value),shortDate=date.toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"});if(!multiDay)return chartAxisTime(value,periods[period]>=1800||points.length>36).replace(/\s+EST$/i,"");if(effectiveSpan>86400)return shortDate;return `${shortDate} · ${date.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"})}`},tickCount=points.length>1?Math.max(4,Math.min(points.length,18,Math.floor(width/105))):points.length,regularTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1))),dayTicks=[...new Map(points.map((point,index)=>[new Date(point.timestamp).toLocaleDateString("en-CA",{timeZone:"America/New_York"}),index])).values()],timeTicks=multiDay&&effectiveSpan>86400?dayTicks:regularTicks;
   const displayTicks=[0,.25,.5,.75,1].map((ratio,index)=>{const value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
-  const qqqPath=points.map((point,index)=>x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1)).join(" ");
+  const qqqPaths=points.reduce((groups,point,index)=>{const prior=points[index-1],newSession=index>0&&Date.parse(point.timestamp)-Date.parse(prior.timestamp)>3600000;if(!groups.length||newSession)groups.push([]);groups.at(-1).push(x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1));return groups},[]).map(group=>group.join(" "));
   const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
   const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setYPan(0);setHover(null);returnToLatest()};
@@ -1899,6 +1899,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const levelSegments=[];
   points.slice(1).forEach((point,index)=>{
     const previous=points[index],x0=x(index),x1=x(index+1),y0=gammaY(previous.level),y1=gammaY(point.level);
+    if(Date.parse(point.timestamp)-Date.parse(previous.timestamp)>3600000)return;
     if(previous.positive===point.positive){
       levelSegments.push({key:`${index}-full`,x0,y0,x1,y1,color:gammaColor(point)});
       return;
@@ -1926,8 +1927,8 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
-            {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{chartAxisTime(points[index].timestamp,compactTime).replace(/\s+EST$/i,"")}</text></g>)}
-            <g clipPath={`url(#exposure-plot-${wallKey})`}><polyline className="exposure-qqq-line" fill="none" points={qqqPath}/>
+            {timeTicks.map(index=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor="middle">{axisStamp(points[index].timestamp)}</text></g>)}
+            <g clipPath={`url(#exposure-plot-${wallKey})`}>{qqqPaths.map((path,index)=><polyline key={`qqq-session-${index}`} className="exposure-qqq-line" fill="none" points={path}/>)}
             {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
             {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(active.level)} r="4" style={{fill:gammaColor(active)}}/></>}</g>
           </svg>

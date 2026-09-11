@@ -69,8 +69,17 @@ export const fetchWallDealerFlow = (symbol, signal) =>
   request(`/api/v1/walls/dealerflow?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallSummaryHistory = (symbol, signal) =>
   request(`/api/v1/walls/summary-history?symbol=${encodeURIComponent(symbol)}`, { signal });
-export const fetchWallDayLevels = (symbol, sessionDate, signal, displayBucketSeconds = 60, since = null, days = 1) =>
-  request(`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${sessionDate ? `&session_date=${encodeURIComponent(sessionDate)}` : ""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}&days=${encodeURIComponent(days)}${since ? `&since=${encodeURIComponent(since)}` : ""}`, { signal });
+const wallHistoryCache=new Map();
+export async function fetchWallDayLevels(symbol,sessionDate,signal,displayBucketSeconds=60,since=null,days=1){
+  const path=day=>`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${day?`&session_date=${encodeURIComponent(day)}`:""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}&days=1${since?`&since=${encodeURIComponent(since)}`:""}`;
+  if(sessionDate||since||days<=1)return request(path(sessionDate),{signal});
+  const key=`${symbol}:${days}:${displayBucketSeconds}`,cached=wallHistoryCache.get(key);
+  if(cached&&Date.now()-cached.at<300000)return cached.value;
+  const dates=[];for(let offset=0;dates.length<days&&offset<days*3;offset++){const date=new Date();date.setDate(date.getDate()-offset);if(date.getDay()!==0&&date.getDay()!==6)dates.push(date.toLocaleDateString("en-CA",{timeZone:"America/New_York"}))}
+  const results=await Promise.all(dates.map(day=>request(path(day),{signal}).catch(()=>({rows:[],phase_anchors:[]}))));
+  const rows=[...new Map(results.flatMap(result=>result.rows||[]).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+  const value={symbol:symbol.toUpperCase(),rows,phase_anchors:results.flatMap(result=>result.phase_anchors||[]),display_bucket_seconds:displayBucketSeconds,days};wallHistoryCache.set(key,{at:Date.now(),value});return value;
+}
 export const fetchNasdaqRangeAtlas = (symbol, signal) =>
   request(`/api/v1/walls/nasdaq-range-atlas?symbol=${encodeURIComponent(symbol)}`, { signal });
 export async function fetchEodSnapshot(symbol,module,mapName,sessionDate,signal){

@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from "react";
 const ET="America/New_York",WINDOWS={"5S":5,"10S":10,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"6H":21600,"2D":172800,"3D":259200,"5D":432000,"10D":864000,"ALL":null};
 const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f,clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),sign=v=>v>0?1:v<0?-1:0;
-const fmt=(t,s)=>new Date(t).toLocaleTimeString("en-US",{timeZone:ET,hour12:true,hour:"2-digit",minute:"2-digit",...(s<=900?{second:"2-digit"}:{})})+" EST";
+const fmt=(t,s)=>{const d=new Date(t);return s==null||s>=86400?d.toLocaleDateString("en-US",{timeZone:ET,month:"short",day:"numeric"}):d.toLocaleTimeString("en-US",{timeZone:ET,hour12:true,hour:"2-digit",minute:"2-digit",...(s<=900?{second:"2-digit"}:{})})};
 export default function MagnitudeSignedChart({rows=[],kind="tpi"}){
  const [period,setPeriod]=useState("1H"),[xz,setXz]=useState(1),[yz,setYz]=useState([1,1]),[visible,setVisible]=useState([0,Number.MAX_SAFE_INTEGER]),[hover,setHover]=useState(null),[expanded,setExpanded]=useState(false);const viewport=useRef(null),frame=useRef(null),follow=useRef(true),accent=kind==="tpi"?"#4de0bd":"#ff6b9d",name=kind==="tpi"?"TPI":"MPI";
  const source=useMemo(()=>rows.filter(r=>r?.timestamp&&Number.isFinite(Number(r.spot))).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)),[rows]);
