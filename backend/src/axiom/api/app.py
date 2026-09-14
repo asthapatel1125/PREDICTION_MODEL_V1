@@ -25,6 +25,7 @@ from axiom.application.pipeline import DecisionPipeline
 from axiom.application.direction_gate import DailyDirectionGate
 from axiom.config.schema import PlatformSettings,StrategyConfig
 from axiom.infrastructure.database import SqlAlchemyRepository,create_database
+from axiom.infrastructure.clickhouse import ClickHouseRepository
 
 
 INSTRUMENTS={
@@ -60,6 +61,7 @@ class Container:
     data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
     nasdaq_range_atlas:dict[str,Any]|None
+    clickhouse:ClickHouseRepository|None
 
 
 def create_app(settings:PlatformSettings|None=None)->FastAPI:
@@ -70,6 +72,12 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         config_path=Path(cfg.strategy_config_path)
         if not config_path.exists():config_path=Path(__file__).parents[4]/"config"/"strategy.yaml"
         container.config=StrategyConfig.from_yaml(config_path);_,container.repository=await create_database(cfg.database_url)
+        container.clickhouse=None
+        if cfg.clickhouse_host and cfg.clickhouse_password:
+            container.clickhouse=ClickHouseRepository(
+                cfg.clickhouse_host,cfg.clickhouse_port,cfg.clickhouse_database,cfg.clickhouse_user,
+                cfg.clickhouse_password.get_secret_value(),cfg.clickhouse_secure,
+            )
         container.bus=InMemoryEventBus(cfg.websocket_queue_size)
         api_key=cfg.thetadata_api_key.get_secret_value() if cfg.thetadata_api_key else None
         container.data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
@@ -124,8 +132,9 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/health")
     async def health()->dict[str,str]:
         database="connected" if await container.repository.ping() else "disconnected"
-        return {"status":"healthy" if database=="connected" else "degraded",
-            "database":database,"event_bus":"connected","version":__version__}
+        clickhouse="connected" if container.clickhouse and await container.clickhouse.ping() else "not_configured" if not container.clickhouse else "disconnected"
+        return {"status":"healthy" if database=="connected" and clickhouse!="disconnected" else "degraded",
+            "database":database,"clickhouse":clickhouse,"event_bus":"connected","version":__version__}
 
     @api.get("/alerts")
     async def alerts(limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0)):return await container.repository.list_alert_views(limit,offset)
@@ -300,7 +309,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "freshness_note":"January 2026 is the latest supplied NAS100 month. No later month is inferred."}
 
     @api.get("/walls/day-levels")
-    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None,days:int=Query(1,ge=1,le=10)):
+    async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None,days:int=Query(1,ge=1,le=365)):
         """Return the compact Wall Intelligence stream for one 07:00-18:00 ET session.
 
         This purpose-built endpoint avoids loading nested MarketState payloads
@@ -310,12 +319,28 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         """
         market_tz=ZoneInfo(cfg.market_timezone)
         day=session_date or datetime.now(market_tz).date()
-        session_start=datetime.combine(day-timedelta(days=max(0,days*2)),time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
+        # Supabase supplies the live/recent overlay. Do not scan a year of its
+        # nested wall records when ClickHouse already owns retained history.
+        live_lookback_days=min(max(0,days*2),20)
+        session_start=datetime.combine(day-timedelta(days=live_lookback_days),time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
         end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
         requested_bucket=5 if int(display_bucket_seconds)<=5 else 60
         requested_since=_wall_time(since)
         start=max(session_start,requested_since) if requested_since else session_start
         rows=await container.repository.wall_intelligence_points(symbol,start,end,100_000)
+        # Historical exposure buckets live in ClickHouse; today's live stream
+        # remains authoritative in Supabase.  Merge by timestamp so an overlap
+        # is deterministic and the browser receives one continuous contract.
+        historical=[]
+        if container.clickhouse and not requested_since:
+            try:
+                historical=await container.clickhouse.exposure_history(symbol,days,requested_bucket)
+            except Exception:
+                historical=[]
+        if historical:
+            merged={str(row.get("timestamp")):row for row in historical}
+            merged.update({str(row.get("timestamp")):row for row in rows})
+            rows=sorted(merged.values(),key=lambda row:datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")))
         def observed_at(row:dict[str,Any])->datetime:
             return datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)
 

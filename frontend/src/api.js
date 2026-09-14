@@ -70,12 +70,26 @@ export const fetchWallDealerFlow = (symbol, signal) =>
 export const fetchWallSummaryHistory = (symbol, signal) =>
   request(`/api/v1/walls/summary-history?symbol=${encodeURIComponent(symbol)}`, { signal });
 const wallHistoryCache=new Map();
+function easternDateIso(date){
+  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
+  const value=Object.fromEntries(parts.map(part=>[part.type,part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
 export async function fetchWallDayLevels(symbol,sessionDate,signal,displayBucketSeconds=60,since=null,days=1){
-  const path=day=>`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${day?`&session_date=${encodeURIComponent(day)}`:""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}&days=1${since?`&since=${encodeURIComponent(since)}`:""}`;
+  const path=(day,count=1)=>`/api/v1/walls/day-levels?symbol=${encodeURIComponent(symbol)}${day?`&session_date=${encodeURIComponent(day)}`:""}&display_bucket_seconds=${encodeURIComponent(displayBucketSeconds)}&days=${encodeURIComponent(count)}${since?`&since=${encodeURIComponent(since)}`:""}`;
   if(sessionDate||since||days<=1)return request(path(sessionDate),{signal});
   const key=`${symbol}:${days}:${displayBucketSeconds}`,cached=wallHistoryCache.get(key);
   if(cached&&Date.now()-cached.at<300000)return cached.value;
-  const dates=[];for(let offset=0;dates.length<days&&offset<days*3;offset++){const date=new Date();date.setDate(date.getDate()-offset);if(date.getDay()!==0&&date.getDay()!==6)dates.push(date.toLocaleDateString("en-CA",{timeZone:"America/New_York"}))}
+  // New backends can return the requested retained sessions in one query.
+  // Keep the per-session fan-out for an older deployment, but always send an
+  // ISO date; locale date strings are browser-dependent and FastAPI rejects
+  // values such as 9/10/2026 for a `date` parameter.
+  try{
+    const combined=await request(path(null,days),{signal});
+    const combinedDates=new Set((combined.rows||[]).map(row=>easternDateIso(new Date(row.timestamp))));
+    if(combinedDates.size>1){wallHistoryCache.set(key,{at:Date.now(),value:combined});return combined}
+  }catch(error){if(error.name==="AbortError")throw error}
+  const dates=[];for(let offset=0;dates.length<days&&offset<days*3;offset++){const date=new Date();date.setDate(date.getDate()-offset);const easternDay=easternDateIso(date),weekday=new Date(`${easternDay}T12:00:00-04:00`).getDay();if(weekday!==0&&weekday!==6)dates.push(easternDay)}
   const results=await Promise.all(dates.map(day=>request(path(day),{signal}).catch(()=>({rows:[],phase_anchors:[]}))));
   const rows=[...new Map(results.flatMap(result=>result.rows||[]).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
   const value={symbol:symbol.toUpperCase(),rows,phase_anchors:results.flatMap(result=>result.phase_anchors||[]),display_bucket_seconds:displayBucketSeconds,days};wallHistoryCache.set(key,{at:Date.now(),value});return value;

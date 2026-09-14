@@ -17,6 +17,18 @@ services:
         sync: false
       - key: TWELVE_DATA_API_KEY
         sync: false
+      - key: CLICKHOUSE_HOST
+        sync: false
+      - key: CLICKHOUSE_PORT
+        value: "8123"
+      - key: CLICKHOUSE_DATABASE
+        value: axiom
+      - key: CLICKHOUSE_USER
+        value: axiom_api
+      - key: CLICKHOUSE_PASSWORD
+        sync: false
+      - key: CLICKHOUSE_SECURE
+        value: "false"
       - key: AXIOM_OUTCOME_PRICE_POLL_SECONDS
         value: "60"
       - key: AXIOM_OUTCOME_HORIZON_MINUTES

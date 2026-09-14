@@ -75,6 +75,12 @@ class PlatformSettings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
     websocket_queue_size: int = 4096
+    clickhouse_host: str | None = Field(default=None, validation_alias="CLICKHOUSE_HOST")
+    clickhouse_port: int = Field(default=8123, validation_alias="CLICKHOUSE_PORT")
+    clickhouse_database: str = Field(default="axiom", validation_alias="CLICKHOUSE_DATABASE")
+    clickhouse_user: str = Field(default="default", validation_alias="CLICKHOUSE_USER")
+    clickhouse_password: SecretStr | None = Field(default=None, validation_alias="CLICKHOUSE_PASSWORD")
+    clickhouse_secure: bool = Field(default=False, validation_alias="CLICKHOUSE_SECURE")
 
     @field_validator("database_url")
     @classmethod

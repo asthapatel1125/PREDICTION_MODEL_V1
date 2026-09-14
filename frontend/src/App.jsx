@@ -1844,6 +1844,30 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
      return {timestamp:row.timestamp,spot,level,zero:level,difference,positive:level<=spot,tier,regime:wallKey==="ZERO_GAMMA"?gammaRegime:deltaRegime};
   }).filter(Boolean),[rows,wallKey]);
   const points=useMemo(()=>{
+    const multiSession=period==="ALL"||/^(2|3|5|10)D$/.test(period);
+    if(multiSession){
+      const sessionKey=value=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(value)),fields=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${fields.year}-${fields.month}-${fields.day}`};
+      const sessionCount=period==="ALL"?Number.POSITIVE_INFINITY:Number.parseInt(period,10);
+      const available=[...new Set(allPoints.map(point=>sessionKey(point.timestamp)))].sort(),selected=new Set(available.slice(-sessionCount));
+      // Historical data arrives at one-minute resolution while today's live
+      // overlay arrives every five seconds. Collapse every selected session to
+      // the same one-minute density so the live day cannot consume nearly the
+      // entire horizontal axis and squeeze older sessions into thin blocks.
+      const minutePoints=new Map();
+      allPoints.forEach(point=>{if(!selected.has(sessionKey(point.timestamp)))return;const stamp=Math.floor(Date.parse(point.timestamp)/60000);minutePoints.set(stamp,point)});
+      const uniform=[...minutePoints.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+      // Plot a causal five-observation median independently inside each
+      // session. A single unstable wall nomination can otherwise draw a tall
+      // diagonal through the chart. `level` remains the exact stored value for
+      // the tooltip and audit trail; only `displayLevel` drives the line.
+      return uniform.map((point,index)=>{
+        const session=sessionKey(point.timestamp),window=[];
+        for(let cursor=index;cursor>=0&&window.length<5;cursor--){if(sessionKey(uniform[cursor].timestamp)!==session)break;window.push(uniform[cursor].level)}
+        window.sort((a,b)=>a-b);
+        const displayLevel=window[Math.floor(window.length/2)]??point.level;
+        return {...point,displayLevel,displayPositive:displayLevel<=point.spot};
+      });
+    }
     const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
     return !seconds||!Number.isFinite(latest)?allPoints:allPoints.filter(point=>Date.parse(point.timestamp)>=latest-seconds*1000);
   },[allPoints,period]);
@@ -1871,12 +1895,14 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   // from that same complete window so a stale scroll offset can never exclude
   // the newest value or push a live label outside the plotting area.
   const visiblePoints=points;
+  const plottedLevel=point=>point.displayLevel??point.level;
   // One monotonic, gap-compressed USD scale preserves the real relationship
   // at every timestamp. A lower Gamma value is therefore always drawn below
   // QQQ, while rank compression prevents a large empty USD gap from making
   // the smaller QQQ moves appear flat.
-  const incomingValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,point.level]).filter(Number.isFinite))].sort((a,b)=>a-b);
-  if(scaleValuesRef.current.period!==period||!scaleValuesRef.current.values.length||scaleValuesRef.current.values.length<24)scaleValuesRef.current={period,values:incomingValues};
+  const incomingValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,plottedLevel(point)]).filter(Number.isFinite))].sort((a,b)=>a-b);
+  const scaleKey=`${period}:${points[0]?.timestamp||"empty"}`;
+  if(scaleValuesRef.current.period!==scaleKey||!scaleValuesRef.current.values.length||scaleValuesRef.current.values.length<24)scaleValuesRef.current={period:scaleKey,values:incomingValues};
   const orderedValues=scaleValuesRef.current.values,scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
   const valueRank=value=>{if(orderedValues.length<2)return .5;let lowIndex=0,highIndex=orderedValues.length-1;while(lowIndex<=highIndex){const middle=(lowIndex+highIndex)>>1;if(orderedValues[middle]<value)lowIndex=middle+1;else highIndex=middle-1}const upper=Math.min(orderedValues.length-1,lowIndex),lower=Math.max(0,upper-1),lowerValue=orderedValues[lower],upperValue=orderedValues[upper],fraction=upperValue===lowerValue?0:(value-lowerValue)/(upperValue-lowerValue);return (lower+(upper-lower)*fraction)/(orderedValues.length-1)};
   const compressedRatio=value=>.90*valueRank(value)+.10*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
@@ -1893,23 +1919,31 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const beginPan=event=>{if(event.button!==0||event.target.closest("button"))return;event.preventDefault();followingLiveRef.current=false;dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId);event.currentTarget.classList.add("is-panning")};
    const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1),index=Math.round(ratio*Math.max(points.length-1,0));setHover(index);setHoverPoint({x:event.clientX-rect.left,y:event.clientY-rect.top});const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
   const stopPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null;event.currentTarget?.classList.remove("is-panning")};
-  const last=points.at(-1),gammaColor=point=>point.positive?"#00d084":"#ff4f69",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ",hoverTime=value=>new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).format(new Date(value));
+  const last=points.at(-1),gammaColor=point=>(point.displayPositive??point.positive)?"#00d084":"#ff4f69",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ",hoverTime=value=>new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).format(new Date(value));
   // Render each dashed portion using the relationship at that portion. This
   // prevents a color from bleeding across a zero-gamma/QQQ sign transition.
   const levelSegments=[];
   points.slice(1).forEach((point,index)=>{
-    const previous=points[index],x0=x(index),x1=x(index+1),y0=gammaY(previous.level),y1=gammaY(point.level);
+    const previous=points[index],x0=x(index),x1=x(index+1),y0=gammaY(plottedLevel(previous)),y1=gammaY(plottedLevel(point));
     if(Date.parse(point.timestamp)-Date.parse(previous.timestamp)>3600000)return;
     if(previous.positive===point.positive){
       levelSegments.push({key:`${index}-full`,x0,y0,x1,y1,color:gammaColor(point)});
       return;
     }
-    const d0=previous.level-previous.spot,d1=point.level-point.spot,denominator=d0-d1;
+    const d0=plottedLevel(previous)-previous.spot,d1=plottedLevel(point)-point.spot,denominator=d0-d1;
     const ratio=Number.isFinite(denominator)&&Math.abs(denominator)>1e-9?clamp(d0/denominator,0,1):.5;
     const xm=x0+(x1-x0)*ratio,ym=y0+(y1-y0)*ratio;
     levelSegments.push({key:`${index}-before`,x0,y0,x1:xm,y1:ym,color:gammaColor(previous)});
     levelSegments.push({key:`${index}-after`,x0:xm,y0:ym,x1,y1,color:gammaColor(point)});
   });
+  // Two compound SVG paths replace thousands of individual <line> nodes on
+  // multi-day views. Every segment remains exact, including session gaps and
+  // sign transitions, while React reconciliation stays effectively constant.
+  const levelPaths=levelSegments.reduce((paths,segment)=>{
+    const key=segment.color==="#00d084"?"positive":"negative";
+    paths[key]+=`M${segment.x0.toFixed(1)},${segment.y0.toFixed(1)}L${segment.x1.toFixed(1)},${segment.y1.toFixed(1)}`;
+    return paths;
+  },{positive:"",negative:""});
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
     <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
@@ -1919,7 +1953,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
         {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y+42}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
-         <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD</strong></span></>:<span>Hover over the graph for exact stored values</span>}</div>
+         <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${xZoom*100}%`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <defs><clipPath id={`exposure-plot-${wallKey}`}><rect x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/></clipPath></defs>
@@ -1929,14 +1963,15 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
             <g clipPath={`url(#exposure-plot-${wallKey})`}>{qqqPaths.map((path,index)=><polyline key={`qqq-session-${index}`} className="exposure-qqq-line" fill="none" points={path}/>)}
-            {levelSegments.map(segment=><line key={segment.key} x1={segment.x0} y1={segment.y0} x2={segment.x1} y2={segment.y1} stroke={segment.color} strokeWidth="2.7" strokeDasharray="7 4"/>)}
-            {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(active.level)} r="4" style={{fill:gammaColor(active)}}/></>}</g>
+            {levelPaths.positive&&<path d={levelPaths.positive} fill="none" stroke="#00d084" strokeWidth="2.7" strokeDasharray="7 4"/>}
+            {levelPaths.negative&&<path d={levelPaths.negative} fill="none" stroke="#ff4f69" strokeWidth="2.7" strokeDasharray="7 4"/>}
+            {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(plottedLevel(active))} r="4" style={{fill:gammaColor(active)}}/></>}</g>
           </svg>
         </div>
       </div>
       <aside className="exposure-live-rail" onWheel={wheelY} title="Mouse wheel: vertical price zoom">
         <div className="exposure-live-updated"><small>LAST UPDATED</small><strong>{hoverTime(last.timestamp)}</strong></div>
-        <span className="exposure-end-label gamma" style={{top:clamp(gammaY(last.level)+42,72,356),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{last.level.toFixed(2)}</strong></span>
+        <span className="exposure-end-label gamma" style={{top:clamp(gammaY(plottedLevel(last))+42,72,356),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{plottedLevel(last).toFixed(2)}</strong></span>
         <span className="exposure-end-label qqq" style={{top:clamp(qqqY(last.spot)+42,72,356)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
@@ -2434,8 +2469,8 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
 
 function ZoneIntelligenceFixed({symbol}){
   const [spectrum,setSpectrum]=useState([]),[breaks,setBreaks]=useState([]),[summaries,setSummaries]=useState([]),[dayRows,setDayRows]=useState([]),[zeroGammaRows,setZeroGammaRows]=useState([]),[phaseAnchors,setPhaseAnchors]=useState([]),zeroGammaLastRef=useRef(null);
-  useEffect(()=>{const controller=new AbortController();zeroGammaLastRef.current=null;setZeroGammaRows([]);const loadFast=async()=>{if(document.hidden)return;const [spectrumResult,zeroGammaResult]=await Promise.allSettled([fetchWallSpectrum(symbol,controller.signal,1200),fetchWallDayLevels(symbol,null,controller.signal,5,zeroGammaLastRef.current,1)]);if(spectrumResult.status==="fulfilled")setSpectrum(current=>{const next=(spectrumResult.value.rows||[]).slice(-1200);return current.at(-1)?.timestamp===next.at(-1)?.timestamp?current:next});if(zeroGammaResult.status==="fulfilled"){const incoming=zeroGammaResult.value.rows||[];if(incoming.length){zeroGammaLastRef.current=incoming.at(-1).timestamp;setZeroGammaRows(current=>{const byTimestamp=new Map(current.map(row=>[row.timestamp,row]));incoming.forEach(row=>byTimestamp.set(row.timestamp,row));return [...byTimestamp.values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-8000)})}}};const loadSlow=async()=>{if(document.hidden)return;const [breakResult,summaryResult,dayResult]=await Promise.allSettled([fetchWallBreaks(symbol,controller.signal),fetchWallSummaryHistory(symbol,controller.signal),fetchWallDayLevels(symbol,null,controller.signal,60,null,10)]);if(breakResult.status==="fulfilled")setBreaks((breakResult.value.rows||[]).slice(-200));if(summaryResult.status==="fulfilled")setSummaries((summaryResult.value.rows||[]).slice(-200));if(dayResult.status==="fulfilled"){const next=(dayResult.value.rows||[]).slice(-12000);setDayRows(current=>current.at(-1)?.timestamp===next.at(-1)?.timestamp?current:next);setPhaseAnchors(dayResult.value.phase_anchors||[])}};loadFast().catch(()=>{});loadSlow().catch(()=>{});const fastId=window.setInterval(()=>loadFast().catch(()=>{}),5000);const slowId=window.setInterval(()=>loadSlow().catch(()=>{}),60000);return()=>{controller.abort();clearInterval(fastId);clearInterval(slowId)}},[symbol]);
-  const spectrumRows=spectrum.slice(-1200),dayDisplayRows=dayRows.slice(-12000),levelRows=[...new Map([...(dayRows.length?dayRows:spectrum),...zeroGammaRows].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-12000),latest=levelRows.at(-1)||spectrumRows.at(-1)||{},walls=latest.walls||{},compact=value=>{const n=number(value);return Math.abs(n)>=1e9?`${(n/1e9).toFixed(2)}B`:Math.abs(n)>=1e6?`${(n/1e6).toFixed(1)}M`:n.toFixed(2)};
+  useEffect(()=>{const controller=new AbortController();zeroGammaLastRef.current=null;setZeroGammaRows([]);const loadFast=async()=>{if(document.hidden)return;const [spectrumResult,zeroGammaResult]=await Promise.allSettled([fetchWallSpectrum(symbol,controller.signal,1200),fetchWallDayLevels(symbol,null,controller.signal,5,zeroGammaLastRef.current,1)]);if(spectrumResult.status==="fulfilled")setSpectrum(current=>{const next=(spectrumResult.value.rows||[]).slice(-1200);return current.at(-1)?.timestamp===next.at(-1)?.timestamp?current:next});if(zeroGammaResult.status==="fulfilled"){const incoming=zeroGammaResult.value.rows||[];if(incoming.length){zeroGammaLastRef.current=incoming.at(-1).timestamp;setZeroGammaRows(current=>{const byTimestamp=new Map(current.map(row=>[row.timestamp,row]));incoming.forEach(row=>byTimestamp.set(row.timestamp,row));return [...byTimestamp.values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-8000)})}}};const loadStatus=async()=>{if(document.hidden)return;const [breakResult,summaryResult]=await Promise.allSettled([fetchWallBreaks(symbol,controller.signal),fetchWallSummaryHistory(symbol,controller.signal)]);if(breakResult.status==="fulfilled")setBreaks((breakResult.value.rows||[]).slice(-200));if(summaryResult.status==="fulfilled")setSummaries((summaryResult.value.rows||[]).slice(-200))};const loadHistory=async()=>{if(document.hidden)return;const dayResult=await fetchWallDayLevels(symbol,null,controller.signal,60,null,365);const next=(dayResult.rows||[]).slice(-16000);setDayRows(current=>current.at(-1)?.timestamp===next.at(-1)?.timestamp&&current.length===next.length?current:next);setPhaseAnchors(dayResult.phase_anchors||[])};loadFast().catch(()=>{});loadStatus().catch(()=>{});loadHistory().catch(()=>{});const fastId=window.setInterval(()=>loadFast().catch(()=>{}),5000),statusId=window.setInterval(()=>loadStatus().catch(()=>{}),60000),historyId=window.setInterval(()=>loadHistory().catch(()=>{}),300000);return()=>{controller.abort();clearInterval(fastId);clearInterval(statusId);clearInterval(historyId)}},[symbol]);
+  const spectrumRows=spectrum.slice(-1200),dayDisplayRows=dayRows.slice(-16000),levelRows=[...new Map([...(dayRows.length?dayRows:spectrum),...zeroGammaRows].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-16000),latest=levelRows.at(-1)||spectrumRows.at(-1)||{},walls=latest.walls||{},compact=value=>{const n=number(value);return Math.abs(n)>=1e9?`${(n/1e9).toFixed(2)}B`:Math.abs(n)>=1e6?`${(n/1e6).toFixed(1)}M`:n.toFixed(2)};
   const levelTraces=["QQQ Price","Call Wall","Put Wall","Zero Gamma","Support","Resistance"];
   const colors={"QQQ Price":"#e6edf3","Call Wall":"#ff4f69","Put Wall":"#00d084","Zero Gamma":"#b56cff","Support":"#ff61b6","Resistance":"#ff8b75","DealerFlow":"#00d084","DEX":"#58a6ff","VolHack":"#ffd60a","Pos Inventory":"#5ce1b8","Neg Inventory":"#ff7382","GEX Density":"#ff8a00","TW GEX":"#a855f7","Spoof Score":"#ffd60a","Edge":"#4dd4ac","Liquidity":"#98a7b7","VIX":"#ff9f43"};
   const value=(row,name)=>({"QQQ Price":number(row.spot),"Call Wall":number(row.walls?.CALL_WALL?.strike),"Put Wall":number(row.walls?.PUT_WALL?.strike),"Zero Gamma":number(row.walls?.ZERO_GAMMA?.strike),"Support":number(row.walls?.SUPPORT?.strike),"Resistance":number(row.walls?.RESISTANCE?.strike),"DealerFlow":number(row.dealer_flow),"DEX":number(row.dex),"VolHack":number(row.vol_hack),"Pos Inventory":number(row.pos_inventory),"Neg Inventory":number(row.neg_inventory),"GEX Density":number(row.gex_dollar_density),"TW GEX":number(row.tw_gex),"Spoof Score":number(row.spoof_score),"Edge":number(row.edge),"Liquidity":number(row.liq_score),"VIX":number(row.vix)}[name]??0);
