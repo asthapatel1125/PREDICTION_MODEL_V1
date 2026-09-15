@@ -4,7 +4,7 @@ import MagnitudeSignedChart from "./MagnitudeSignedChart";
 import CvdPriceChart from "./CvdPriceChart";
 import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchEodSnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory, fetchWallDayLevels,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchDynamicsHistory, fetchEodSnapshot, fetchExposureCandles, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory, fetchWallDayLevels,
   setDynamicsDirectionGate, startReplay, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
@@ -1823,7 +1823,9 @@ function LegacyExposureLevelMap({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
 }
 
 function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
-   const [period,setPeriod]=useState("1H");
+   const [period,setPeriod]=useState("5M");
+   const [historyRange,setHistoryRange]=useState("ALL");
+   const [historicalCandles,setHistoricalCandles]=useState([]);
    const [hover,setHover]=useState(null);
    const [hoverPoint,setHoverPoint]=useState(null);
   const [xZoom,setXZoom]=useState(1);
@@ -1836,41 +1838,16 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const followingLiveRef=useRef(true);
   const dragRef=useRef(null);
   const scaleValuesRef=useRef({period:null,values:[]});
-  const periods={"5S":5,"30S":30,"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"2D":172800,"3D":259200,"5D":432000,"10D":864000,ALL:null};
-  const allPoints=useMemo(()=>rows.map(row=>{
-    const spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike),tier=String(row?.walls?.[wallKey]?.tier||"WEAKEST").toUpperCase();
-    if(!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return null;
-    const difference=spot-level,gammaRegime=difference>0?"POSITIVE Γ · STABILIZING":"NEGATIVE Γ · AMPLIFYING",deltaRegime=difference>0?"QQQ ABOVE ZERO Δ":"QQQ BELOW ZERO Δ";
-     return {timestamp:row.timestamp,spot,level,zero:level,difference,positive:level<=spot,tier,regime:wallKey==="ZERO_GAMMA"?gammaRegime:deltaRegime};
-  }).filter(Boolean),[rows,wallKey]);
-  const points=useMemo(()=>{
-    const multiSession=period==="ALL"||/^(2|3|5|10)D$/.test(period);
-    if(multiSession){
-      const sessionKey=value=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(value)),fields=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${fields.year}-${fields.month}-${fields.day}`};
-      const sessionCount=period==="ALL"?Number.POSITIVE_INFINITY:Number.parseInt(period,10);
-      const available=[...new Set(allPoints.map(point=>sessionKey(point.timestamp)))].sort(),selected=new Set(available.slice(-sessionCount));
-      // Historical data arrives at one-minute resolution while today's live
-      // overlay arrives every five seconds. Collapse every selected session to
-      // the same one-minute density so the live day cannot consume nearly the
-      // entire horizontal axis and squeeze older sessions into thin blocks.
-      const minutePoints=new Map();
-      allPoints.forEach(point=>{if(!selected.has(sessionKey(point.timestamp)))return;const stamp=Math.floor(Date.parse(point.timestamp)/60000);minutePoints.set(stamp,point)});
-      const uniform=[...minutePoints.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
-      // Plot a causal five-observation median independently inside each
-      // session. A single unstable wall nomination can otherwise draw a tall
-      // diagonal through the chart. `level` remains the exact stored value for
-      // the tooltip and audit trail; only `displayLevel` drives the line.
-      return uniform.map((point,index)=>{
-        const session=sessionKey(point.timestamp),window=[];
-        for(let cursor=index;cursor>=0&&window.length<5;cursor--){if(sessionKey(uniform[cursor].timestamp)!==session)break;window.push(uniform[cursor].level)}
-        window.sort((a,b)=>a-b);
-        const displayLevel=window[Math.floor(window.length/2)]??point.level;
-        return {...point,displayLevel,displayPositive:displayLevel<=point.spot};
-      });
-    }
-    const seconds=periods[period],last=allPoints.at(-1),latest=Date.parse(last?.timestamp||"");
-    return !seconds||!Number.isFinite(latest)?allPoints:allPoints.filter(point=>Date.parse(point.timestamp)>=latest-seconds*1000);
-  },[allPoints,period]);
+  const periods={"1M":60,"5M":300,"10M":600,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"5H":18000,"1D":86400},ranges={"2D":2,"3D":3,"5D":5,"10D":10,"30D":30,"1MO":30,ALL:365};
+  useEffect(()=>{const controller=new AbortController();fetchExposureCandles("QQQ",periods[period],ranges[historyRange],controller.signal).then(result=>setHistoricalCandles(result.rows||[])).catch(error=>{if(error.name!=="AbortError")setHistoricalCandles([])});return()=>controller.abort()},[period,historyRange]);
+  const allPoints=useMemo(()=>{
+    const key=wallKey==="ZERO_DELTA"?"zero_delta":"zero_gamma";
+    const archived=historicalCandles.map(row=>{const spot=number(row.close),level=number(row[key]);return Number.isFinite(spot)&&spot>0&&Number.isFinite(level)&&level>0?{...row,spot,level,zero:level,difference:spot-level,positive:level<=spot}:null}).filter(Boolean);
+    const latestArchived=Date.parse(archived.at(-1)?.timestamp||"")||0,seconds=periods[period],formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),live=new Map();
+    rows.forEach(row=>{const at=Date.parse(row?.timestamp||""),spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||at<=latestArchived||!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(minute<570||minute>960)return;const index=Math.floor((minute-570)/(seconds/60)),bucket=`${fields.year}-${fields.month}-${fields.day}:${index}`,existing=live.get(bucket);if(!existing)live.set(bucket,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
+    return [...archived,...live.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-2500);
+  },[historicalCandles,rows,wallKey,period]);
+  const points=allPoints;
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}))},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
   if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and level observations.</p></section>;
@@ -1909,6 +1886,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const selectedSpan=periods[period]||Math.max(0,Date.parse(points.at(-1)?.timestamp||"")-Date.parse(points[0]?.timestamp||""))/1000,multiDay=selectedSpan>=86400,axisStamp=value=>{const date=new Date(value),shortDate=date.toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"}),shortTime=date.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"});if(!multiDay)return chartAxisTime(value,periods[period]>=1800||points.length>36).replace(/\s+EST$/i,"");return `${shortDate} · ${shortTime}`},tickCount=points.length>1?Math.max(4,Math.min(points.length,multiDay?10:18,Math.floor(width/(multiDay?150:105)))):points.length,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1))),tickAnchor=(index,tickIndex)=>tickIndex===0?"start":tickIndex===timeTicks.length-1?"end":"middle";
   const displayTicks=[0,.25,.5,.75,1].map((ratio,index)=>{const value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
   const qqqPaths=points.reduce((groups,point,index)=>{const prior=points[index-1],newSession=index>0&&Date.parse(point.timestamp)-Date.parse(prior.timestamp)>3600000;if(!groups.length||newSession)groups.push([]);groups.at(-1).push(x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1));return groups},[]).map(group=>group.join(" "));
+  const candleWidth=Math.max(2,Math.min(12,plotWidth/Math.max(points.length,1)*.62));
   const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
   const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setYPan(0);setHover(null);returnToLatest()};
@@ -1945,7 +1923,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
     return paths;
   },{positive:"",negative:""});
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
-    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>BROKEN USD AXIS · EMPTY PRICE GAP COMPRESSED</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><div className="timeframe-buttons" aria-label="Historical range">{Object.keys(ranges).map(name=><button key={name} type="button" className={historyRange===name?"active":""} onClick={()=>setHistoryRange(name)}>{name}</button>)}</div><small>QQQ OHLC CANDLES · CLOSING {axisName} LEVEL</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">

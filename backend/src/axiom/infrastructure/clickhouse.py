@@ -158,3 +158,144 @@ class ClickHouseRepository:
                 "contract_count":item["contract_count"],
             })
         return result
+
+    async def _legacy_exposure_candles(self, symbol: str, days: int, interval_seconds: int, limit: int = 2500, before: datetime | None = None) -> list[dict[str, Any]]:
+        """Return server-aggregated QQQ candles with closing exposure levels.
+
+        Only the compact QQQ and exposure-history tables are read.  The raw
+        option chain is deliberately not referenced, keeping this safe on the
+        512 MB ClickHouse service.
+        """
+        interval = max(60, min(int(interval_seconds), 43200))
+        before_sql = f"AND timestamp < toDateTime64({_literal(before.isoformat())}, 3, 'UTC')" if before else ""
+        days_filter = f"AND toDate(timestamp) IN (SELECT day FROM (SELECT toDate(timestamp) AS day FROM exposure_history FINAL WHERE symbol = {_literal(symbol.upper())} AND interval_seconds = 60 GROUP BY day ORDER BY day DESC LIMIT {max(1, min(int(days), 365))}))"
+        session_start = "toDateTime(toDate(timestamp), 'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE"
+        bucket = f"{session_start} + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp({session_start}), {interval}) * {interval})"
+        sql = f"""
+            WITH
+                qqq AS
+                (
+                    SELECT
+                        {bucket} AS bucket,
+                        timestamp,
+                        price
+                    FROM qqq_history
+                    WHERE timestamp >= toDateTime('2000-01-01 00:00:00', 'America/New_York')
+                      AND toTime(timestamp) >= toTime('09:30:00')
+                      AND toTime(timestamp) < toTime('16:00:00')
+                      {days_filter}
+                      {before_sql}
+                ),
+                qqq_candles AS
+                (
+                    SELECT bucket, argMin(price, timestamp) AS open,
+                           max(price) AS high, min(price) AS low,
+                           argMax(price, timestamp) AS close
+                    FROM qqq GROUP BY bucket
+                ),
+                levels AS
+                (
+                    SELECT
+                        {bucket} AS bucket,
+                        argMax(zero_gamma, timestamp) AS zero_gamma,
+                        argMax(zero_delta, timestamp) AS zero_delta
+                    FROM exposure_history FINAL
+                    WHERE symbol = {_literal(symbol.upper())}
+                      AND interval_seconds = 60
+                      {days_filter}
+                      {before_sql}
+                    GROUP BY bucket
+                )
+            SELECT q.bucket AS timestamp, q.open, q.high, q.low, q.close,
+                   l.zero_gamma, l.zero_delta
+            FROM qqq_candles AS q
+            LEFT JOIN levels AS l ON q.bucket = l.bucket
+            ORDER BY q.bucket DESC
+            LIMIT {max(1, min(int(limit), 2500))}
+            FORMAT JSONEachRow
+        """
+        text = await self._request(sql, timeout=45.0)
+        rows = [json.loads(line) for line in text.splitlines() if line]
+        rows.reverse()
+        for row in rows:
+            row["timestamp"] = datetime.fromisoformat(str(row["timestamp"]).replace("Z", "+00:00")).isoformat()
+        return rows
+
+    async def exposure_candles(self, symbol: str, days: int, interval_seconds: int, limit: int = 2500) -> list[dict[str, Any]]:
+        """Return session-anchored QQQ OHLC candles with closing ZG/ZD levels.
+
+        Both source tables are compact.  Bucketing happens in ClickHouse and
+        only the requested display candles cross the network.
+        """
+        bucket_seconds=max(60,min(int(interval_seconds),86_400))
+        row_limit=max(30,min(int(limit),2_500))
+        day_limit=max(1,min(int(days),365))
+        symbol_literal=_literal(symbol.upper())
+        sql=f"""
+            WITH
+                selected_days AS
+                (
+                    SELECT toDate(timestamp) AS day
+                    FROM exposure_history FINAL
+                    WHERE symbol={symbol_literal} AND interval_seconds=60
+                    GROUP BY day ORDER BY day DESC LIMIT {day_limit}
+                ),
+                origin AS toDateTime('1970-01-01 09:30:00','America/New_York')
+            SELECT * FROM
+            (
+                SELECT
+                    toUnixTimestamp(q.bucket) * 1000 AS timestamp_ms,
+                    q.open AS open, q.high AS high, q.low AS low, q.close AS close,
+                    e.zero_gamma AS zero_gamma, e.zero_delta AS zero_delta
+                FROM
+                (
+                    SELECT
+                        if({bucket_seconds}=86400,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE
+                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE), {bucket_seconds}) * {bucket_seconds})) AS bucket,
+                        argMin(price,timestamp) AS open,
+                        max(price) AS high,
+                        min(price) AS low,
+                        argMax(price,timestamp) AS close
+                    FROM qqq_history
+                    WHERE toDate(timestamp) IN (SELECT day FROM selected_days)
+                      AND toTime(timestamp) >= toTime('09:30:00')
+                      AND toTime(timestamp) <= toTime('16:00:00')
+                    GROUP BY bucket
+                ) AS q
+                LEFT JOIN
+                (
+                    SELECT
+                        if({bucket_seconds}=86400,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE
+                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE), {bucket_seconds}) * {bucket_seconds})) AS bucket,
+                        argMax(zero_gamma,timestamp) AS zero_gamma,
+                        argMax(zero_delta,timestamp) AS zero_delta
+                    FROM exposure_history FINAL
+                    WHERE symbol={symbol_literal} AND interval_seconds=60
+                      AND toDate(timestamp) IN (SELECT day FROM selected_days)
+                      AND toTime(timestamp) >= toTime('09:30:00')
+                      AND toTime(timestamp) <= toTime('16:00:00')
+                    GROUP BY bucket
+                ) AS e USING bucket
+                ORDER BY q.bucket DESC
+                LIMIT {row_limit}
+            )
+            ORDER BY timestamp_ms
+            FORMAT JSONEachRow
+            SETTINGS max_threads=1, max_memory_usage=100000000
+        """
+        text=await self._request(sql,timeout=30.0)
+        result=[]
+        for line in text.splitlines():
+            if not line:
+                continue
+            item=json.loads(line)
+            result.append({
+                "timestamp":datetime.fromtimestamp(int(item["timestamp_ms"])/1000.0,UTC).isoformat(),
+                "open":item["open"],"high":item["high"],"low":item["low"],"close":item["close"],
+                "zero_gamma":item.get("zero_gamma"),"zero_delta":item.get("zero_delta"),
+            })
+        return result

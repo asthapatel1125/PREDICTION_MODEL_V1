@@ -308,6 +308,24 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "source_note":"NAS100 monthly endpoints supplied by the user; QQQ endpoints precomputed from matching-month official Nasdaq daily highs/lows.",
             "freshness_note":"January 2026 is the latest supplied NAS100 month. No later month is inferred."}
 
+    @api.get("/walls/exposure-candles")
+    async def wall_exposure_candles(
+        symbol:str="QQQ",
+        interval_seconds:int=Query(300),
+        days:int=Query(365,ge=1,le=365),
+        limit:int=Query(2500,ge=30,le=2500),
+    ):
+        allowed={60,300,600,900,1800,3600,7200,10800,14400,18000,86400}
+        if interval_seconds not in allowed:
+            raise HTTPException(422,"Unsupported candle interval")
+        if not container.clickhouse:
+            raise HTTPException(503,"ClickHouse is not configured")
+        rows=await container.clickhouse.exposure_candles(symbol,days,interval_seconds,limit)
+        return {
+            "symbol":symbol.upper(),"market_timezone":cfg.market_timezone,
+            "interval_seconds":interval_seconds,"days":days,"rows":rows,
+        }
+
     @api.get("/walls/day-levels")
     async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None,days:int=Query(1,ge=1,le=365)):
         """Return the compact Wall Intelligence stream for one 07:00-18:00 ET session.
