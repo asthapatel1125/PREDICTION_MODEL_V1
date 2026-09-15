@@ -123,7 +123,7 @@ class ClickHouseRepository:
                 GROUP BY day ORDER BY day DESC LIMIT {max(1, min(int(days), 365))}
             )
             SELECT
-                toUnixTimestamp64Milli(bucket) AS timestamp_ms,
+                toUnixTimestamp(bucket) * 1000 AS timestamp_ms,
                 argMax(qqq_price, timestamp) AS spot,
                 argMax(zero_gamma, timestamp) AS zero_gamma,
                 argMax(zero_delta, timestamp) AS zero_delta,
