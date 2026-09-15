@@ -431,8 +431,11 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             phase_anchors.append({"phase":name,"start":anchor_start,"end":datetime.combine(day,phase_end,tzinfo=market_tz),
                 "sample_start":sample[0].get("timestamp"),"sample_count":len(sample),
                 "levels":{key:(anchor_meta[key] or {}).get("value") for key in anchor_meta},"anchor_meta":anchor_meta})
-        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":start,"end":end,
-            "count":len(rows),"display_count":len(minute_buckets),"rows":list(minute_buckets.values()),"cadence_seconds":5,"display_bucket_seconds":requested_bucket,
+        display_rows=list(minute_buckets.values())
+        response_start=display_rows[0]["timestamp"] if display_rows else start
+        response_end=display_rows[-1]["timestamp"] if display_rows else end
+        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"start":response_start,"end":response_end,
+            "count":len(rows),"display_count":len(display_rows),"rows":display_rows,"cadence_seconds":5,"display_bucket_seconds":requested_bucket,
             "phase_anchor_window_seconds":300,"phase_anchors":phase_anchors,
             "disclaimer":"Solid phase levels use a condition-aware weighted median from the first five minutes of each market phase: the dominant persistent level receives more weight when its wall is stronger, larger, nearer spot, and more recent. Faint dashed levels are 5-second point-in-time estimates from delayed OI and current Greeks; volume is aggregated option-chain observation volume."}
 
