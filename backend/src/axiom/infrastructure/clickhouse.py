@@ -25,7 +25,12 @@ class ClickHouseRepository:
         params = {"database": self.database, "query": sql}
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(self.url, params=params, content=body, auth=self.auth)
-            response.raise_for_status()
+            if response.is_error:
+                detail=response.text.strip()[:2_000]
+                raise httpx.HTTPStatusError(
+                    f"ClickHouse returned {response.status_code}: {detail}",
+                    request=response.request,response=response,
+                )
             return response.text
 
     async def ping(self) -> bool:
@@ -132,7 +137,7 @@ class ClickHouseRepository:
                 SELECT *, toStartOfInterval(timestamp, INTERVAL {max(60, int(interval_seconds))} SECOND) AS bucket
                 FROM exposure_history FINAL
                 WHERE symbol={_literal(symbol.upper())} AND interval_seconds=60
-                  AND toDate(timestamp) IN selected_days
+                  AND toDate(timestamp) IN (SELECT day FROM selected_days)
             )
             GROUP BY bucket ORDER BY bucket
             FORMAT JSONEachRow
