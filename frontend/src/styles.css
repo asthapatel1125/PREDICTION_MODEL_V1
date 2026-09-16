@@ -1354,3 +1354,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .dealer-custom-card{border-radius:14px!important;background:linear-gradient(150deg,#0a1823,#071019)!important;box-shadow:0 12px 28px #0005}.dealer-custom-card>header{background:linear-gradient(100deg,#102333,#09151f);padding:14px 16px}.dealer-card-actions button{width:36px;height:36px;padding:0!important;border-radius:50%!important;background:#0d2637!important}.dealer-variable-dropdown>summary{border-radius:9px}.custom-time-row{border-radius:11px;background:linear-gradient(100deg,#091721,#071019)}
 @media(max-width:900px){.overview-command{grid-template-columns:1fr}.overview-command .controls{grid-template-columns:1fr 1fr}.range-atlas-stats{grid-template-columns:1fr 1fr}.daily-levels-legend{grid-template-columns:repeat(2,max-content)}}
 @media(max-width:560px){.overview-command .controls{grid-template-columns:1fr}}
+/* Keep the full candle canvas at its computed width so candles remain
+   readable; the viewport provides horizontal navigation instead of shrinking
+   thousands of historical bars into a single pixel-wide plot. */
+.hedge-plot-canvas svg{width:auto!important;min-width:100%;height:330px}
