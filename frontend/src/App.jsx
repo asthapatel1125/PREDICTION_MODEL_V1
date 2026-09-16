@@ -1845,11 +1845,11 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"1M":60,"5M":300,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"1D":86400};
   const allPoints=useMemo(()=>{
-    const formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),source=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+    const formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),normalizedSymbol=symbol.toUpperCase(),source=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
     const latestFields=source.length?Object.fromEntries(formatter.formatToParts(new Date(source.at(-1).timestamp)).map(part=>[part.type,part.value])):null,latestDay=latestFields?`${latestFields.year}-${latestFields.month}-${latestFields.day}`:"",seconds=periods[period],buckets=new Map();
     source.forEach(row=>{const at=Date.parse(row.timestamp),spot=number(row.spot),level=number(row.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||spot<=0||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),day=`${fields.year}-${fields.month}-${fields.day}`,minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(day!==latestDay||minute<420||minute>1080)return;const index=Math.floor((minute-420)/(seconds/60)),key=`${day}:${index}`,existing=buckets.get(key);if(!existing)buckets.set(key,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
     return [...buckets.values()];
-  },[rows,wallKey,period]);
+  },[rows,symbol,wallKey,period]);
   const points=allPoints;
   // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
   // backfill into the viewport; the parent scroll area is the navigation.
@@ -1943,13 +1943,13 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
         {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y+42}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
-         <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>QQQ <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
+         <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>{symbol} <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${xZoom*100}%`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <defs><clipPath id={`exposure-plot-${wallKey}`}><rect x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/></clipPath></defs>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
-            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · USD</text>
+            <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>{symbol} · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-32} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
             <g clipPath={`url(#exposure-plot-${wallKey})`}>{points.map((bar,index)=>{const open=number(bar.open),close=number(bar.close),high=number(bar.high),low=number(bar.low),color=close>=open?"#00d084":"#ff4f69",bodyTop=Math.min(qqqY(open),qqqY(close)),bodyHeight=Math.max(1,Math.abs(qqqY(open)-qqqY(close)));return <g className="exposure-candle" key={`candle-${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={qqqY(high)} y2={qqqY(low)} stroke={color} strokeWidth="1.5"/><rect x={x(index)-candleWidth/2} y={bodyTop} width={Math.max(2,candleWidth)} height={bodyHeight} fill={color} opacity=".9"/></g>})}
@@ -1962,7 +1962,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
       <aside className="exposure-live-rail" onWheel={wheelY} title="Mouse wheel: vertical price zoom">
         <div className="exposure-live-updated"><small>LAST UPDATED</small><strong>{hoverTime(last.timestamp)}</strong></div>
         <span className="exposure-end-label gamma" style={{top:clamp(gammaY(plottedLevel(last))+42,72,356),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{plottedLevel(last).toFixed(2)}</strong></span>
-        <span className="exposure-end-label qqq" style={{top:clamp(qqqY(last.spot)+42,72,356)}}><i/>QQQ<strong>{last.spot.toFixed(2)}</strong></span>
+        <span className="exposure-end-label qqq" style={{top:clamp(qqqY(last.spot)+42,72,356)}}><i/>{symbol}<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
   </section>;
@@ -1973,7 +1973,8 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
   const [rows,setRows]=useState([]);
   useEffect(()=>{
     const controller=new AbortController(),normalizedSymbol=symbol.toUpperCase();
-    const mergeRows=incoming=>setRows(current=>[...new Map([...current,...incoming].filter(row=>row?.timestamp).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-5000));
+    setRows([]);
+    const mergeRows=incoming=>setRows(current=>[...new Map([...current,...incoming].filter(row=>row?.timestamp&&String(row?.symbol||"").toUpperCase()===normalizedSymbol).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-5000));
     const load=()=>fetchWallSpectrum(normalizedSymbol,controller.signal,5000).then(result=>mergeRows(result.rows||[])).catch(error=>{if(error.name!=="AbortError")return undefined});
     load();
     // Wall Intelligence publishes the exact persisted point used by both
