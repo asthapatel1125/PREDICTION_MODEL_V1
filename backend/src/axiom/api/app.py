@@ -36,7 +36,7 @@ INSTRUMENTS={
     "ES":{"provider":"CME futures","available":False,"requirement":"Separate licensed CME futures feed"},
     "YM":{"provider":"CBOT futures","available":False,"requirement":"Separate licensed CME/CBOT futures feed"},
 }
-CHART_INTERVALS={5,15,60,180,300,720,900,1800,3600,14400,86400}
+CHART_INTERVALS={5,15,60,300,600,900,1800,3600,7200,14400,21600,86400}
 
 
 class ReplayRequestBody(BaseModel):
@@ -325,7 +325,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         days:int=Query(365,ge=1,le=365),
         limit:int=Query(2500,ge=30,le=2500),
     ):
-        allowed={60,300,600,900,1800,3600,7200,10800,14400,18000,86400}
+        allowed={60,300,600,900,1800,3600,7200,10800,14400,18000,21600,86400}
         if interval_seconds not in allowed:
             raise HTTPException(422,"Unsupported candle interval")
         if not container.clickhouse:
