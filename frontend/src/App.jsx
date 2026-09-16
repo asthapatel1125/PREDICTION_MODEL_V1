@@ -1867,6 +1867,9 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
     return [...archived,...live.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-20000);
   },[historicalCandles,rows,wallKey,period,symbol]);
   const points=useMemo(()=>period.startsWith("LIVE ")?(()=>{const end=Date.parse(allPoints.at(-1)?.timestamp||"")||0;const seconds=period==="LIVE 1H"?3600:1800;return allPoints.filter(point=>Date.parse(point.timestamp)>=end-seconds*1000)})():allPoints,[allPoints,period]);
+  // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
+  // backfill into the viewport; the parent scroll area is the navigation.
+  useEffect(()=>{const canvas=canvasRef.current;if(canvas)canvas.style.width=`${Math.max(1100,points.length*9)*xZoom}px`},[points.length,xZoom]);
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}))},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
   if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time {symbol} and level observations.</p></section>;
