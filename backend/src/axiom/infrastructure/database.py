@@ -303,6 +303,15 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement.order_by(WallIntelligenceRow.timestamp.desc()).limit(limit))).scalars().all()
             return list(reversed([dict(row.payload) for row in rows]))
 
+    async def wall_price_points(self,symbol:str,limit:int=7_500)->list[dict[str,Any]]:
+        """Return retained underlying prices without loading the large wall JSON payload."""
+        async with self.sessions() as s:
+            statement=(select(WallIntelligenceRow.timestamp,WallIntelligenceRow.spot)
+                .where(WallIntelligenceRow.symbol==symbol.upper())
+                .order_by(WallIntelligenceRow.timestamp.desc()).limit(limit))
+            rows=(await s.execute(statement)).all()
+            return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
+
     async def wall_break_events(self,symbol:str,start:datetime|None=None,end:datetime|None=None,wall_types:list[str]|None=None,tiers:list[str]|None=None,limit:int=1000)->list[dict[str,Any]]:
         async with self.sessions() as s:
             statement=select(WallBreakRow).where(WallBreakRow.symbol==symbol.upper())

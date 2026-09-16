@@ -2,6 +2,25 @@ export const CHARMER_PERIODS = Array.from({ length: 29 }, (_, index) => index + 
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
+export function averagePriceBars(rows = [], bucketSeconds = 30) {
+  const milliseconds = Math.max(1, bucketSeconds) * 1000;
+  const clean = [...new Map(rows
+    .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && Number(row?.spot) > 0)
+    .map(row => [row.timestamp, row])).values()]
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const buckets = new Map();
+  clean.forEach(row => {
+    const at = Date.parse(row.timestamp), price = Number(row.spot), key = Math.floor(at / milliseconds);
+    const bar = buckets.get(key);
+    if (!bar) buckets.set(key, { timestamp: row.timestamp, at, spot: price, open: price, high: price, low: price, close: price, sum: price, samples: 1 });
+    else {
+      bar.timestamp = row.timestamp; bar.at = at; bar.high = Math.max(bar.high, price); bar.low = Math.min(bar.low, price);
+      bar.close = price; bar.sum += price; bar.samples += 1; bar.spot = bar.sum / bar.samples;
+    }
+  });
+  return [...buckets.values()].map(({ sum, ...bar }) => bar);
+}
+
 // Price-only Axiom Charmander. A three-point median rejects isolated bad
 // ticks. One volatility-normalized moving-average slope is compressed by
 // arctan, then spread across 29 progressively slower, horizon-scaled strands.

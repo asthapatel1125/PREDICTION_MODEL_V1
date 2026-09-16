@@ -1,11 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CHARMER_PERIODS, charmPhase, computePriceCharmander } from "./priceCharmander.js";
+import { CHARMER_PERIODS, averagePriceBars, charmPhase, computePriceCharmander } from "./priceCharmander.js";
 
 const rows = prices => prices.map((spot, index) => ({
   timestamp: new Date(Date.UTC(2026, 8, 16, 14, 30, index * 5)).toISOString(),
   spot,
 }));
+
+test("averages noisy ticks into OHLC analysis bars", () => {
+  const bars=averagePriceBars([
+    {timestamp:"2026-09-16T14:00:01Z",spot:100},{timestamp:"2026-09-16T14:00:06Z",spot:104},
+    {timestamp:"2026-09-16T14:00:11Z",spot:102},{timestamp:"2026-09-16T14:00:31Z",spot:106},
+  ],30);
+  assert.equal(bars.length,2);
+  assert.deepEqual({spot:bars[0].spot,open:bars[0].open,high:bars[0].high,low:bars[0].low,close:bars[0].close,samples:bars[0].samples},
+    {spot:102,open:100,high:104,low:100,close:102,samples:3});
+});
 
 test("builds 29 bounded price-only horizons", () => {
   const result = computePriceCharmander(rows(Array.from({ length: 120 }, (_, index) => 700 + index * .04)));
