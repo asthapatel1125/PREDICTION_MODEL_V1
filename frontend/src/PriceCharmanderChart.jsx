@@ -3,13 +3,13 @@ import { fetchWallPriceSeries } from "./api";
 import { averagePriceBars, charmPhase, computePriceCharmander } from "./priceCharmander";
 
 const RANGE_CONFIG = {
-  "5M": { seconds: 300, bucket: 10 },
-  "15M": { seconds: 900, bucket: 15 },
-  "30M": { seconds: 1800, bucket: 30 },
-  "1H": { seconds: 3600, bucket: 60 },
-  "4H": { seconds: 14400, bucket: 120 },
-  "6H": { seconds: 21600, bucket: 180 },
-  "8H": { seconds: 28800, bucket: 240 },
+  "5M": { seconds: 300, bucket: 15 },
+  "15M": { seconds: 900, bucket: 30 },
+  "30M": { seconds: 1800, bucket: 60 },
+  "1H": { seconds: 3600, bucket: 120 },
+  "4H": { seconds: 14400, bucket: 300 },
+  "6H": { seconds: 21600, bucket: 600 },
+  "8H": { seconds: 28800, bucket: 600 },
 };
 const COLORS = {
   positive_rising: "#43d35d",
@@ -118,8 +118,8 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
         const prior = visibleIndexes[point - 1], current = visibleIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
         if(currentValueIndex>=line.length)continue;
         context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
-        context.globalAlpha = .62 + lineIndex / calculated.series.length * .25;
-        context.lineWidth = lineIndex % 5 === 0 ? 1.65 : 1.2;
+        context.globalAlpha = .26 + lineIndex / calculated.series.length * .32;
+        context.lineWidth = lineIndex % 5 === 0 ? 1.1 : .75;
         context.beginPath(); context.moveTo(xAt(Date.parse(calculated.timestamps[prior])), charmY(line[priorValueIndex])); context.lineTo(xAt(Date.parse(calculated.timestamps[current])), charmY(line[currentValueIndex])); context.stroke();
       }
     });

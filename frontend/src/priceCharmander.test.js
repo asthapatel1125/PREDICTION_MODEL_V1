@@ -17,6 +17,13 @@ test("averages noisy ticks into OHLC analysis bars", () => {
     {spot:102,open:100,high:104,low:100,close:102,samples:3});
 });
 
+test("uses a trimmed bucket average so isolated bad ticks do not drive the signal", () => {
+  const points=Array.from({length:20},(_,index)=>({timestamp:new Date(Date.UTC(2026,8,16,14,0,index)).toISOString(),spot:index===10?900:100}));
+  const [bar]=averagePriceBars(points,30);
+  assert.equal(bar.spot,100);
+  assert.equal(bar.high,900);
+});
+
 test("builds 29 bounded price-only horizons", () => {
   const result = computePriceCharmander(rows(Array.from({ length: 120 }, (_, index) => 700 + index * .04)));
   assert.equal(result.periods.length, 29);

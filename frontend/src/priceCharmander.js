@@ -12,13 +12,17 @@ export function averagePriceBars(rows = [], bucketSeconds = 30) {
   clean.forEach(row => {
     const at = Date.parse(row.timestamp), price = Number(row.spot), key = Math.floor(at / milliseconds);
     const bar = buckets.get(key);
-    if (!bar) buckets.set(key, { timestamp: row.timestamp, at, spot: price, open: price, high: price, low: price, close: price, sum: price, samples: 1 });
+    if (!bar) buckets.set(key, { timestamp: row.timestamp, at, spot: price, open: price, high: price, low: price, close: price, prices: [price], samples: 1 });
     else {
       bar.timestamp = row.timestamp; bar.at = at; bar.high = Math.max(bar.high, price); bar.low = Math.min(bar.low, price);
-      bar.close = price; bar.sum += price; bar.samples += 1; bar.spot = bar.sum / bar.samples;
+      bar.close = price; bar.prices.push(price); bar.samples += 1;
     }
   });
-  return [...buckets.values()].map(({ sum, ...bar }) => bar);
+  return [...buckets.values()].map(({ prices, ...bar }) => {
+    const ordered = prices.sort((a, b) => a - b), trim = ordered.length >= 10 ? Math.floor(ordered.length * .1) : 0;
+    const retained = ordered.slice(trim, ordered.length - trim || undefined);
+    return { ...bar, spot: retained.reduce((sum, price) => sum + price, 0) / retained.length };
+  });
 }
 
 // Price-only Axiom Charmander. A three-point median rejects isolated bad
@@ -43,6 +47,7 @@ export function computePriceCharmander(rows = []) {
   let variance = 1e-8;
   let priceAverage = Math.log(filteredPrices[0] || 1);
   let slopeAverage = 0;
+  let angleAverage = 0;
   const normalizationAlpha = 2 / 121;
   const priceAlpha = 2 / 13;
 
@@ -53,11 +58,13 @@ export function computePriceCharmander(rows = []) {
     variance = (1 - normalizationAlpha) * (variance + normalizationAlpha * (change - priorMean) ** 2);
     const logPrice = Math.log(filteredPrices[index]);
     priceAverage += priceAlpha * (logPrice - priceAverage);
-    const priorAverage = index > 3 ? normalized[index - 3] : priceAverage;
+    const priorAverage = index > 5 ? normalized[index - 5] : priceAverage;
     normalized[index] = priceAverage;
-    const slope = (priceAverage - priorAverage) / Math.max(Math.sqrt(variance) * Math.sqrt(3), 1e-7);
-    slopeAverage += .18 * (clamp(slope, -4, 4) - slopeAverage);
-    angle[index] = clamp((2 / Math.PI) * Math.atan(2.8 * slopeAverage), -1, 1);
+    const slope = (priceAverage - priorAverage) / (Math.max(Math.sqrt(variance), 8e-5) * Math.sqrt(5));
+    slopeAverage += .12 * (clamp(slope, -3, 3) - slopeAverage);
+    const rawAngle = clamp((2 / Math.PI) * Math.atan(2.2 * slopeAverage), -1, 1);
+    angleAverage += .25 * (rawAngle - angleAverage);
+    angle[index] = angleAverage;
   }
 
   const series = CHARMER_PERIODS.map((period, periodIndex) => {
