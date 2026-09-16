@@ -63,8 +63,8 @@ export const fetchDynamicsHistory = (symbol, signal) =>
   request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}?limit=150000&display_bucket_seconds=60`, { signal });
 export const fetchWallSpectrum = (symbol, signal, limit = null) =>
   request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}${limit ? `&limit=${encodeURIComponent(limit)}` : ""}`, { signal });
-export const fetchWallPriceSeries = (symbol, windowSeconds, signal) =>
-  request(`/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}`, { signal });
+export const fetchWallPriceSeries = (symbol, windowSeconds, bucketSeconds, signal) =>
+  request(`/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}&bucket_seconds=${encodeURIComponent(bucketSeconds)}`, { signal });
 export const fetchWallBreaks = (symbol, signal) =>
   request(`/api/v1/walls/breaks?symbol=${encodeURIComponent(symbol)}`, { signal });
 export const fetchWallDealerFlow = (symbol, signal) =>

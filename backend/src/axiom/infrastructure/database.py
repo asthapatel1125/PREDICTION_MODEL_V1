@@ -303,7 +303,7 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement.order_by(WallIntelligenceRow.timestamp.desc()).limit(limit))).scalars().all()
             return list(reversed([dict(row.payload) for row in rows]))
 
-    async def wall_price_points(self,symbol:str,limit:int=7_500)->list[dict[str,Any]]:
+    async def wall_price_points(self,symbol:str,limit:int=15_000)->list[dict[str,Any]]:
         """Return retained underlying prices without loading the large wall JSON payload."""
         async with self.sessions() as s:
             statement=(select(WallIntelligenceRow.timestamp,WallIntelligenceRow.spot)

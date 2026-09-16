@@ -26,10 +26,9 @@ export function averagePriceBars(rows = [], bucketSeconds = 30) {
 }
 
 // Price-only Axiom Charmander. A three-point median rejects isolated bad
-// ticks. One volatility-normalized moving-average slope is compressed by
-// arctan, then spread across 29 progressively slower, horizon-scaled strands.
-// This produces the nested above/below fan without contaminating it with
-// option exposures.
+// ticks. Each of the 29 strands is its own volatility-normalized moving-
+// average slope. This lets the horizons expand, cross and knit naturally;
+// they are not scaled copies of a single oscillator.
 export function computePriceCharmander(rows = []) {
   const clean = [...new Map(rows
     .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && Number(row?.spot) > 0)
@@ -41,40 +40,34 @@ export function computePriceCharmander(rows = []) {
     if (index < 2) return point.price;
     return [clean[index - 2].price, clean[index - 1].price, point.price].sort((a, b) => a - b)[1];
   });
-  const normalized = new Float64Array(length);
-  const angle = new Float64Array(length);
+  const logPrices = Float64Array.from(filteredPrices, price => Math.log(price || 1));
+  const volatility = new Float64Array(length);
   let mean = 0;
   let variance = 1e-8;
-  let priceAverage = Math.log(filteredPrices[0] || 1);
-  let slopeAverage = 0;
-  let angleAverage = 0;
   const normalizationAlpha = 2 / 121;
-  const priceAlpha = 2 / 13;
 
   for (let index = 1; index < length; index += 1) {
     const change = Math.log(filteredPrices[index] / filteredPrices[index - 1]);
     const priorMean = mean;
     mean += normalizationAlpha * (change - mean);
     variance = (1 - normalizationAlpha) * (variance + normalizationAlpha * (change - priorMean) ** 2);
-    const logPrice = Math.log(filteredPrices[index]);
-    priceAverage += priceAlpha * (logPrice - priceAverage);
-    const priorAverage = index > 5 ? normalized[index - 5] : priceAverage;
-    normalized[index] = priceAverage;
-    const slope = (priceAverage - priorAverage) / (Math.max(Math.sqrt(variance), 8e-5) * Math.sqrt(5));
-    slopeAverage += .12 * (clamp(slope, -3, 3) - slopeAverage);
-    const rawAngle = clamp((2 / Math.PI) * Math.atan(2.2 * slopeAverage), -1, 1);
-    angleAverage += .25 * (rawAngle - angleAverage);
-    angle[index] = angleAverage;
+    volatility[index] = Math.max(Math.sqrt(variance), 8e-5);
   }
+  if (length) volatility[0] = 8e-5;
 
-  const series = CHARMER_PERIODS.map((period, periodIndex) => {
+  const series = CHARMER_PERIODS.map(period => {
     const values = new Float32Array(length);
+    const movingAverage = new Float64Array(length);
     const alpha = 2 / (period + 1);
-    const amplitude = (periodIndex + 1) / CHARMER_PERIODS.length;
-    let average = 0;
+    const slopeLookback = Math.max(1, Math.round(Math.sqrt(period)));
+    let average = logPrices[0] || 0;
     for (let index = 0; index < length; index += 1) {
-      average += alpha * (angle[index] - average);
-      values[index] = amplitude * average;
+      average += alpha * (logPrices[index] - average);
+      movingAverage[index] = average;
+      if (index < slopeLookback) continue;
+      const slope = (average - movingAverage[index - slopeLookback]) /
+        (volatility[index] * Math.sqrt(slopeLookback));
+      values[index] = clamp((2 / Math.PI) * Math.atan(2.2 * clamp(slope, -4, 4)), -1, 1);
     }
     return values;
   });

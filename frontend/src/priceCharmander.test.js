@@ -38,11 +38,12 @@ test("flat prices settle at the zero line", () => {
   assert.equal(result.series.every(line => Math.abs(line.at(-1)) < 1e-6), true);
 });
 
-test("horizon scaling creates a nested arctan fan", () => {
-  const result = computePriceCharmander(rows(Array.from({ length: 240 }, (_, index) => 700 + index * .08)));
-  const magnitudes = result.series.map(line => Math.abs(line.at(-1)));
-  assert.equal(magnitudes.at(-1) > magnitudes[0] * 5, true);
-  assert.equal(magnitudes.every((value, index) => index === 0 || value >= magnitudes[index - 1] - .025), true);
+test("independent horizons preserve a responsive fast line and a steadier slow line", () => {
+  const prices=Array.from({length:360},(_,index)=>700+index*.015+Math.sin(index*.45)*.35);
+  const result = computePriceCharmander(rows(prices));
+  const variation=line=>[...line].slice(1).reduce((sum,value,index)=>sum+Math.abs(value-line[index]),0);
+  assert.equal(variation(result.series[0]) > variation(result.series.at(-1)), true);
+  assert.equal(result.series.some((line,index)=>index>0&&line.some((value,point)=>Math.abs(value-result.series[0][point])>.02)),true);
 });
 
 test("a sustained reversal crosses into the bearish half", () => {

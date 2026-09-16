@@ -275,15 +275,17 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/price-series")
-    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800):
+    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=30):
         """Compact price-only warm-up for Charmander; deliberately skips wall payloads."""
         safe_window=max(300,min(int(window_seconds),28_800))
+        safe_bucket=max(5,min(int(bucket_seconds),900))
         cadence=5
-        warmup_points=180
-        limit=min(7_500,max(300,safe_window//cadence+warmup_points))
+        warmup_bars=90
+        warmup_points=warmup_bars*max(1,safe_bucket//cadence)
+        limit=min(15_000,max(300,safe_window//cadence+warmup_points))
         rows=await container.repository.wall_price_points(symbol,limit)
         return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"RETAINED_UNDERLYING_PRICE_ONLY",
-            "cadence_seconds":cadence,"warmup_points":warmup_points,"rows":rows}
+            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"warmup_bars":warmup_bars,"rows":rows}
 
     @api.get("/walls/nasdaq-range-atlas")
     async def nasdaq_range_atlas(symbol:str="QQQ"):

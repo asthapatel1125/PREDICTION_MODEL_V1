@@ -3,13 +3,13 @@ import { fetchWallPriceSeries } from "./api";
 import { averagePriceBars, charmPhase, computePriceCharmander } from "./priceCharmander";
 
 const RANGE_CONFIG = {
-  "5M": { seconds: 300, bucket: 15 },
-  "15M": { seconds: 900, bucket: 30 },
-  "30M": { seconds: 1800, bucket: 60 },
-  "1H": { seconds: 3600, bucket: 120 },
-  "4H": { seconds: 14400, bucket: 300 },
-  "6H": { seconds: 21600, bucket: 600 },
-  "8H": { seconds: 28800, bucket: 600 },
+  "5M": { seconds: 300, bucket: 10 },
+  "15M": { seconds: 900, bucket: 15 },
+  "30M": { seconds: 1800, bucket: 30 },
+  "1H": { seconds: 3600, bucket: 60 },
+  "4H": { seconds: 14400, bucket: 240 },
+  "6H": { seconds: 21600, bucket: 360 },
+  "8H": { seconds: 28800, bucket: 480 },
 };
 const COLORS = {
   positive_rising: "#43d35d",
@@ -34,11 +34,11 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   useEffect(() => {
     const controller = new AbortController();
     setHistoryState("loading");
-    fetchWallPriceSeries(symbol, config.seconds, controller.signal)
+    fetchWallPriceSeries(symbol, config.seconds, config.bucket, controller.signal)
       .then(result => { setHistoryRows(result.rows || []); setHistoryState("ready"); })
       .catch(error => { if (error.name !== "AbortError") { setHistoryRows([]); setHistoryState("live-only"); } });
     return () => controller.abort();
-  }, [config.seconds, symbol]);
+  }, [config.bucket, config.seconds, symbol]);
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
     const merged = [...historyRows, ...rows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
@@ -56,7 +56,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   }, [calculated.timestamps, cutoff]);
   const candles = useMemo(() => analysisBars.filter(bar => bar.at >= cutoff), [analysisBars, cutoff]);
   const warmupBars = useMemo(() => analysisBars.filter(bar => bar.at < cutoff).length, [analysisBars, cutoff]);
-  const warmupReady = warmupBars >= 60;
+  const warmupReady = warmupBars >= 90;
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -147,7 +147,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
 
   return <section className="price-charmander">
-    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · {config.bucket}s averaged bars · arctan slope fan</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/60`}</small></div></header>
+    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
     <div className="price-charmander-controls" aria-label="Charmander time window">{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item); setHover(null); }} key={item}>{item}</button>)}<button type="button" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"REPLICA SHIFT ON":"LIVE ALIGNMENT"}</button></div>
     <div className="price-charmander-frame" ref={frameRef} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)}>
       <canvas ref={canvasRef}/>
