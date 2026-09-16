@@ -282,11 +282,13 @@ class LiveWallExposureEngine:
                 except asyncio.CancelledError:raise
                 except Exception as exc:
                     self.last_error=str(exc)
+                    message=str(exc);session_collision="Invalid session ID" in message or "more than one terminal" in message
+                    retry_delay=max(backoff,30.0) if session_collision else backoff
                     event={"level":"ERROR","component":"live_wall_exposure","symbol":symbol.upper(),
-                        "message":str(exc),"retry_seconds":backoff,"timestamp":datetime.now(timezone.utc).isoformat()}
+                        "message":message,"retry_seconds":retry_delay,"timestamp":datetime.now(timezone.utc).isoformat()}
                     if hasattr(self.repository,"save_system_event"):await self.repository.save_system_event(event)
                     await self.publisher.publish("system_event",event)
-                    await asyncio.sleep(backoff);backoff=min(backoff*2,30)
+                    await asyncio.sleep(retry_delay);backoff=min(backoff*2,30)
         finally:self.running=False
 
     def stop(self)->None:

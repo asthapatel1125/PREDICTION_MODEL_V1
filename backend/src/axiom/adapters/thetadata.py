@@ -152,10 +152,10 @@ class ThetaDataV3Client(MarketDataPort):
 
     async def live_bars(self, symbol: str, resolution_seconds: int) -> AsyncIterator[MarketBar]:
         loop = asyncio.get_running_loop()
-        next_poll = loop.time()
         last_timestamp: datetime | None = None
         repeated_snapshot_polls = 0
         while True:
+            poll_started = loop.time()
             # Serialize the memory-heavy provider conversion and aggregation,
             # not merely the HTTP calls. Otherwise a full SPY row set remains
             # resident while QQQ allocates its dataframe and normalized rows.
@@ -176,9 +176,11 @@ class ThetaDataV3Client(MarketDataPort):
                 last_timestamp = bar.timestamp
                 repeated_snapshot_polls = 0
             yield bar
-            # Provider polling is intentionally independent from chart/bar resolution.
-            next_poll += self.poll_seconds
-            await asyncio.sleep(max(0.0, next_poll - loop.time()))
+            # Never attempt to "catch up" missed polls. If a provider request
+            # takes longer than the cadence, an absolute accumulating deadline
+            # stays behind forever and creates a zero-sleep request storm.
+            elapsed=loop.time()-poll_started
+            await asyncio.sleep(max(0.25,self.poll_seconds-elapsed))
 
     @staticmethod
     def _contract_key(row: dict[str, Any]) -> tuple[str, str, str]:
