@@ -1828,7 +1828,7 @@ function LegacyExposureLevelMap({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
-function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
+function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false}){
    const [period,setPeriod]=useState("5M");
    const [historyRange,setHistoryRange]=useState("ALL");
    const [historicalCandles,setHistoricalCandles]=useState([]);
@@ -1845,18 +1845,27 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const dragRef=useRef(null);
   const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"LIVE 30M":1800,"1M":60,"5M":300,"10M":600,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"5H":18000,"1D":86400},ranges={"2D":2,"3D":3,"5D":5,"10D":10,"30D":30,"1MO":30,ALL:365};
-  useEffect(()=>{const controller=new AbortController();fetchExposureCandles("QQQ",periods[period],ranges[historyRange],controller.signal).then(result=>setHistoricalCandles(result.rows||[])).catch(error=>{if(error.name!=="AbortError")setHistoricalCandles([])});return()=>controller.abort()},[period,historyRange]);
+  useEffect(()=>{if(symbol!=="QQQ"){setHistoricalCandles([]);return undefined}const controller=new AbortController();fetchExposureCandles(symbol,periods[period],ranges[historyRange],controller.signal).then(result=>setHistoricalCandles(result.rows||[])).catch(error=>{if(error.name!=="AbortError")setHistoricalCandles([])});return()=>controller.abort()},[symbol,period,historyRange]);
   const allPoints=useMemo(()=>{
     const key=wallKey==="ZERO_DELTA"?"zero_delta":"zero_gamma";
-    const archived=historicalCandles.map(row=>{const spot=number(row.close),level=number(row[key]);return Number.isFinite(spot)&&spot>0&&Number.isFinite(level)&&level>0?{...row,spot,level,zero:level,difference:spot-level,positive:level<=spot}:null}).filter(Boolean);
+    // Keep every QQQ candle even when a historical exposure bucket has a
+    // missing level; carry the last valid zero-gamma/zero-delta close forward
+    // so one incomplete join cannot collapse the entire backfill to one bar.
+    let carriedLevel=NaN;
+    const archived=(symbol==="QQQ"?historicalCandles:rows).map(row=>{
+      const spot=number(row.close??row.spot??row.price??row.qqq_price),rawLevel=number(row[key]??row.walls?.[wallKey]?.strike??row.walls?.[key]?.strike);
+      if(Number.isFinite(rawLevel)&&rawLevel>0)carriedLevel=rawLevel;
+      const level=Number.isFinite(rawLevel)&&rawLevel>0?rawLevel:carriedLevel;
+      return Number.isFinite(spot)&&spot>0&&Number.isFinite(level)&&level>0?{...row,spot,level,zero:level,difference:spot-level,positive:level<=spot}:null;
+    }).filter(Boolean);
     const latestArchived=Date.parse(archived.at(-1)?.timestamp||"")||0,seconds=periods[period],formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),live=new Map();
     rows.forEach(row=>{const at=Date.parse(row?.timestamp||""),spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||at<=latestArchived||!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(minute<570||minute>960)return;const index=Math.floor((minute-570)/(seconds/60)),bucket=`${fields.year}-${fields.month}-${fields.day}:${index}`,existing=live.get(bucket);if(!existing)live.set(bucket,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
     return [...archived,...live.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-2500);
-  },[historicalCandles,rows,wallKey,period]);
+  },[historicalCandles,rows,wallKey,period,symbol]);
   const points=useMemo(()=>period==="LIVE 30M"?(()=>{const end=Date.parse(allPoints.at(-1)?.timestamp||"")||0;return allPoints.filter(point=>Date.parse(point.timestamp)>=end-1800000)})():allPoints,[allPoints,period]);
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}))},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
-  if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and level observations.</p></section>;
+  if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time {symbol} and level observations.</p></section>;
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   // Overlay both series in one time-aligned plot, but map each one through its
   // own local USD scale so small QQQ moves remain visible.
@@ -1929,7 +1938,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
     return paths;
   },{positive:"",negative:""});
   const levelPathAll=points.map((point,index)=>`${x(index).toFixed(1)},${gammaY(plottedLevel(point)).toFixed(1)}`).join(" ");
-  const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}>
+  const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}> 
     <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><div className="timeframe-buttons" aria-label="Historical range">{Object.keys(ranges).map(name=><button key={name} type="button" className={historyRange===name?"active":""} onClick={()=>setHistoryRange(name)}>{name}</button>)}</div><small>QQQ OHLC CANDLES · CLOSING {axisName} LEVEL</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
@@ -1962,6 +1971,12 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
     </div>
   </section>;
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
+}
+
+function LiveSymbolExposurePanels({symbol="SPY"}){
+  const [rows,setRows]=useState([]);
+  useEffect(()=>{const controller=new AbortController();const load=()=>fetchDashboard(symbol,controller.signal).then(result=>setRows(result.history||[])).catch(error=>{if(error.name!=="AbortError")setRows([])});load();const timer=setInterval(load,5000);return()=>{controller.abort();clearInterval(timer)}},[symbol]);
+  return <div className="live-symbol-exposure-panels"><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded/></div>;
 }
 
 function ZeroGammaExposureChart(props){
@@ -2571,6 +2586,7 @@ export default function Home() {
     <section className={`dynamics-direction-gate ${(directionGate||"CHECKING").toLowerCase()}`} aria-label="Shared Dynamics call direction gate"><div><span>DYNAMICS CALL DIRECTION GATE</span><b>Gamma 1.0 · Gamma 2.0 · Gamma 3.0 · Delta Dynamics</b><small>Saved for the streaming day · resets at 6 PM Eastern. Existing legs continue; new opposite-direction calls/children are blocked.</small></div><nav><button type="button" disabled={directionGateBusy||directionGate===null} className={directionGate==="LONG_ONLY"?"active long":""} onClick={()=>changeDirectionGate("LONG_ONLY")}>LONG ONLY</button><button type="button" disabled={directionGateBusy||directionGate===null} className={directionGate==="SHORT_ONLY"?"active short":""} onClick={()=>changeDirectionGate("SHORT_ONLY")}>SHORT ONLY</button><button type="button" disabled={directionGateBusy||directionGate===null} className={directionGate==="BOTH"?"active both":""} onClick={()=>changeDirectionGate("BOTH")}>RESET · BOTH</button></nav></section>
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
+    <LiveSymbolExposurePanels symbol="SPY"/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">

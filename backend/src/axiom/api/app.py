@@ -58,7 +58,7 @@ class DynamicsDirectionGateRequest(BaseModel):
 
 class Container:
     settings:PlatformSettings;config:StrategyConfig;repository:SqlAlchemyRepository;bus:InMemoryEventBus
-    data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
+    data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_spy:LiveEngine|None=None;live_task:asyncio.Task|None=None;live_spy_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
     nasdaq_range_atlas:dict[str,Any]|None
     clickhouse:ClickHouseRepository|None
@@ -90,6 +90,11 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
             cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
+        # SPY is live-only for now. It gets an isolated pipeline/engine so its
+        # ThetaData state cannot overwrite QQQ's model history or stream status.
+        container.live_spy=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
+            price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
+            cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
         container.direction_gate=DailyDirectionGate(container.repository,
             [container.live.attribution,container.training.attribution],cfg.market_timezone)
         await container.direction_gate.sync()
@@ -116,13 +121,18 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
                 running=container.live_task and not container.live_task.done()
                 if within_window and not running:
                     container.live_task=asyncio.create_task(container.live.run("QQQ",5),name="live-QQQ-auto")
+                if within_window and container.live_spy and (not container.live_spy_task or container.live_spy_task.done()):
+                    container.live_spy_task=asyncio.create_task(container.live_spy.run("SPY",5),name="live-SPY-auto")
                 elif not within_window and running:
                     container.live.stop()
+                    if container.live_spy:container.live_spy.stop()
                 await asyncio.sleep(15)
         container.auto_stream_task=asyncio.create_task(automatic_live_stream(),name="automatic-live-stream")
         yield
         if container.auto_stream_task:container.auto_stream_task.cancel()
         if container.live_task:container.live_task.cancel()
+        if container.live_spy_task:container.live_spy_task.cancel()
+        if container.live_spy:container.live_spy.stop()
         for task in container.replay_tasks:task.cancel()
 
     app=FastAPI(title="Axiom Pressure Intelligence API",version=__version__,lifespan=lifespan,docs_url="/api/docs",openapi_url="/api/openapi.json")
