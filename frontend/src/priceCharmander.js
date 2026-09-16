@@ -2,10 +2,11 @@ export const CHARMER_PERIODS = Array.from({ length: 29 }, (_, index) => index + 
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
-// Price-only Axiom Charmander. Price returns are normalized with an
-// exponentially weighted mean/variance, compressed into a bounded angle, and
-// passed through 29 zero-lag moving averages. It deliberately does not use a
-// negative plot offset, so every value appears when it was actually known.
+// Price-only Axiom Charmander. A three-point median rejects isolated bad
+// ticks. One volatility-normalized moving-average slope is compressed by
+// arctan, then spread across 29 progressively slower, horizon-scaled strands.
+// This produces the nested above/below fan without contaminating it with
+// option exposures.
 export function computePriceCharmander(rows = []) {
   const clean = [...new Map(rows
     .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && Number(row?.spot) > 0)
@@ -13,29 +14,41 @@ export function computePriceCharmander(rows = []) {
     .values()].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
 
   const length = clean.length;
+  const filteredPrices = Float64Array.from(clean, (point, index) => {
+    if (index < 2) return point.price;
+    return [clean[index - 2].price, clean[index - 1].price, point.price].sort((a, b) => a - b)[1];
+  });
   const normalized = new Float64Array(length);
+  const angle = new Float64Array(length);
   let mean = 0;
   let variance = 1e-8;
-  const normalizationAlpha = 2 / 61;
+  let priceAverage = Math.log(filteredPrices[0] || 1);
+  let slopeAverage = 0;
+  const normalizationAlpha = 2 / 121;
+  const priceAlpha = 2 / 13;
 
   for (let index = 1; index < length; index += 1) {
-    const change = Math.log(clean[index].price / clean[index - 1].price);
+    const change = Math.log(filteredPrices[index] / filteredPrices[index - 1]);
     const priorMean = mean;
     mean += normalizationAlpha * (change - mean);
     variance = (1 - normalizationAlpha) * (variance + normalizationAlpha * (change - priorMean) ** 2);
-    normalized[index] = clamp((change - mean) / Math.max(Math.sqrt(variance), 1e-7), -8, 8);
+    const logPrice = Math.log(filteredPrices[index]);
+    priceAverage += priceAlpha * (logPrice - priceAverage);
+    const priorAverage = index > 3 ? normalized[index - 3] : priceAverage;
+    normalized[index] = priceAverage;
+    const slope = (priceAverage - priorAverage) / Math.max(Math.sqrt(variance) * Math.sqrt(3), 1e-7);
+    slopeAverage += .18 * (clamp(slope, -4, 4) - slopeAverage);
+    angle[index] = clamp((2 / Math.PI) * Math.atan(2.8 * slopeAverage), -1, 1);
   }
 
-  const series = CHARMER_PERIODS.map(period => {
+  const series = CHARMER_PERIODS.map((period, periodIndex) => {
     const values = new Float32Array(length);
     const alpha = 2 / (period + 1);
-    const lag = Math.max(1, Math.floor((period - 1) / 2));
+    const amplitude = (periodIndex + 1) / CHARMER_PERIODS.length;
     let average = 0;
     for (let index = 0; index < length; index += 1) {
-      const lagged = normalized[Math.max(0, index - lag)];
-      const zeroLagInput = normalized[index] + (normalized[index] - lagged);
-      average += alpha * (zeroLagInput - average);
-      values[index] = clamp((2 / Math.PI) * Math.atan(average), -1, 1);
+      average += alpha * (angle[index] - average);
+      values[index] = amplitude * average;
     }
     return values;
   });
@@ -53,4 +66,3 @@ export function charmPhase(value, previous) {
   if (value >= 0) return value >= previous ? "positive_rising" : "positive_falling";
   return value <= previous ? "negative_falling" : "negative_rising";
 }
-

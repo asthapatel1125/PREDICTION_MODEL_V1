@@ -35,6 +35,7 @@ function candleRows(rows, cutoff, bucketSeconds) {
 
 export default function PriceCharmanderChart({ rows = [], symbol = "QQQ", onNeedWindow }) {
   const [range, setRange] = useState("5M");
+  const [visualShift, setVisualShift] = useState(true);
   const [size, setSize] = useState({ width: 1200, height: 610 });
   const [hover, setHover] = useState(null);
   const canvasRef = useRef(null), frameRef = useRef(null);
@@ -82,6 +83,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ", onNeed
     const firstAt = Date.parse(calculated.timestamps[visibleIndexes[0]]), lastAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)]), timeSpan = Math.max(1, lastAt - firstAt);
     const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
     context.fillStyle = "#061019"; context.fillRect(left, top0, plotWidth, top1 - top0); context.fillRect(left, bottom0, plotWidth, bottom1 - bottom0);
+    context.fillStyle="rgba(54,185,82,.055)";context.fillRect(left,bottom0,plotWidth,(bottom1-bottom0)/2);context.fillStyle="rgba(255,69,89,.05)";context.fillRect(left,(bottom0+bottom1)/2,plotWidth,(bottom1-bottom0)/2);
     context.strokeStyle = "#183746"; context.lineWidth = 1;
     for (const y of [top0, (top0 + top1) / 2, top1, bottom0, (bottom0 + bottom1) / 2, bottom1]) { context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke(); }
     for (let tick = 0; tick < 6; tick += 1) {
@@ -101,16 +103,25 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ", onNeed
       const openY = priceY(candle.open), closeY = priceY(candle.close);
       context.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1.5, Math.abs(closeY - openY)));
     });
-    context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48); context.fillText("PRICE-ONLY CHARMANDER · NORMALIZED ANGLE", 9, bottom0 + 18);
-    context.fillStyle = "#8ea8b8"; context.font = "10px monospace"; context.fillText(priceHigh.toFixed(2), 9, top0 + 4); context.fillText(priceLow.toFixed(2), 9, top1); context.fillText("+1", 38, bottom0 + 4); context.fillText("0", 45, (bottom0 + bottom1) / 2 + 3); context.fillText("−1", 38, bottom1);
-    const charmY = value => bottom1 - (value + 1) / 2 * (bottom1 - bottom0);
+    const charmLimit=1;
+    context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48); context.fillText("PRICE-ONLY CHARMANDER · SMOOTHED ANGLE", 9, bottom0 + 18);
+    context.fillStyle = "#8ea8b8"; context.font = "10px monospace"; context.fillText(priceHigh.toFixed(2), 9, top0 + 4); context.fillText(priceLow.toFixed(2), 9, top1); context.fillText(`+${charmLimit.toFixed(2)}`, 22, bottom0 + 4); context.fillText("0", 45, (bottom0 + bottom1) / 2 + 3); context.fillText(`−${charmLimit.toFixed(2)}`, 22, bottom1);
+    const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
     calculated.series.forEach((line, lineIndex) => {
       for (let point = 1; point < visibleIndexes.length; point += 1) {
-        const prior = visibleIndexes[point - 1], current = visibleIndexes[point];
-        context.strokeStyle = COLORS[charmPhase(line[current], line[prior])];
-        context.globalAlpha = .64 + lineIndex / calculated.series.length * .28;
-        context.lineWidth = lineIndex % 5 === 0 ? 1.45 : 1;
-        context.beginPath(); context.moveTo(xAt(Date.parse(calculated.timestamps[prior])), charmY(line[prior])); context.lineTo(xAt(Date.parse(calculated.timestamps[current])), charmY(line[current])); context.stroke();
+        const prior = visibleIndexes[point - 1], current = visibleIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
+        if(currentValueIndex>=line.length)continue;
+        context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
+        context.globalAlpha = .62 + lineIndex / calculated.series.length * .25;
+        context.lineWidth = lineIndex % 5 === 0 ? 1.65 : 1.2;
+        context.beginPath(); context.moveTo(xAt(Date.parse(calculated.timestamps[prior])), charmY(line[priorValueIndex])); context.lineTo(xAt(Date.parse(calculated.timestamps[current])), charmY(line[currentValueIndex])); context.stroke();
+      }
+    });
+    const consensusGroups=[[0,6],[6,15],[15,29]];
+    consensusGroups.forEach(([start,end],groupIndex)=>{
+      for(let point=1;point<visibleIndexes.length;point+=1){
+        const prior=visibleIndexes[point-1],current=visibleIndexes[point],lines=calculated.series.slice(start,end),priorValue=lines.reduce((sum,line)=>sum+line[prior],0)/lines.length,currentValue=lines.reduce((sum,line)=>sum+line[current],0)/lines.length;
+        context.strokeStyle=COLORS[charmPhase(currentValue,priorValue)];context.globalAlpha=1;context.lineWidth=3.6-groupIndex*.55;context.beginPath();context.moveTo(xAt(Date.parse(calculated.timestamps[prior])),charmY(priorValue));context.lineTo(xAt(Date.parse(calculated.timestamps[current])),charmY(currentValue));context.stroke();
       }
     });
     context.globalAlpha = 1;
@@ -118,7 +129,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ", onNeed
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, hover, size, symbol, visibleIndexes]);
+  }, [calculated, candles, hover, size, symbol, visibleIndexes,visualShift]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
@@ -130,12 +141,12 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ", onNeed
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
 
   return <section className="price-charmander">
-    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · 29 normalized zero-lag horizons below</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{Math.round(breadth * 100)}% bullish breadth</small></div></header>
-    <div className="price-charmander-controls" aria-label="Charmander time window">{Object.keys(WINDOWS).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item); setHover(null); }} key={item}>{item}</button>)}</div>
+    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · arctan slope fan with a fixed bullish / bearish zero divide</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{Math.round(breadth * 100)}% bullish breadth</small></div></header>
+    <div className="price-charmander-controls" aria-label="Charmander time window">{Object.keys(WINDOWS).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item); setHover(null); }} key={item}>{item}</button>)}<button type="button" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"REPLICA SHIFT ON":"LIVE ALIGNMENT"}</button></div>
     <div className="price-charmander-frame" ref={frameRef} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)}>
       <canvas ref={canvasRef}/>
       {hoveredIndex != null && <aside><b>{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span></aside>}
     </div>
-    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>No backward plot offset · values appear when known</small></footer>
+    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>Faint fan may be visually shifted for the knitted replica · bold consensus remains live and unshifted</small></footer>
   </section>;
 }
