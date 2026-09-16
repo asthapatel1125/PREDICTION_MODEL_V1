@@ -233,3 +233,61 @@ class LiveEngine(_EngineRunner):
 
     def stop(self)->None:
         super().stop();self.running=False
+
+
+class LiveWallExposureEngine:
+    """Low-memory live wall stream for display-only symbols such as SPY.
+
+    It calculates the chain snapshot once in the shared Options Pro adapter,
+    persists the resulting price/ZG/ZD point, and skips every decision model,
+    attribution tracker, raw-contract audit, and multi-timeframe history.
+    """
+    def __init__(self,repository:RepositoryPort,publisher:EventPublisherPort,data:MarketDataPort,
+        history_len:int=720,summary_log_seconds:int=30):
+        self.repository=repository;self.publisher=publisher;self.data=data
+        self.wall_intelligence=WallIntelligenceService(history_len,20)
+        self.summary_log_seconds=summary_log_seconds;self._stop=asyncio.Event()
+        self.running=False;self.symbol:str|None=None;self.resolution_seconds=5
+        self.started_at:datetime|None=None;self.last_update:datetime|None=None
+        self.last_error:str|None=None;self.bars_processed=0
+
+    def status(self)->dict[str,object]:
+        return {"running":self.running,"symbol":self.symbol,"resolution_seconds":self.resolution_seconds,
+            "started_at":self.started_at.isoformat() if self.started_at else None,
+            "last_update":self.last_update.isoformat() if self.last_update else None,
+            "last_error":self.last_error,"bars_processed":self.bars_processed,"alerts_generated":0,
+            "average_latency_ms":0.0,"retries":0,"mode":"WALL_EXPOSURE_ONLY",
+            "disabled_systems":["GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3","DELTA_DYNAMICS"]}
+
+    async def run(self,symbol:str,resolution_seconds:int=5)->None:
+        self._stop.clear();self.running=True;self.symbol=symbol.upper();self.resolution_seconds=resolution_seconds
+        self.started_at=datetime.now(timezone.utc);self.last_update=None;self.last_error=None;self.bars_processed=0;backoff=1.0
+        try:
+            while not self._stop.is_set():
+                try:
+                    async for bar in self.data.live_bars(symbol,resolution_seconds):
+                        if self._stop.is_set():return
+                        metrics=bar.gamma_metrics or {}
+                        point,breaks=self.wall_intelligence.observe(
+                            bar.timestamp,bar.symbol,float(bar.close),metrics,"LIVE",
+                            float(bar.volume),50.0,
+                        )
+                        await self.repository.save_wall_intelligence(point,breaks)
+                        if (self.wall_intelligence.summary_due(bar.timestamp,self.summary_log_seconds)
+                                and hasattr(self.repository,"save_wall_summary")):
+                            await self.repository.save_wall_summary(self.wall_intelligence.summarize(point,breaks))
+                        await self.publisher.publish("wall_intelligence",_event_json(point))
+                        for event in breaks:await self.publisher.publish("wall_break",_event_json(event))
+                        self.bars_processed+=1;self.last_update=bar.timestamp;self.last_error=None;backoff=1.0
+                except asyncio.CancelledError:raise
+                except Exception as exc:
+                    self.last_error=str(exc)
+                    event={"level":"ERROR","component":"live_wall_exposure","symbol":symbol.upper(),
+                        "message":str(exc),"retry_seconds":backoff,"timestamp":datetime.now(timezone.utc).isoformat()}
+                    if hasattr(self.repository,"save_system_event"):await self.repository.save_system_event(event)
+                    await self.publisher.publish("system_event",event)
+                    await asyncio.sleep(backoff);backoff=min(backoff*2,30)
+        finally:self.running=False
+
+    def stop(self)->None:
+        self._stop.set();self.running=False

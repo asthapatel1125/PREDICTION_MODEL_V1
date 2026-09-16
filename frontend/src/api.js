@@ -49,7 +49,7 @@ export function toDashboardAlert(alert) {
 }
 
 export async function fetchDashboard(symbol, signal) {
-  const data = await request(`/api/v1/dashboard/${encodeURIComponent(symbol)}?limit=100`, { signal });
+  const data = await request(`/api/v1/dashboard/${encodeURIComponent(symbol)}?limit=1`, { signal });
   return { ...data, alerts: data.alerts.map(toDashboardAlert) };
 }
 

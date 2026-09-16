@@ -40,7 +40,9 @@ class ThetaDataV3Client(MarketDataPort):
         # with every five-second Greek snapshot duplicates the largest payload
         # without making the calculation more current.
         self.open_interest_cache_seconds = open_interest_cache_seconds
-        self._open_interest_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
+        # Cache only contract-key -> OI. Keeping both raw SPY and QQQ OI
+        # payloads as Python dictionaries can consume hundreds of MB.
+        self._open_interest_cache: dict[str, tuple[datetime, dict[tuple[str, str, str], Any]]] = {}
         self._zero_gamma_history: dict[str, deque[float]] = {}
         self._zero_gamma_ema: dict[str, float] = {}
         self._wall_candidate_history: dict[tuple[str, str], deque[float]] = {}
@@ -90,17 +92,18 @@ class ThetaDataV3Client(MarketDataPort):
         params = {"symbol": symbol.upper(), "expiration": "*", "strike": "*", "right": "both",
                   "max_dte": self.max_dte, "strike_range": self.strike_range}
         cache_key = symbol.upper()
-        cached_at, cached_oi = self._open_interest_cache.get(cache_key, (datetime.min.replace(tzinfo=timezone.utc), []))
-        oi_is_fresh = cached_oi and (datetime.now(timezone.utc) - cached_at).total_seconds() < self.open_interest_cache_seconds
+        cached_at, cached_oi = self._open_interest_cache.get(cache_key, (datetime.min.replace(tzinfo=timezone.utc), {}))
+        oi_is_fresh = bool(cached_oi) and (datetime.now(timezone.utc) - cached_at).total_seconds() < self.open_interest_cache_seconds
         if self.transport == "terminal":
             rows = await self._terminal_rows("/option/snapshot/greeks/all", {**params, "use_market_value": True})
-            oi = cached_oi if oi_is_fresh else await self._terminal_rows("/option/snapshot/open_interest", params)
+            oi_rows = None if oi_is_fresh else await self._terminal_rows("/option/snapshot/open_interest", params)
         else:
             rows = await self._python_rows("option_snapshot_greeks_all", **params, use_market_value=True)
-            oi = cached_oi if oi_is_fresh else await self._python_rows("option_snapshot_open_interest", **params)
+            oi_rows = None if oi_is_fresh else await self._python_rows("option_snapshot_open_interest", **params)
         if not oi_is_fresh:
-            self._open_interest_cache[cache_key] = (datetime.now(timezone.utc), oi)
-        self._merge_open_interest(rows, oi)
+            cached_oi = self._open_interest_lookup(oi_rows or [])
+            self._open_interest_cache[cache_key] = (datetime.now(timezone.utc), cached_oi)
+        self._merge_open_interest(rows, cached_oi)
         self._require_all_greek_orders(rows)
         if rows:
             # This is the time Axiom observed a complete snapshot. Provider contract
@@ -151,7 +154,13 @@ class ThetaDataV3Client(MarketDataPort):
         last_timestamp: datetime | None = None
         repeated_snapshot_polls = 0
         while True:
-            bars = self._aggregate(await self._snapshot_rows(symbol), symbol, resolution_seconds)
+            # Serialize the memory-heavy provider conversion and aggregation,
+            # not merely the HTTP calls. Otherwise a full SPY row set remains
+            # resident while QQQ allocates its dataframe and normalized rows.
+            async with self._snapshot_lock:
+                bars = self._aggregate(
+                    await self._snapshot_rows_locked(symbol), symbol, resolution_seconds
+                )
             if not bars:
                 raise ThetaDataProtocolError("No ThetaData snapshot rows; market may be closed or symbol unavailable")
             bar = bars[-1]
@@ -170,7 +179,7 @@ class ThetaDataV3Client(MarketDataPort):
             await asyncio.sleep(max(0.0, next_poll - loop.time()))
 
     @staticmethod
-    def _merge_open_interest(rows: list[dict[str, Any]], oi_rows: list[dict[str, Any]]) -> None:
+    def _contract_key(row: dict[str, Any]) -> tuple[str, str, str]:
         def expiration(value: Any) -> str:
             if isinstance(value, (date, datetime)):
                 return value.strftime("%Y%m%d")
@@ -181,11 +190,17 @@ class ThetaDataV3Client(MarketDataPort):
         def right(value: Any) -> str:
             value=str(value).strip().lower()
             return "c" if value in {"c","call"} else "p" if value in {"p","put"} else value
-        def key(row: dict[str, Any]) -> tuple[str, str, str]:
-            return expiration(row.get("expiration", "")),strike(row.get("strike", "")),right(row.get("right", ""))
-        lookup = {key(row): row.get("open_interest", 0) for row in oi_rows}
+        return expiration(row.get("expiration", "")),strike(row.get("strike", "")),right(row.get("right", ""))
+
+    @classmethod
+    def _open_interest_lookup(cls, rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], Any]:
+        return {cls._contract_key(row): row.get("open_interest", 0) for row in rows}
+
+    @classmethod
+    def _merge_open_interest(cls, rows: list[dict[str, Any]], oi_rows: list[dict[str, Any]] | dict[tuple[str, str, str], Any]) -> None:
+        lookup = oi_rows if isinstance(oi_rows, dict) else cls._open_interest_lookup(oi_rows)
         for row in rows:
-            row["open_interest"] = lookup.get(key(row), row.get("open_interest", 0))
+            row["open_interest"] = lookup.get(cls._contract_key(row), row.get("open_interest", 0))
 
     @staticmethod
     def _rows(payload: Any) -> list[dict[str, Any]]:
@@ -292,7 +307,9 @@ class ThetaDataV3Client(MarketDataPort):
                 gamma_metrics=self._gamma_metrics(group, price, ts, symbol),
                 # The current bar carries raw contracts only long enough for
                 # the live engine to persist one audit snapshot per minute.
-                gamma_ticks=self._gamma_ticks(group, symbol, price, ts)))
+                # SPY is a live wall/exposure display only. The full per-contract
+                # audit belongs to QQQ and needlessly doubles peak memory for SPY.
+                gamma_ticks=self._gamma_ticks(group, symbol, price, ts) if symbol.upper()=="QQQ" else []))
         return result
 
     @classmethod

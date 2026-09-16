@@ -20,7 +20,7 @@ from axiom.adapters.thetadata import ThetaDataV3Client
 from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
 from axiom.analytics.eod_snapshots import render_eod_svg,render_exposure_history_svg
 from axiom.analytics.nasdaq_range_atlas import build_range_atlas,load_nas100_monthly_levels
-from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
+from axiom.application.engines import LiveWallExposureEngine,ReplayRequest,TrainingEngine
 from axiom.application.pipeline import DecisionPipeline
 from axiom.application.direction_gate import DailyDirectionGate
 from axiom.config.schema import PlatformSettings,StrategyConfig
@@ -58,7 +58,7 @@ class DynamicsDirectionGateRequest(BaseModel):
 
 class Container:
     settings:PlatformSettings;config:StrategyConfig;repository:SqlAlchemyRepository;bus:InMemoryEventBus
-    data:ThetaDataV3Client;training:TrainingEngine;live:LiveEngine;live_spy:LiveEngine|None=None;live_task:asyncio.Task|None=None;live_spy_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
+    data:ThetaDataV3Client;training:TrainingEngine;live:LiveWallExposureEngine;live_spy:LiveWallExposureEngine|None=None;live_task:asyncio.Task|None=None;live_spy_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
     nasdaq_range_atlas:dict[str,Any]|None
     clickhouse:ClickHouseRepository|None
@@ -83,40 +83,30 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         container.data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
             transport=cfg.thetadata_transport,max_dte=cfg.thetadata_max_dte,strike_range=cfg.thetadata_strike_range,
             market_timezone=cfg.market_timezone,poll_seconds=cfg.thetadata_poll_seconds)
-        twelve_key=cfg.twelve_data_api_key.get_secret_value() if cfg.twelve_data_api_key else None
-        price_data=TwelveDataPriceClient(twelve_key)
         container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
-        container.live=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
-            price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
-            cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
-        # SPY is live-only for now. It gets an isolated pipeline/engine so its
-        # ThetaData state cannot overwrite QQQ's model history or stream status.
-        container.live_spy=LiveEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
-            price_data,cfg.outcome_price_poll_seconds,cfg.outcome_horizon_minutes,
-            cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
+        # Both live symbols feed wall/exposure displays only. The four Dynamics
+        # systems are not constructed, restored, calculated, or subscribed to
+        # the provider by the live service.
+        container.live=LiveWallExposureEngine(
+            container.repository,container.bus,container.data,
+            int(container.config.wall_intel.get("history_len",720)),
+            int(container.config.wall_intel.get("summary_log_sec",30)),
+        )
+        container.live_spy=LiveWallExposureEngine(
+            container.repository,container.bus,container.data,
+            int(container.config.wall_intel.get("history_len",720)),
+            int(container.config.wall_intel.get("summary_log_sec",30)),
+        )
         container.direction_gate=DailyDirectionGate(container.repository,
-            [container.live.attribution,container.training.attribution],cfg.market_timezone)
+            [container.training.attribution],cfg.market_timezone)
         await container.direction_gate.sync()
-        container.live.direction_gate_service=container.direction_gate
-        # Rehydrate compact Greek/chain histories before the automatic stream
-        # begins. This preserves the model warm-up through a Render restart.
-        container.live.pipeline.restore_history(await container.repository.stream_archive("QQQ",9_000))
-        # Resume persisted active-call lifecycles after a Render restart.
-        container.live.attribution.restore_active(await container.repository.active_system_outcomes())
         container.replay_runs={};container.replay_tasks=set();container.nasdaq_range_atlas=None
         async def automatic_live_stream()->None:
             """Keep the licensed QQQ stream active on market weekdays, 7:00 AM–6:00 PM Eastern."""
             market_tz=ZoneInfo(cfg.market_timezone)
             while True:
                 now=datetime.now(market_tz)
-                try:
-                    await container.direction_gate.sync(now)
-                except Exception:
-                    # Retry without starting an unchecked stream. Existing live
-                    # workers also verify the durable gate before each bar.
-                    await asyncio.sleep(15)
-                    continue
                 within_window=now.weekday()<5 and time(7,0)<=now.time()<time(18,0)
                 running=container.live_task and not container.live_task.done()
                 if within_window and not running:
@@ -251,7 +241,8 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         gate=await container.direction_gate.sync()
         return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),
-        "dynamics_direction_gate":container.live.attribution.direction_gate,
+        "dynamics_enabled":False,
+        "dynamics_direction_gate":"DISABLED",
         "dynamics_direction_gate_details":gate,
         "theta_transport":cfg.thetadata_transport,"theta_poll_seconds":cfg.thetadata_poll_seconds,
         "outcome_price_provider":"TWELVE_DATA" if cfg.twelve_data_api_key else "THETADATA_OPTIONS_UNDERLYING",
@@ -261,18 +252,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
     @api.post("/dynamics/direction-gate")
     async def set_dynamics_direction_gate(body:DynamicsDirectionGateRequest):
-        gate=await container.direction_gate.set(body.mode)
-        live_mode=gate["mode"]
-        payload={
-            **gate,
-            "mode":live_mode,
-            "applies_to":["GAMMA_DYNAMICS","GAMMA_DYNAMICS_V2","GAMMA_DYNAMICS_V3","DELTA_DYNAMICS"],
-            "admission_scope":"NEW_CALLS_ONLY",
-            "open_calls":"CONTINUE_TRACKING",
-            "updated_at":gate["updated_at"],
-        }
-        await container.bus.publish("dynamics_direction_gate",payload)
-        return payload
+        raise HTTPException(409,"Gamma Dynamics 1.0/2.0/3.0 and Delta Dynamics are disabled")
 
     def _wall_time(value:datetime|None)->datetime|None:
         return value.astimezone(timezone.utc) if value else None
@@ -530,11 +510,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
     @api.post("/replay",status_code=202)
     async def replay(body:ReplayRequestBody):
-        if body.end<=body.start:raise HTTPException(422,"end must be after start")
-        request=ReplayRequest(body.symbol,body.start,body.end,body.bar_resolution_seconds,body.replay_speed)
-        run_id=str(uuid4());container.replay_runs[run_id]={"id":run_id,"status":"running","bars":0,"alerts":0}
-        task=asyncio.create_task(execute_replay(run_id,request),name=f"replay-{run_id}");container.replay_tasks.add(task)
-        task.add_done_callback(container.replay_tasks.discard);return container.replay_runs[run_id]
+        raise HTTPException(409,"Historical Dynamics replay is disabled")
 
     @api.get("/replay/{run_id}")
     async def replay_status(run_id:str):

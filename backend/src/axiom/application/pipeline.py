@@ -76,7 +76,10 @@ class DecisionPipeline:
     """The single decision path used by both historical replay and live processing."""
 
     def __init__(self,config:StrategyConfig,market_timezone:str="America/New_York"):
-        self.config=config; self.mtf=MultiTimeframeEngine(config.timeframes_seconds)
+        # Gamma 2.0 needs 720 native five-second observations. A 1,200-bar
+        # ceiling provides margin without retaining an entire trading day of
+        # large chain-metric dictionaries for both QQQ and SPY.
+        self.config=config; self.mtf=MultiTimeframeEngine(config.timeframes_seconds,max_bars=1200)
         self.explosion=ExplosionScore(config.score_weights["explosion"]); self.direction=DirectionScore()
         self.pressure=PressureScore(); self.hedging=DealerHedgingPressure(); self.momentum=MomentumConfirmation()
         self.regimes=RegimeClassifier(config); self.ranges=MicroRangeBreakout(); self.risk=RiskScorer(config)
