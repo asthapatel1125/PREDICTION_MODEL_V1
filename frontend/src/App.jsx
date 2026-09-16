@@ -81,7 +81,7 @@ const GREEK_ORDERS = {
 };
 const FALLBACK_INSTRUMENTS = ["SPY", "QQQ", "NDX", "NQ", "ES", "YM"].map(symbol => ({
   symbol, available: ["SPY", "QQQ", "NDX"].includes(symbol),
-  provider: ["SPY", "QQQ", "NDX"].includes(symbol) ? "ThetaData options" : "Futures feed required",
+  provider: ["SPY", "QQQ", "NDX"].includes(symbol) ? "ThetaData Options Pro" : "Futures feed required",
 }));
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const optionalNumber = (value) => value === null || value === undefined || value === "" ? NaN : number(value, NaN);
@@ -1839,6 +1839,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const [yPan,setYPan]=useState(0);
   const [expanded,setExpanded]=useState(false);
   const [scrollOffset,setScrollOffset]=useState(0);
+  const [viewportWidth,setViewportWidth]=useState(0);
   const scrollRef=useRef(null);
   const canvasRef=useRef(null);
   const followingLiveRef=useRef(true);
@@ -1870,6 +1871,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
   // backfill into the viewport; the parent scroll area is the navigation.
   useEffect(()=>{const canvas=canvasRef.current;if(canvas)canvas.style.width=`${Math.max(1100,points.length*9)*xZoom}px`},[points.length,xZoom]);
+  useEffect(()=>{const viewport=scrollRef.current;if(!viewport)return undefined;const measure=()=>setViewportWidth(viewport.clientWidth);measure();const observer=new ResizeObserver(measure);observer.observe(viewport);return()=>observer.disconnect()},[points.length]);
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}))},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
   if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time {symbol} and level observations.</p></section>;
@@ -1879,7 +1881,10 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
    // Restore the full-height coordinate geometry used by the former zone
    // plot. The zones are gone, but both price regions should still occupy the
    // plotting surface instead of being letterboxed in a short 320px SVG.
-   const width=Math.max(1500,points.length*9)*xZoom,height=460,left=86,right=20,plotTop=24,plotBottom=420,plotWidth=width-left-right;
+   // Reserve a real bottom gutter for the x labels. The compact chart is
+   // vertically compressed to 320px and also owns a horizontal scrollbar;
+   // drawing labels at y=448 put them underneath that scrollbar.
+   const width=Math.max(1500,points.length*9)*xZoom,height=460,left=86,right=20,plotTop=24,plotBottom=390,plotWidth=width-left-right;
   const scaleFor=(values,kind)=>{
     const finite=values.filter(value=>Number.isFinite(value));
     if(!finite.length)return {low:0,high:1};
@@ -1905,7 +1910,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const orderedValues=scaleValuesRef.current.values,scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
   const valueRank=value=>{if(orderedValues.length<2)return .5;let lowIndex=0,highIndex=orderedValues.length-1;while(lowIndex<=highIndex){const middle=(lowIndex+highIndex)>>1;if(orderedValues[middle]<value)lowIndex=middle+1;else highIndex=middle-1}const upper=Math.min(orderedValues.length-1,lowIndex),lower=Math.max(0,upper-1),lowerValue=orderedValues[lower],upperValue=orderedValues[upper],fraction=upperValue===lowerValue?0:(value-lowerValue)/(upperValue-lowerValue);return (lower+(upper-lower)*fraction)/(orderedValues.length-1)};
   const compressedRatio=value=>.90*valueRank(value)+.10*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
-  const selectedSpan=Math.max(0,Date.parse(points.at(-1)?.timestamp||"")-Date.parse(points[0]?.timestamp||""))/1000,multiDay=selectedSpan>=86400,axisStamp=value=>{const date=new Date(value),shortDate=date.toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"}),shortTime=date.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"});if(!multiDay)return chartAxisTime(value,periods[period]>=1800||points.length>36).replace(/\s+EST$/i,"");return `${shortDate} · ${shortTime}`},tickCount=points.length>1?Math.max(4,Math.min(points.length,multiDay?10:18,Math.floor(width/(multiDay?150:105)))):points.length,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1))),tickAnchor=(index,tickIndex)=>tickIndex===0?"start":tickIndex===timeTicks.length-1?"end":"middle";
+  const selectedSpan=Math.max(0,Date.parse(points.at(-1)?.timestamp||"")-Date.parse(points[0]?.timestamp||""))/1000,multiDay=selectedSpan>=86400,axisStamp=value=>{const date=new Date(value),shortDate=date.toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"}),shortTime=date.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"});if(!multiDay)return chartAxisTime(value,periods[period]>=1800||points.length>36).replace(/\s+EST$/i,"");return `${shortDate} · ${shortTime}`},visibleTickSlots=Math.max(2,Math.floor(Math.max(viewportWidth,320)/(multiDay?155:125))),tickCount=points.length>1?Math.min(points.length,multiDay?8:10,visibleTickSlots):points.length,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1))),tickAnchor=(index,tickIndex)=>tickIndex===0?"start":tickIndex===timeTicks.length-1?"end":"middle";
   const displayTicks=[0,.25,.5,.75,1].map((ratio,index)=>{const value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
   const qqqPaths=points.reduce((groups,point,index)=>{const prior=points[index-1],newSession=index>0&&Date.parse(point.timestamp)-Date.parse(prior.timestamp)>3600000;if(!groups.length||newSession)groups.push([]);groups.at(-1).push(x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1));return groups},[]).map(group=>group.join(" "));
   const candleWidth=Math.max(2,Math.min(12,plotWidth/Math.max(points.length,1)*.62));
@@ -1946,7 +1951,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   },{positive:"",negative:""});
   const levelPathAll=points.map((point,index)=>`${x(index).toFixed(1)},${gammaY(plottedLevel(point)).toFixed(1)}`).join(" ");
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}> 
-    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><div className="timeframe-buttons" aria-label="Historical range">{Object.keys(ranges).map(name=><button key={name} type="button" className={historyRange===name?"active":""} onClick={()=>setHistoryRange(name)}>{name}</button>)}</div><small>QQQ OHLC CANDLES · CLOSING {axisName} LEVEL</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><div className="timeframe-buttons" aria-label="Historical range">{Object.keys(ranges).map(name=><button key={name} type="button" className={historyRange===name?"active":""} onClick={()=>setHistoryRange(name)}>{name}</button>)}</div><small>{symbol} OHLC · CLOSING {axisName} · THETADATA OPTIONS PRO · 5 SEC</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
@@ -1962,7 +1967,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
-            {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
+            {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-32} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
             <g clipPath={`url(#exposure-plot-${wallKey})`}>{points.map((bar,index)=>{const open=number(bar.open),close=number(bar.close),high=number(bar.high),low=number(bar.low),color=close>=open?"#00d084":"#ff4f69",bodyTop=Math.min(qqqY(open),qqqY(close)),bodyHeight=Math.max(1,Math.abs(qqqY(open)-qqqY(close)));return <g className="exposure-candle" key={`candle-${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={qqqY(high)} y2={qqqY(low)} stroke={color} strokeWidth="1.5"/><rect x={x(index)-candleWidth/2} y={bodyTop} width={Math.max(2,candleWidth)} height={bodyHeight} fill={color} opacity=".9"/></g>})}
             {levelPaths.positive&&<path d={levelPaths.positive} fill="none" stroke="#3296ff" strokeWidth="2.7" strokeDasharray="7 4"/>}
             {levelPaths.negative&&<path d={levelPaths.negative} fill="none" stroke="#f2f5f7" strokeWidth="2.7" strokeDasharray="7 4"/>}
@@ -1982,7 +1987,18 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
 
 function LiveSymbolExposurePanels({symbol="SPY"}){
   const [rows,setRows]=useState([]);
-  useEffect(()=>{const controller=new AbortController();const load=()=>fetchDashboard(symbol,controller.signal).then(result=>setRows(result.history||[])).catch(error=>{if(error.name!=="AbortError")setRows([])});load();const timer=setInterval(load,5000);return()=>{controller.abort();clearInterval(timer)}},[symbol]);
+  useEffect(()=>{
+    const controller=new AbortController(),normalizedSymbol=symbol.toUpperCase();
+    const mergeRows=incoming=>setRows(current=>[...new Map([...current,...incoming].filter(row=>row?.timestamp).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-5000));
+    const load=()=>fetchWallSpectrum(normalizedSymbol,controller.signal,5000).then(result=>mergeRows(result.rows||[])).catch(error=>{if(error.name!=="AbortError")return undefined});
+    load();
+    // Wall Intelligence publishes the exact persisted point used by both
+    // exposure charts. Apply it immediately; the slower HTTP refresh is only
+    // a reconnect/backfill safety net.
+    const unsubscribe=subscribeToEvents(message=>{const point=message?.payload;if(message?.topic==="wall_intelligence"&&String(point?.symbol||"").toUpperCase()===normalizedSymbol)mergeRows([point])},()=>{});
+    const timer=window.setInterval(load,30000);
+    return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
+  },[symbol]);
   return <div className="live-symbol-exposure-panels"><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded/></div>;
 }
 

@@ -23,5 +23,8 @@ def test_standalone_observer_has_no_strategy_decision_and_marks_estimates():
     point,events=service.observe(datetime.now(timezone.utc),"QQQ",500,metrics,"CALM",100)
     assert point["is_point_in_time"] is True
     assert point["is_estimated_oi_delayed"] is True
+    assert point["provider"] == "THETADATA_OPTIONS_PRO"
+    assert point["feed"] == "OPTION_SNAPSHOT_GREEKS_ALL"
+    assert point["cadence_seconds"] == 5
     assert "decision" not in point
     assert events == []

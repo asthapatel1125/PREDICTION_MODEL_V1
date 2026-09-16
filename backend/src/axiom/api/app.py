@@ -290,7 +290,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         for row in rows:
             row["walls"]={name:value for name,value in row.get("walls",{}).items()
                 if (not requested_types or name in requested_types) and (not requested_tiers or str(value.get("tier","")) in requested_tiers)}
-        return {"symbol":symbol.upper(),"market_timezone":cfg.market_timezone,"rows":rows,"is_point_in_time":True,"is_estimated_oi_delayed":True,
+        return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"OPTION_SNAPSHOT_GREEKS_ALL","cadence_seconds":5,"market_timezone":cfg.market_timezone,"rows":rows,"is_point_in_time":True,"is_estimated_oi_delayed":True,
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/nasdaq-range-atlas")
