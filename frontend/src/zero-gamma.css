@@ -440,3 +440,10 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .topbar .market-clock,.topbar .market-quote,.topbar .nq-impact{min-height:35px;font-size:11px!important;padding-left:11px;padding-right:11px}
 .topbar .market-clock b,.topbar .market-quote b,.topbar .nq-impact b{font-size:13px!important}
 .exposure-time-rail nav{align-content:start!important;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#315b75 #07111b}.exposure-time-rail button{flex:0 0 auto;min-height:24px}
+/* Final candle-frame geometry: reserve room for the x-axis before the
+   scrollbar so dates never overlap or get clipped. */
+.exposure-level-map:not(.expanded) .exposure-level-frame{height:500px!important;min-height:500px!important;max-height:500px!important}
+.exposure-level-map:not(.expanded) .exposure-map-scroll{height:500px!important;max-height:500px!important;overflow-x:auto!important;overflow-y:hidden!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas{height:458px!important;min-height:458px!important;max-height:458px!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas svg{height:458px!important;min-height:458px!important;max-height:458px!important}
+.exposure-live-updated small{display:none!important}
