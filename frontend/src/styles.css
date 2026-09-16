@@ -1358,3 +1358,6 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
    readable; the viewport provides horizontal navigation instead of shrinking
    thousands of historical bars into a single pixel-wide plot. */
 .hedge-plot-canvas svg{width:auto!important;min-width:100%;height:330px}
+.hedge-plot-canvas{height:460px!important}
+.hedge-plot-canvas svg{height:460px!important}
+.hedge-plot-canvas svg text{font-size:14px!important}
