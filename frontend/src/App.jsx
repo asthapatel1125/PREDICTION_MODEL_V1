@@ -1838,7 +1838,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const followingLiveRef=useRef(true);
   const dragRef=useRef(null);
   const scaleValuesRef=useRef({period:null,values:[]});
-  const periods={"1M":60,"5M":300,"10M":600,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"5H":18000,"1D":86400},ranges={"2D":2,"3D":3,"5D":5,"10D":10,"30D":30,"1MO":30,ALL:365};
+  const periods={"LIVE 30M":1800,"1M":60,"5M":300,"10M":600,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"5H":18000,"1D":86400},ranges={"2D":2,"3D":3,"5D":5,"10D":10,"30D":30,"1MO":30,ALL:365};
   useEffect(()=>{const controller=new AbortController();fetchExposureCandles("QQQ",periods[period],ranges[historyRange],controller.signal).then(result=>setHistoricalCandles(result.rows||[])).catch(error=>{if(error.name!=="AbortError")setHistoricalCandles([])});return()=>controller.abort()},[period,historyRange]);
   const allPoints=useMemo(()=>{
     const key=wallKey==="ZERO_DELTA"?"zero_delta":"zero_gamma";
@@ -1847,7 +1847,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
     rows.forEach(row=>{const at=Date.parse(row?.timestamp||""),spot=number(row?.spot),level=number(row?.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||at<=latestArchived||!Number.isFinite(spot)||spot<=0||!Number.isFinite(level)||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(minute<570||minute>960)return;const index=Math.floor((minute-570)/(seconds/60)),bucket=`${fields.year}-${fields.month}-${fields.day}:${index}`,existing=live.get(bucket);if(!existing)live.set(bucket,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
     return [...archived,...live.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-2500);
   },[historicalCandles,rows,wallKey,period]);
-  const points=allPoints;
+  const points=useMemo(()=>period==="LIVE 30M"?(()=>{const end=Date.parse(allPoints.at(-1)?.timestamp||"")||0;return allPoints.filter(point=>Date.parse(point.timestamp)>=end-1800000)})():allPoints,[allPoints,period]);
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}))},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
   if(!points.length)return <section className="exposure-level-map"><header><div><span>{title}</span><h3>{heading}</h3></div></header><p className="wall-empty-state">Waiting for point-in-time QQQ and level observations.</p></section>;
@@ -1857,7 +1857,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
    // Restore the full-height coordinate geometry used by the former zone
    // plot. The zones are gone, but both price regions should still occupy the
    // plotting surface instead of being letterboxed in a short 320px SVG.
-   const width=1100*xZoom,height=338,left=76,right=16,plotTop=18,plotBottom=300,plotWidth=width-left-right;
+   const width=1500*xZoom,height=460,left=86,right=20,plotTop=24,plotBottom=420,plotWidth=width-left-right;
   const scaleFor=(values,kind)=>{
     const finite=values.filter(value=>Number.isFinite(value));
     if(!finite.length)return {low:0,high:1};
@@ -1891,7 +1891,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
   const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setYPan(0);setHover(null);returnToLatest()};
   const reset=()=>{followingLiveRef.current=true;setXZoom(1);setYZoom(1);setYPan(0);setHover(null);returnToLatest()};
-  const zoomXAt=(event,factor)=>{const viewport=scrollRef.current,canvas=canvasRef.current;if(!viewport||!canvas){setXZoom(current=>clamp(current*factor,1,180));return}const viewportRect=viewport.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect(),oldWidth=Math.max(canvasRect.width,1),pointerInViewport=clamp(event.clientX-viewportRect.left,0,viewport.clientWidth),contentX=viewport.scrollLeft+pointerInViewport,anchorRatio=clamp(contentX/oldWidth,0,1);followingLiveRef.current=false;setXZoom(current=>{const next=clamp(current*factor,1,180),nextWidth=1100*next;requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=clamp(anchorRatio*nextWidth-pointerInViewport,0,Math.max(0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth))});return next})};
+  const zoomXAt=(event,factor)=>{const viewport=scrollRef.current,canvas=canvasRef.current;if(!viewport||!canvas){setXZoom(current=>clamp(current*factor,1,180));return}const viewportRect=viewport.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect(),oldWidth=Math.max(canvasRect.width,1),pointerInViewport=clamp(event.clientX-viewportRect.left,0,viewport.clientWidth),contentX=viewport.scrollLeft+pointerInViewport,anchorRatio=clamp(contentX/oldWidth,0,1);followingLiveRef.current=false;setXZoom(current=>{const next=clamp(current*factor,1,180),nextWidth=1500*next;requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollLeft=clamp(anchorRatio*nextWidth-pointerInViewport,0,Math.max(0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth))});return next})};
   const wheel=event=>{event.preventDefault();event.stopPropagation();zoomXAt(event,event.deltaY<0?1.12:.89)};
   const wheelY=event=>{event.preventDefault();event.stopPropagation();const factor=event.deltaY<0?1.12:.89;setYZoom(current=>clamp(current*factor,.35,8))};
   const beginPan=event=>{if(event.button!==0||event.target.closest("button"))return;event.preventDefault();followingLiveRef.current=false;dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId);event.currentTarget.classList.add("is-panning")};
@@ -1940,7 +1940,7 @@ function ModernExposureLevelChart({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMM
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>QQQ · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-12} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
-            <g clipPath={`url(#exposure-plot-${wallKey})`}>{qqqPaths.map((path,index)=><polyline key={`qqq-session-${index}`} className="exposure-qqq-line" fill="none" points={path}/>)}
+            <g clipPath={`url(#exposure-plot-${wallKey})`}>{points.map((bar,index)=>{const open=number(bar.open),close=number(bar.close),high=number(bar.high),low=number(bar.low),color=close>=open?"#00d084":"#ff4f69",bodyTop=Math.min(qqqY(open),qqqY(close)),bodyHeight=Math.max(1,Math.abs(qqqY(open)-qqqY(close)));return <g className="exposure-candle" key={`candle-${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={qqqY(high)} y2={qqqY(low)} stroke={color} strokeWidth="1.5"/><rect x={x(index)-candleWidth/2} y={bodyTop} width={Math.max(2,candleWidth)} height={bodyHeight} fill={color} opacity=".9"/></g>})}
             {levelPaths.positive&&<path d={levelPaths.positive} fill="none" stroke="#00d084" strokeWidth="2.7" strokeDasharray="7 4"/>}
             {levelPaths.negative&&<path d={levelPaths.negative} fill="none" stroke="#ff4f69" strokeWidth="2.7" strokeDasharray="7 4"/>}
             {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(plottedLevel(active))} r="4" style={{fill:gammaColor(active)}}/></>}</g>
