@@ -144,6 +144,16 @@ def test_live_polling_defaults_to_5_seconds():
     assert ThetaDataV3Client(api_key="test").poll_seconds==5
 
 
+def test_wall_only_client_skips_raw_contract_audit_copies():
+    client=ThetaDataV3Client(api_key="test",capture_gamma_ticks=False)
+    timestamp=datetime(2026,7,16,14,0,tzinfo=timezone.utc)
+    row={"timestamp":timestamp,"expiration":"20260716","strike":500,"right":"call",
+         "underlying_price":500,"open_interest":100,"bid":1,"ask":1.1,"delta":.5,
+         "theta":-.2,"vega":.4,"rho":.1,"gamma":.2,"vanna":.1,"charm":.1,
+         "vomma":.3,"veta":.1,"speed":.1,"zomma":.1,"color":.1,"ultima":.1}
+    assert client._aggregate([row],"QQQ",5)[0].gamma_ticks==[]
+
+
 def test_shared_options_pro_client_serializes_complete_symbol_snapshots():
     client=ThetaDataV3Client(api_key="test")
     active=0

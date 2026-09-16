@@ -82,7 +82,8 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         api_key=cfg.thetadata_api_key.get_secret_value() if cfg.thetadata_api_key else None
         container.data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
             transport=cfg.thetadata_transport,max_dte=cfg.thetadata_max_dte,strike_range=cfg.thetadata_strike_range,
-            market_timezone=cfg.market_timezone,poll_seconds=cfg.thetadata_poll_seconds)
+            market_timezone=cfg.market_timezone,poll_seconds=cfg.thetadata_poll_seconds,
+            capture_gamma_ticks=False)
         container.training=TrainingEngine(DecisionPipeline(container.config,cfg.market_timezone),container.repository,container.bus,container.data,
             cfg.outcome_horizon_minutes,cfg.outcome_signal_cooldown_seconds,cfg.outcome_qqq_points_per_50_nq)
         # Both live symbols feed wall/exposure displays only. The four Dynamics

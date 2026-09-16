@@ -27,7 +27,8 @@ class ThetaDataV3Client(MarketDataPort):
     def __init__(self, base_url: str = "http://127.0.0.1:25503/v3", timeout: float = 60,
                  api_key: str | None = None, transport: str = "python", max_dte: int = 7,
                  strike_range: int = 30, market_timezone: str = "America/New_York",
-                 poll_seconds: float = 5.0, open_interest_cache_seconds: float = 900.0):
+                 poll_seconds: float = 5.0, open_interest_cache_seconds: float = 900.0,
+                 capture_gamma_ticks: bool = True):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.api_key = api_key
@@ -36,6 +37,7 @@ class ThetaDataV3Client(MarketDataPort):
         self.strike_range = strike_range
         self.market_tz = ZoneInfo(market_timezone)
         self.poll_seconds = poll_seconds
+        self.capture_gamma_ticks = capture_gamma_ticks
         # OI is published on a delayed cadence.  Re-fetching a full OI chain
         # with every five-second Greek snapshot duplicates the largest payload
         # without making the calculation more current.
@@ -309,7 +311,8 @@ class ThetaDataV3Client(MarketDataPort):
                 # the live engine to persist one audit snapshot per minute.
                 # SPY is a live wall/exposure display only. The full per-contract
                 # audit belongs to QQQ and needlessly doubles peak memory for SPY.
-                gamma_ticks=self._gamma_ticks(group, symbol, price, ts) if symbol.upper()=="QQQ" else []))
+                gamma_ticks=self._gamma_ticks(group, symbol, price, ts)
+                    if self.capture_gamma_ticks and symbol.upper()=="QQQ" else []))
         return result
 
     @classmethod
