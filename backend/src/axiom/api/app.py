@@ -18,7 +18,7 @@ from axiom import __version__
 from axiom.adapters.events import InMemoryEventBus
 from axiom.adapters.thetadata import ThetaDataV3Client
 from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
-from axiom.analytics.eod_snapshots import render_eod_svg
+from axiom.analytics.eod_snapshots import render_eod_svg,render_exposure_history_svg
 from axiom.analytics.nasdaq_range_atlas import build_range_atlas,load_nas100_monthly_levels
 from axiom.application.engines import LiveEngine,ReplayRequest,TrainingEngine,TwelveDataPriceClient
 from axiom.application.pipeline import DecisionPipeline
@@ -335,6 +335,28 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "symbol":symbol.upper(),"market_timezone":cfg.market_timezone,
             "interval_seconds":interval_seconds,"days":days,"rows":rows,
         }
+
+    @api.get("/walls/exposure-history-range")
+    async def wall_exposure_history_range(symbol:str="QQQ"):
+        if not container.clickhouse:raise HTTPException(503,"ClickHouse is not configured")
+        available=await container.clickhouse.exposure_available_range(symbol)
+        return {"symbol":symbol.upper(),**available}
+
+    @api.get("/walls/exposure-history-snapshot/{map_name}")
+    async def wall_exposure_history_snapshot(map_name:str,symbol:str="QQQ",from_date:date|None=None,to_date:date|None=None):
+        if map_name not in {"zero-gamma","zero-delta"}:raise HTTPException(422,"Unsupported exposure snapshot selection")
+        if not container.clickhouse:raise HTTPException(503,"ClickHouse is not configured")
+        available=await container.clickhouse.exposure_available_range(symbol)
+        if not available.get("first_date") or not available.get("last_date"):raise HTTPException(404,"No ClickHouse exposure history is available")
+        start=from_date or date.fromisoformat(str(available["first_date"]));end=to_date or date.fromisoformat(str(available["last_date"]))
+        if end<start:raise HTTPException(422,"The To date must not precede the From date")
+        span=(end-start).days+1
+        if span>365:raise HTTPException(422,"Historical snapshots are limited to 365 calendar days")
+        interval_seconds=60 if span<=5 else 300 if span<=30 else 1800 if span<=180 else 3600
+        rows=await container.clickhouse.exposure_candles(symbol,span,interval_seconds,5_000,start,end)
+        svg=render_exposure_history_svg(rows,map_name,start.isoformat(),end.isoformat(),interval_seconds,cfg.market_timezone)
+        filename=f'{symbol.upper()}-{map_name}-{start.isoformat()}-{end.isoformat()}.svg'
+        return Response(svg,media_type="image/svg+xml",headers={"Content-Disposition":f'inline; filename="{filename}"',"Cache-Control":"private, max-age=300","X-Candle-Interval-Seconds":str(interval_seconds)})
 
     @api.get("/walls/day-levels")
     async def wall_day_levels(symbol:str="QQQ",session_date:date|None=None,display_bucket_seconds:int=60,since:datetime|None=None,days:int=Query(1,ge=1,le=365)):

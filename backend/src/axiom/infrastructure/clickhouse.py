@@ -221,7 +221,8 @@ class ClickHouseRepository:
             row["timestamp"] = datetime.fromisoformat(str(row["timestamp"]).replace("Z", "+00:00")).isoformat()
         return rows
 
-    async def exposure_candles(self, symbol: str, days: int, interval_seconds: int, limit: int = 2500) -> list[dict[str, Any]]:
+    async def exposure_candles(self, symbol: str, days: int, interval_seconds: int, limit: int = 2500,
+        start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
         """Return session-anchored QQQ OHLC candles with closing ZG/ZD levels.
 
         Both source tables are compact.  Bucketing happens in ClickHouse and
@@ -231,16 +232,22 @@ class ClickHouseRepository:
         row_limit=max(30,min(int(limit),20_000))
         day_limit=max(1,min(int(days),365))
         symbol_literal=_literal(symbol.upper())
+        selected_days=(
+            f"SELECT toDate(timestamp) AS day FROM exposure_history FINAL "
+            f"WHERE symbol={symbol_literal} AND interval_seconds=60 "
+            f"AND toDate(timestamp) BETWEEN toDate({_literal(start_date.isoformat())}) AND toDate({_literal(end_date.isoformat())}) "
+            "GROUP BY day ORDER BY day"
+            if start_date and end_date else
+            f"SELECT toDate(timestamp) AS day FROM exposure_history FINAL "
+            f"WHERE symbol={symbol_literal} AND interval_seconds=60 "
+            f"GROUP BY day ORDER BY day DESC LIMIT {day_limit}"
+        )
         sql=f"""
             WITH
                 selected_days AS
                 (
-                    SELECT toDate(timestamp) AS day
-                    FROM exposure_history FINAL
-                    WHERE symbol={symbol_literal} AND interval_seconds=60
-                    GROUP BY day ORDER BY day DESC LIMIT {day_limit}
-                ),
-                origin AS toDateTime('1970-01-01 09:30:00','America/New_York')
+                    {selected_days}
+                )
             SELECT * FROM
             (
                 SELECT
@@ -251,9 +258,9 @@ class ClickHouseRepository:
                 (
                     SELECT
                         if({bucket_seconds}=86400,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE
-                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE), {bucket_seconds}) * {bucket_seconds})) AS bucket,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR
+                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR), {bucket_seconds}) * {bucket_seconds})) AS bucket,
                         argMin(price,timestamp) AS open,
                         max(price) AS high,
                         min(price) AS low,
@@ -262,24 +269,24 @@ class ClickHouseRepository:
                     WHERE symbol={symbol_literal}
                       AND interval_seconds=60
                       AND toDate(timestamp) IN (SELECT day FROM selected_days)
-                      AND toTime(timestamp) >= toTime('09:30:00')
-                      AND toTime(timestamp) <= toTime('16:00:00')
+                      AND toTime(timestamp) >= toTime('07:00:00')
+                      AND toTime(timestamp) <= toTime('18:00:00')
                     GROUP BY bucket
                 ) AS q
                 LEFT JOIN
                 (
                     SELECT
                         if({bucket_seconds}=86400,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE
-                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 9 HOUR + INTERVAL 30 MINUTE), {bucket_seconds}) * {bucket_seconds})) AS bucket,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR,
+                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR
+                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR), {bucket_seconds}) * {bucket_seconds})) AS bucket,
                         argMax(zero_gamma,timestamp) AS zero_gamma,
                         argMax(zero_delta,timestamp) AS zero_delta
                     FROM exposure_history FINAL
                     WHERE symbol={symbol_literal} AND interval_seconds=60
                       AND toDate(timestamp) IN (SELECT day FROM selected_days)
-                      AND toTime(timestamp) >= toTime('09:30:00')
-                      AND toTime(timestamp) <= toTime('16:00:00')
+                      AND toTime(timestamp) >= toTime('07:00:00')
+                      AND toTime(timestamp) <= toTime('18:00:00')
                     GROUP BY bucket
                 ) AS e USING bucket
                 ORDER BY q.bucket DESC
@@ -301,3 +308,16 @@ class ClickHouseRepository:
                 "zero_gamma":item.get("zero_gamma"),"zero_delta":item.get("zero_delta"),
             })
         return result
+
+    async def exposure_available_range(self,symbol:str)->dict[str,str|None]:
+        sql=f"""
+            SELECT toString(min(toDate(timestamp))) AS first_date,
+                   toString(max(toDate(timestamp))) AS last_date
+            FROM exposure_history FINAL
+            WHERE symbol={_literal(symbol.upper())} AND interval_seconds=60
+            FORMAT JSONEachRow
+        """
+        text=await self._request(sql,timeout=10.0)
+        if not text.strip():return {"first_date":None,"last_date":None}
+        row=json.loads(text.splitlines()[0])
+        return {"first_date":row.get("first_date") or None,"last_date":row.get("last_date") or None}

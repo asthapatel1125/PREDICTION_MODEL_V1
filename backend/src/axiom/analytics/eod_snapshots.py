@@ -67,3 +67,35 @@ def render_eod_svg(rows:list[dict[str,Any]],map_name:str,market_timezone:str="Am
 
 def _empty_svg(width:int,height:int,title:str)->str:
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"><rect width="100%" height="100%" fill="#071019"/><text x="50%" y="45%" text-anchor="middle" fill="#e4edf3" font-family="monospace" font-size="28">{escape(title)}</text><text x="50%" y="52%" text-anchor="middle" fill="#8eb5c8" font-family="monospace" font-size="20">NO STORED OBSERVATIONS FOR THIS DATE</text></svg>'
+
+
+def render_exposure_history_svg(rows:list[dict[str,Any]],map_name:str,start_date:str,end_date:str,
+    interval_seconds:int,market_timezone:str="America/New_York")->str:
+    """Render bounded ClickHouse candles without allocating a server-side bitmap."""
+    if map_name not in {"zero-gamma","zero-delta"}:raise ValueError("Unsupported exposure snapshot map")
+    key,label,color=("zero_gamma","ZERO GAMMA","#b56cff") if map_name=="zero-gamma" else ("zero_delta","ZERO DELTA","#62c8ff")
+    clean=[]
+    for row in rows:
+        values={name:_number(row.get(name)) for name in ("open","high","low","close",key)}
+        if row.get("timestamp") and all(value is not None for value in values.values()):clean.append({**row,**values})
+    title=f"ClickHouse Historical · QQQ vs {label.title()}"
+    width,height,left,right,top,bottom=1800,980,118,48,162,118
+    if not clean:return _empty_svg(width,height,title)
+    values=[value for row in clean for value in (row["low"],row["high"],row[key])]
+    low,high=min(values),max(values);padding=max((high-low)*.08,.05);low-=padding;high+=padding
+    plot_w=width-left-right;plot_h=height-top-bottom
+    x=lambda index:left+(index+.5)*plot_w/max(len(clean),1);y=lambda value:top+(high-value)/max(high-low,1e-9)*plot_h
+    slot=plot_w/max(len(clean),1);body_width=max(1.2,min(13,slot*.64));tz=ZoneInfo(market_timezone)
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">','<rect width="100%" height="100%" fill="#071019"/>',f'<text x="42" y="48" fill="#eaf3f7" font-family="monospace" font-size="30" font-weight="700">{escape(title)}</text>',f'<text x="42" y="82" fill="#9fb9c7" font-family="monospace" font-size="18">{escape(start_date)} → {escape(end_date)} · {interval_seconds//60} MINUTE CANDLES · EASTERN TIME</text>','<rect x="30" y="100" width="1740" height="43" rx="7" fill="#0b1d2a" stroke="#28546d"/>','<line x1="52" y1="121" x2="86" y2="121" stroke="#00d084" stroke-width="8"/><text x="98" y="128" fill="#f1f8fb" font-family="monospace" font-size="19" font-weight="700">QQQ UP CANDLE</text>','<line x1="310" y1="121" x2="344" y2="121" stroke="#ff4f69" stroke-width="8"/><text x="356" y="128" fill="#f1f8fb" font-family="monospace" font-size="19" font-weight="700">QQQ DOWN CANDLE</text>',f'<line x1="620" y1="121" x2="664" y2="121" stroke="{color}" stroke-width="5" stroke-dasharray="10 7"/><text x="678" y="128" fill="#f1f8fb" font-family="monospace" font-size="19" font-weight="700">{label}</text>']
+    for index in range(7):
+        ratio=index/6;yy=top+ratio*plot_h;value=high-ratio*(high-low);parts.extend([f'<line x1="{left}" y1="{yy:.1f}" x2="{width-right}" y2="{yy:.1f}" stroke="#24495e"/>',f'<text x="{left-14}" y="{yy+5:.1f}" text-anchor="end" fill="#b9ced9" font-family="monospace" font-size="16">{value:.2f}</text>'])
+    for index,row in enumerate(clean):
+        xx=x(index);candle_color="#00d084" if row["close"]>=row["open"] else "#ff4f69";body_top=min(y(row["open"]),y(row["close"]));body_height=max(2,abs(y(row["open"])-y(row["close"])))
+        parts.extend([f'<line x1="{xx:.1f}" y1="{y(row["high"]):.1f}" x2="{xx:.1f}" y2="{y(row["low"]):.1f}" stroke="{candle_color}" stroke-width="2"/>',f'<rect x="{xx-body_width/2:.1f}" y="{body_top:.1f}" width="{body_width:.1f}" height="{body_height:.1f}" fill="{candle_color}"/>'])
+    level_path=" ".join(f'{"M" if index==0 else "L"}{x(index):.1f},{y(row[key]):.1f}' for index,row in enumerate(clean));parts.append(f'<path d="{level_path}" fill="none" stroke="{color}" stroke-width="4" stroke-dasharray="12 8"/>')
+    tick_count=min(9,len(clean))
+    for tick in range(tick_count):
+        row_index=round(tick*(len(clean)-1)/max(tick_count-1,1));xx=x(row_index);observed=datetime.fromisoformat(str(clean[row_index]["timestamp"]).replace("Z","+00:00")).astimezone(tz);stamp=observed.strftime("%b %d · %I:%M %p").replace(" 0"," ")
+        parts.extend([f'<line x1="{xx:.1f}" y1="{top}" x2="{xx:.1f}" y2="{height-bottom}" stroke="#24495e" stroke-dasharray="3 6"/>',f'<text x="{xx:.1f}" y="{height-bottom+34}" text-anchor="middle" fill="#d4e5ee" font-family="monospace" font-size="16" font-weight="700">{escape(stamp)}</text>'])
+    parts.extend([f'<text x="30" y="{top+plot_h/2}" transform="rotate(-90 30 {top+plot_h/2})" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">PRICE · USD</text>',f'<text x="{left+plot_w/2}" y="{height-24}" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">CLICKHOUSE SNAPSHOT · {len(clean)} BOUNDED CANDLES</text>','</svg>'])
+    return "".join(parts)

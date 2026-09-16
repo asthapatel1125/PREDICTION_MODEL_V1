@@ -46,6 +46,11 @@ class ThetaDataV3Client(MarketDataPort):
         self._wall_candidate_history: dict[tuple[str, str], deque[float]] = {}
         self._wall_selected: dict[tuple[str, str], float] = {}
         self._client: Any = None
+        # ThetaData's Python client owns one authenticated Options Pro session.
+        # QQQ and SPY workers share this adapter, so an entire two-request
+        # snapshot (Greeks + OI) must be atomic. Concurrent calls can invalidate
+        # the provider session with "more than one terminal is running".
+        self._snapshot_lock = asyncio.Lock()
 
     def _python_client(self) -> Any:
         if self._client is None:
@@ -78,6 +83,10 @@ class ThetaDataV3Client(MarketDataPort):
             return self._normalize_rows(self._rows(response.json()))
 
     async def _snapshot_rows(self, symbol: str) -> list[dict[str, Any]]:
+        async with self._snapshot_lock:
+            return await self._snapshot_rows_locked(symbol)
+
+    async def _snapshot_rows_locked(self, symbol: str) -> list[dict[str, Any]]:
         params = {"symbol": symbol.upper(), "expiration": "*", "strike": "*", "right": "both",
                   "max_dte": self.max_dte, "strike_range": self.strike_range}
         cache_key = symbol.upper()

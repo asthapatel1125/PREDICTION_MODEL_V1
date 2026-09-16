@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime,timezone
 
 import pytest
@@ -141,6 +142,29 @@ def test_missing_speed_and_color_use_specification_fallbacks():
 
 def test_live_polling_defaults_to_5_seconds():
     assert ThetaDataV3Client(api_key="test").poll_seconds==5
+
+
+def test_shared_options_pro_client_serializes_complete_symbol_snapshots():
+    client=ThetaDataV3Client(api_key="test")
+    active=0
+    maximum=0
+
+    async def fake_snapshot(symbol):
+        nonlocal active,maximum
+        active+=1
+        maximum=max(maximum,active)
+        await asyncio.sleep(.01)
+        active-=1
+        return [{"symbol":symbol}]
+
+    client._snapshot_rows_locked=fake_snapshot
+
+    async def run():
+        return await asyncio.gather(client._snapshot_rows("QQQ"),client._snapshot_rows("SPY"))
+
+    results=asyncio.run(run())
+    assert maximum==1
+    assert results==[[{"symbol":"QQQ"}],[{"symbol":"SPY"}]]
 
 
 def test_open_interest_merge_normalizes_contract_identifiers():
