@@ -228,7 +228,7 @@ class ClickHouseRepository:
         only the requested display candles cross the network.
         """
         bucket_seconds=max(60,min(int(interval_seconds),86_400))
-        row_limit=max(30,min(int(limit),2_500))
+        row_limit=max(30,min(int(limit),20_000))
         day_limit=max(1,min(int(days),365))
         symbol_literal=_literal(symbol.upper())
         sql=f"""

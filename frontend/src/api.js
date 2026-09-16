@@ -94,7 +94,7 @@ export async function fetchWallDayLevels(symbol,sessionDate,signal,displayBucket
   const rows=[...new Map(results.flatMap(result=>result.rows||[]).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
   const value={symbol:symbol.toUpperCase(),rows,phase_anchors:results.flatMap(result=>result.phase_anchors||[]),display_bucket_seconds:displayBucketSeconds,days};wallHistoryCache.set(key,{at:Date.now(),value});return value;
 }
-export const fetchExposureCandles=(symbol,intervalSeconds,days,signal,limit=2500)=>
+export const fetchExposureCandles=(symbol,intervalSeconds,days,signal,limit=20000)=>
   request(`/api/v1/walls/exposure-candles?symbol=${encodeURIComponent(symbol)}&interval_seconds=${encodeURIComponent(intervalSeconds)}&days=${encodeURIComponent(days)}&limit=${encodeURIComponent(limit)}`,{signal});
 export const fetchNasdaqRangeAtlas = (symbol, signal) =>
   request(`/api/v1/walls/nasdaq-range-atlas?symbol=${encodeURIComponent(symbol)}`, { signal });

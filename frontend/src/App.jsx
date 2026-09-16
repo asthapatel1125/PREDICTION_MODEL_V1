@@ -1845,7 +1845,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const dragRef=useRef(null);
   const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"LIVE 30M":1800,"LIVE 1H":3600,"1M":60,"5M":300,"10M":600,"15M":900,"30M":1800,"1H":3600,"2H":7200,"3H":10800,"4H":14400,"5H":18000,"6H":21600,"1D":86400},ranges={"2D":2,"3D":3,"5D":5,"10D":10,"30D":30,"1MO":30,ALL:365};
-  useEffect(()=>{if(symbol!=="QQQ"){setHistoricalCandles([]);return undefined}const controller=new AbortController();fetchExposureCandles(symbol,periods[period],ranges[historyRange],controller.signal).then(result=>setHistoricalCandles(result.rows||[])).catch(error=>{if(error.name!=="AbortError")setHistoricalCandles([])});return()=>controller.abort()},[symbol,period,historyRange]);
+  useEffect(()=>{if(symbol!=="QQQ"){setHistoricalCandles([]);return undefined}const controller=new AbortController();/* Always request the complete stored history; period controls bucket width only. */fetchExposureCandles(symbol,periods[period],365,controller.signal).then(result=>setHistoricalCandles(result.rows||[])).catch(error=>{if(error.name!=="AbortError")setHistoricalCandles([])});return()=>controller.abort()},[symbol,period]);
   const allPoints=useMemo(()=>{
     const key=wallKey==="ZERO_DELTA"?"zero_delta":"zero_gamma";
     // Keep every QQQ candle even when a historical exposure bucket has a

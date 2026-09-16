@@ -323,7 +323,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         symbol:str="QQQ",
         interval_seconds:int=Query(300),
         days:int=Query(365,ge=1,le=365),
-        limit:int=Query(2500,ge=30,le=2500),
+        limit:int=Query(20000,ge=30,le=20000),
     ):
         allowed={60,300,600,900,1800,3600,7200,10800,14400,18000,21600,86400}
         if interval_seconds not in allowed:
