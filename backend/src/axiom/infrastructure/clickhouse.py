@@ -258,8 +258,10 @@ class ClickHouseRepository:
                         max(price) AS high,
                         min(price) AS low,
                         argMax(price,timestamp) AS close
-                    FROM qqq_history
-                    WHERE toDate(timestamp) IN (SELECT day FROM selected_days)
+                    FROM exposure_history FINAL
+                    WHERE symbol={symbol_literal}
+                      AND interval_seconds=60
+                      AND toDate(timestamp) IN (SELECT day FROM selected_days)
                       AND toTime(timestamp) >= toTime('09:30:00')
                       AND toTime(timestamp) <= toTime('16:00:00')
                     GROUP BY bucket
