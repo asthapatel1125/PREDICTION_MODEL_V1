@@ -452,5 +452,5 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-axes{font-size:12px!important;overflow:hidden}
 .exposure-axes .exposure-axis-tick{font-size:12px!important}
 .exposure-time-rail{overflow:hidden}
-.exposure-time-rail nav{inset:7px 5px 10px!important;overflow-y:auto!important;overflow-x:hidden!important;align-content:start!important;gap:5px!important;padding-right:2px}
-.exposure-time-rail button{flex:0 0 29px!important;min-height:29px!important;font-size:11px!important}
+.exposure-time-rail nav{inset:5px 4px 6px!important;overflow:hidden!important;align-content:start!important;gap:2px!important;padding-right:0}
+.exposure-time-rail button{flex:0 0 24px!important;min-height:24px!important;font-size:10px!important;padding:1px!important}
