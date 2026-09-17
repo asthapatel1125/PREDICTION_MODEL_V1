@@ -1375,4 +1375,8 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 @media(max-width:800px){.price-charmander>header{align-items:flex-start;flex-direction:column}.price-charmander-state{align-items:flex-start}.price-charmander-body{grid-template-columns:52px minmax(0,1fr)}.price-charmander-frame{height:480px}.price-charmander-controls{padding-left:4px;padding-right:4px}.price-charmander>footer small{width:100%;margin:0}}
 
 /* Wall Intelligence reading order: exposure maps, Charmander, then strength. */
-.refined-wall>*{order:initial!important}.refined-wall>.wall-strength-board{display:none}.wall-live-stack{display:flex;flex-direction:column;gap:14px;min-width:0}.wall-live-stack>.price-charmander{margin:0}.wall-live-stack>.wall-strength-board{display:block;margin:0 0 18px}
+.refined-wall>*{order:initial!important}.refined-wall>.wall-strength-board{display:block}
+
+/* Instrument families are visually separated without changing chart data. */
+.live-symbol-exposure-panels.spy .exposure-level-map{border:1px solid transparent!important;background:linear-gradient(145deg,#09131d,#071019) padding-box,linear-gradient(135deg,#ff4fa3,#ff8bc5 45%,#713054) border-box!important;box-shadow:inset 0 1px rgba(255,139,197,.12),0 12px 30px rgba(255,79,163,.08)!important}
+.live-symbol-exposure-panels.qqq .exposure-level-map{border:1px solid transparent!important;background:linear-gradient(145deg,#09131d,#071019) padding-box,linear-gradient(135deg,#b56cff,#7c4dff 48%,#3c276d) border-box!important;box-shadow:inset 0 1px rgba(181,108,255,.12),0 12px 30px rgba(124,77,255,.08)!important}

@@ -1972,6 +1972,10 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   return expanded?createPortal(content,document.body):<>{historyArchive}{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows} onNeedWindow={onNeedWindow}/>}</>;
 }
 
+function ExposurePair({symbol,rows,onNeedWindow,className=""}){
+  return <div className={`live-symbol-exposure-panels ${className}`} data-symbol={symbol}><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded onNeedWindow={onNeedWindow}/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded onNeedWindow={onNeedWindow}/></div>;
+}
+
 function LiveSymbolExposurePanels({symbol="SPY"}){
   const [rows,setRows]=useState([]),[requestedLimit,setRequestedLimit]=useState(360);
   const requestWindow=useCallback(seconds=>setRequestedLimit(current=>Math.max(current,Math.min(5000,Math.ceil(seconds/5*1.5)))),[]);
@@ -1988,18 +1992,16 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <div className="live-symbol-exposure-panels"><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded onNeedWindow={requestWindow}/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded onNeedWindow={requestWindow}/></div>;
+  return <ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/>;
+}
+
+function LiveCharmanderExposurePanels({symbol="QQQ",rows=[],requestWindow}){
+  return <><PriceCharmanderChart rows={rows} symbol={symbol}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
 }
 
 function ZeroGammaExposureChart(props){
   if(props.wallKey)return <ModernExposureLevelChart {...props}/>;
-  const rows=props.rows||[],symbol=String(props.symbol||rows.at(-1)?.symbol||"QQQ").toUpperCase(),latest=rows.at(-1)||{};
-  return <div className="wall-live-stack">
-    <ModernExposureLevelChart {...props} symbol={symbol} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff"/>
-    <ModernExposureLevelChart {...props} symbol={symbol} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7"/>
-    <PriceCharmanderChart rows={rows} symbol={symbol}/>
-    <WallStrengthDashboard symbol={symbol} latest={latest}/>
-  </div>;
+  return null;
 }
 
 function ExposureSeparationZones({points=[],wallKey="ZERO_GAMMA"}){
@@ -2619,6 +2621,7 @@ export default function Home() {
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
     <LiveSymbolExposurePanels symbol="SPY"/>
+    <LiveCharmanderExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">

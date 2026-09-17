@@ -105,7 +105,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
     const context = canvas.getContext("2d");
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-    const left=68,right=20,top0=24,axisSpace=32,gap=44,panelHeight=Math.max(170,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
+    const left=68,right=20,top0=24,axisSpace=32,gap=0,panelHeight=Math.max(170,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
     const firstAt = Date.parse(calculated.timestamps[visibleIndexes[0]]), lastAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)]), timeSpan = Math.max(1, lastAt - firstAt);
     const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
     context.fillStyle = "#061019"; context.fillRect(left, top0, plotWidth, top1 - top0); context.fillRect(left, bottom0, plotWidth, bottom1 - bottom0);
@@ -130,7 +130,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       context.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1.5, Math.abs(closeY - openY)));
     });
     const charmLimit=1;
-    context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48); context.fillText("PRICE-ONLY CHARMANDER · SMOOTHED ANGLE", 9, bottom0 + 18);
+    context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48);
     context.fillStyle = "#8ea8b8"; context.font = "10px monospace"; context.fillText(priceHigh.toFixed(2), 9, top0 + 4); context.fillText(priceLow.toFixed(2), 9, top1); context.fillText(`+${charmLimit.toFixed(2)}`, 22, bottom0 + 4); context.fillText("0", 45, (bottom0 + bottom1) / 2 + 3); context.fillText(`−${charmLimit.toFixed(2)}`, 22, bottom1);
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
     calculated.series.forEach((line, lineIndex) => {
