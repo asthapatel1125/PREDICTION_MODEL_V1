@@ -1965,7 +1965,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
       <aside className="exposure-live-rail" onWheel={wheelY} title="Mouse wheel: vertical price zoom">
         <div className="exposure-live-updated"><small>LAST UPDATED</small><strong>{hoverTime(last.timestamp)}</strong></div>
         <span className="exposure-end-label gamma" style={{top:clamp(gammaY(plottedLevel(last))+42,72,356),"--accent":gammaColor(last)}}><i/>{axisName}<strong>{plottedLevel(last).toFixed(2)}</strong></span>
-        <span className="exposure-end-label qqq" style={{top:clamp(qqqY(last.spot)+42,72,356)}}><i/>{symbol}<strong>{last.spot.toFixed(2)}</strong></span>
+              <span className={`exposure-end-label qqq instrument-${symbol.toLowerCase()}`} style={{top:clamp(qqqY(last.spot)+42,72,356)}}><i/>{symbol}<strong>{last.spot.toFixed(2)}</strong></span>
       </aside>
     </div>
   </section>;
