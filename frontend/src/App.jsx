@@ -5,7 +5,7 @@ import CvdPriceChart from "./CvdPriceChart";
 import PriceCharmanderChart from "./PriceCharmanderChart";
 import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallExposurePoints, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
   setDynamicsDirectionGate, startReplay, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
@@ -1839,20 +1839,24 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const [expanded,setExpanded]=useState(false);
   const [scrollOffset,setScrollOffset]=useState(0);
   const [viewportWidth,setViewportWidth]=useState(0);
+  const [backfillRows,setBackfillRows]=useState([]),[hasEarlier,setHasEarlier]=useState(true);
   const scrollRef=useRef(null);
   const canvasRef=useRef(null);
   const followingLiveRef=useRef(true);
   const dragRef=useRef(null);
+  const loadingEarlierRef=useRef(false);
   const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"1M":60,"5M":300,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"1D":86400};
   const candleSeconds={"1M":5,"5M":5,"30M":15,"1H":30,"2H":60,"4H":120,"6H":180,"1D":300};
   useEffect(()=>{onNeedWindow?.(periods[period])},[onNeedWindow,period]);
+  useEffect(()=>{const controller=new AbortController();setBackfillRows([]);setHasEarlier(true);fetchWallExposurePoints(symbol,controller.signal).then(result=>{setBackfillRows(result.rows||[]);setHasEarlier(result.has_more!==false)}).catch(error=>{if(error.name!=="AbortError")setBackfillRows([])});return()=>controller.abort()},[symbol]);
+  const loadEarlierExposure=async()=>{if(loadingEarlierRef.current||!hasEarlier)return;const combined=[...backfillRows,...rows].filter(row=>row?.timestamp).sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)),first=combined[0];if(!first)return;loadingEarlierRef.current=true;try{const before=new Date(Date.parse(first.timestamp)-1).toISOString(),result=await fetchWallExposurePoints(symbol,undefined,before),incoming=result.rows||[];setBackfillRows(current=>[...new Map([...incoming,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));if(result.has_more===false||!incoming.length)setHasEarlier(false)}finally{loadingEarlierRef.current=false}};
   const allPoints=useMemo(()=>{
-    const formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),normalizedSymbol=symbol.toUpperCase(),source=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
-    const latestAt=Date.parse(source.at(-1)?.timestamp||""),latestFields=Number.isFinite(latestAt)?Object.fromEntries(formatter.formatToParts(new Date(latestAt)).map(part=>[part.type,part.value])):null,latestDay=latestFields?`${latestFields.year}-${latestFields.month}-${latestFields.day}`:"",windowSeconds=periods[period],bucketSeconds=candleSeconds[period],cutoff=latestAt-windowSeconds*1000,buckets=new Map();
-    source.forEach(row=>{const at=Date.parse(row.timestamp),spot=number(row.spot),level=number(row.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||at<cutoff||spot<=0||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),day=`${fields.year}-${fields.month}-${fields.day}`,minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(day!==latestDay||minute<420||minute>1080)return;const index=Math.floor(at/(bucketSeconds*1000)),key=`${day}:${index}`,existing=buckets.get(key);if(!existing)buckets.set(key,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
+    const formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),normalizedSymbol=symbol.toUpperCase(),source=[...backfillRows,...rows].filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+    const bucketSeconds=candleSeconds[period],buckets=new Map();
+    source.forEach(row=>{const at=Date.parse(row.timestamp),spot=number(row.spot),level=number(row.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||spot<=0||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),day=`${fields.year}-${fields.month}-${fields.day}`,minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(minute<420||minute>1080)return;const index=Math.floor(at/(bucketSeconds*1000)),key=`${day}:${index}`,existing=buckets.get(key);if(!existing)buckets.set(key,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
     return [...buckets.values()];
-  },[rows,symbol,wallKey,period]);
+  },[backfillRows,rows,symbol,wallKey,period]);
   const points=allPoints;
   // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
   // backfill into the viewport; the parent scroll area is the navigation.
@@ -1941,11 +1945,11 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
     <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>LIVE SESSION ONLY · {symbol} OHLC · CLOSING {axisName} · THETADATA OPTIONS PRO</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
-      <aside className="exposure-axes">
+      <aside className="exposure-axes" onWheel={wheelY} title="Mouse wheel: vertical value zoom">
         <b className="exposure-axis-name qqq">PRICE<br/>USD</b>
         {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y+42}}>{item.value.toFixed(2)}</span>)}
       </aside>
-      <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false}}>
+      <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false;if(event.currentTarget.scrollLeft<80)loadEarlierExposure()}}>
          <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>{symbol} <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${xZoom*100}%`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
@@ -1992,7 +1996,7 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PriceCharmanderChart rows={rows} symbol={symbol}/></>;
 }
 
 function LiveCharmanderExposurePanels({symbol="QQQ",rows=[],requestWindow}){

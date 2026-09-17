@@ -280,7 +280,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/price-series")
-    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=30):
+    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=30,before:datetime|None=None):
         """Compact price-only warm-up for Charmander; deliberately skips wall payloads."""
         safe_window=max(300,min(int(window_seconds),28_800))
         safe_bucket=max(5,min(int(bucket_seconds),900))
@@ -288,9 +288,20 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         warmup_bars=90
         warmup_points=warmup_bars*max(1,safe_bucket//cadence)
         limit=min(15_000,max(300,safe_window//cadence+warmup_points))
-        rows=await container.repository.wall_price_points(symbol,limit)
+        if before is not None:limit=15_000
+        rows=await container.repository.wall_price_points(symbol,limit+1,_wall_time(before))
+        has_more=len(rows)>limit
+        if has_more:rows=rows[1:]
         return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"RETAINED_UNDERLYING_PRICE_ONLY",
-            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"warmup_bars":warmup_bars,"rows":rows}
+            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"warmup_bars":warmup_bars,"has_more":has_more,"rows":rows}
+
+    @api.get("/walls/exposure-points")
+    async def wall_exposure_points(symbol:str="QQQ",limit:int=Query(5_000,ge=100,le=5_000),before:datetime|None=None):
+        rows=await container.repository.wall_exposure_points(symbol,limit+1,_wall_time(before))
+        has_more=len(rows)>limit
+        if has_more:rows=rows[1:]
+        return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"COMPACT_EXPOSURE_BACKFILL",
+            "has_more":has_more,"rows":rows}
 
     @api.get("/walls/nasdaq-range-atlas")
     async def nasdaq_range_atlas(symbol:str="QQQ"):

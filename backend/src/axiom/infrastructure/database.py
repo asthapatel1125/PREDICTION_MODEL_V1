@@ -303,14 +303,34 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement.order_by(WallIntelligenceRow.timestamp.desc()).limit(limit))).scalars().all()
             return list(reversed([dict(row.payload) for row in rows]))
 
-    async def wall_price_points(self,symbol:str,limit:int=15_000)->list[dict[str,Any]]:
+    async def wall_price_points(self,symbol:str,limit:int=15_000,before:datetime|None=None)->list[dict[str,Any]]:
         """Return retained underlying prices without loading the large wall JSON payload."""
         async with self.sessions() as s:
             statement=(select(WallIntelligenceRow.timestamp,WallIntelligenceRow.spot)
-                .where(WallIntelligenceRow.symbol==symbol.upper())
-                .order_by(WallIntelligenceRow.timestamp.desc()).limit(limit))
+                .where(WallIntelligenceRow.symbol==symbol.upper()))
+            if before:statement=statement.where(WallIntelligenceRow.timestamp<before)
+            statement=statement.order_by(WallIntelligenceRow.timestamp.desc()).limit(limit)
             rows=(await s.execute(statement)).all()
             return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
+
+    async def wall_exposure_points(self,symbol:str,limit:int=5_000,before:datetime|None=None)->list[dict[str,Any]]:
+        """Return compact price/ZG/ZD pages without materializing full wall payloads."""
+        query=text("""
+            SELECT timestamp, spot,
+                payload -> 'walls' -> 'ZERO_GAMMA' AS zero_gamma,
+                payload -> 'walls' -> 'ZERO_DELTA' AS zero_delta
+            FROM wall_intelligence
+            WHERE symbol = :symbol
+              AND (CAST(:before AS TIMESTAMPTZ) IS NULL OR timestamp < CAST(:before AS TIMESTAMPTZ))
+            ORDER BY timestamp DESC
+            LIMIT :limit
+        """)
+        async with self.sessions() as s:
+            rows=(await s.execute(query,{"symbol":symbol.upper(),"before":before,"limit":int(limit)})).mappings().all()
+        return list(reversed([{
+            "timestamp":row["timestamp"],"symbol":symbol.upper(),"spot":float(row["spot"]),
+            "walls":{"ZERO_GAMMA":row["zero_gamma"] or {},"ZERO_DELTA":row["zero_delta"] or {}},
+        } for row in rows]))
 
     async def wall_break_events(self,symbol:str,start:datetime|None=None,end:datetime|None=None,wall_types:list[str]|None=None,tiers:list[str]|None=None,limit:int=1000)->list[dict[str,Any]]:
         async with self.sessions() as s:
