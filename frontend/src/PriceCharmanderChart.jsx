@@ -21,6 +21,7 @@ const COLORS = {
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
 export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const [range, setRange] = useState("5M");
@@ -32,6 +33,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const [historyState, setHistoryState] = useState("loading");
   const [hasEarlier,setHasEarlier]=useState(true);
   const [size, setSize] = useState({ width: 1200, height: 610 });
+  const [scrollOffset,setScrollOffset]=useState(0),[viewportWidth,setViewportWidth]=useState(1200);
   const [hover, setHover] = useState(null);
   const canvasRef = useRef(null), frameRef = useRef(null),loadingEarlierRef=useRef(false),backfillAnchorRef=useRef(null),followingLiveRef=useRef(true);
   const config = RANGE_CONFIG[range];
@@ -59,13 +61,16 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   }, [calculated.timestamps]);
   const visibleStartAt = Date.parse(calculated.timestamps[visibleIndexes[0]] || ""), visibleEndAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)] || "");
   const candles = useMemo(() => analysisBars.filter(bar => bar.at >= visibleStartAt && bar.at <= visibleEndAt), [analysisBars, visibleEndAt, visibleStartAt]);
+  const firstDataAt=Date.parse(calculated.timestamps[0]||""),lastDataAt=Date.parse(calculated.timestamps.at(-1)||""),dataSpan=Math.max(1,lastDataAt-firstDataAt),plotPixelWidth=Math.max(1,size.width-88),visiblePixelStart=clamp(scrollOffset-68,0,plotPixelWidth),visiblePixelEnd=clamp(scrollOffset+Math.max(viewportWidth,1)-68,visiblePixelStart+1,plotPixelWidth),viewStartAt=firstDataAt+visiblePixelStart/plotPixelWidth*dataSpan,viewEndAt=firstDataAt+visiblePixelEnd/plotPixelWidth*dataSpan;
+  const scaleCandles=useMemo(()=>{const selected=candles.filter(bar=>bar.at>=viewStartAt&&bar.at<=viewEndAt);return selected.length?selected:candles},[candles,viewEndAt,viewStartAt]);
+  const scaleCharmIndexes=useMemo(()=>visibleIndexes.filter(index=>{const at=Date.parse(calculated.timestamps[index]);return at>=viewStartAt&&at<=viewEndAt}),[calculated.timestamps,viewEndAt,viewStartAt,visibleIndexes]);
   const warmupBars = analysisBars.length;
   const warmupReady = warmupBars >= 90;
 
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return undefined;
-    const measure = () => {const viewport=Math.max(620,frame.clientWidth),expectedBars=Math.max(1,config.seconds/config.bucket),contentWidth=Math.min(30000,Math.max(viewport,analysisBars.length*(viewport/expectedBars)*xZoom));setSize({width:contentWidth,height:Math.max(460,frame.clientHeight||520)})};
+    const measure = () => {const viewport=Math.max(620,frame.clientWidth),expectedBars=Math.max(1,config.seconds/config.bucket),contentWidth=Math.min(30000,Math.max(viewport,analysisBars.length*(viewport/expectedBars)*xZoom));setViewportWidth(viewport);setSize({width:contentWidth,height:Math.max(460,frame.clientHeight||520)})};
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(frame);
@@ -105,20 +110,25 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
     const context = canvas.getContext("2d");
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-    const left=68,right=20,top0=24,axisSpace=32,gap=0,panelHeight=Math.max(170,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
+    const left=68,right=20,top0=24,axisSpace=43,gap=0,panelHeight=Math.max(170,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
     const firstAt = Date.parse(calculated.timestamps[visibleIndexes[0]]), lastAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)]), timeSpan = Math.max(1, lastAt - firstAt);
     const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
     context.fillStyle = "#061019"; context.fillRect(left, top0, plotWidth, top1 - top0); context.fillRect(left, bottom0, plotWidth, bottom1 - bottom0);
     context.fillStyle="rgba(54,185,82,.055)";context.fillRect(left,bottom0,plotWidth,(bottom1-bottom0)/2);context.fillStyle="rgba(255,69,89,.05)";context.fillRect(left,(bottom0+bottom1)/2,plotWidth,(bottom1-bottom0)/2);
+    const watermarkX=clamp(scrollOffset+Math.max(viewportWidth,1)/2,left,width-right),watermarkColor=symbol.toUpperCase()==="SPY"?"rgba(255,92,138,.075)":"rgba(88,166,255,.075)";
+    context.fillStyle=watermarkColor;context.font="900 92px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(symbol.toUpperCase(),watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
     context.strokeStyle = "#183746"; context.lineWidth = 1;
     for (const y of [top0, (top0 + top1) / 2, top1, bottom0, (bottom0 + bottom1) / 2, bottom1]) { context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke(); }
-    for (let tick = 0; tick < 6; tick += 1) {
-      const at = firstAt + timeSpan * tick / 5, x = xAt(at);
+    const tickCount=Math.max(2,Math.floor(plotWidth/118)+1);
+    for (let tick = 0; tick < tickCount; tick += 1) {
+      const at = firstAt + timeSpan * tick / Math.max(tickCount-1,1), x = xAt(at);
       context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke();
-      context.fillStyle = "#829aaa"; context.font = "10px monospace"; context.textAlign = tick === 0 ? "left" : tick === 5 ? "right" : "center";
-      context.fillText(timeLabel(at), x, height - 10);
+      context.fillStyle = "#9db5c4"; context.font = "10px monospace"; context.textAlign = tick === 0 ? "left" : tick === tickCount-1 ? "right" : "center";
+      context.fillText(timeLabel(at), x, height - 21);
+      context.fillStyle = "#658292"; context.font = "9px monospace";
+      context.fillText(dateLabel(at), x, height - 8);
     }
-    const prices = candles.flatMap(candle => [candle.low, candle.high]);
+    const prices = scaleCandles.flatMap(candle => [candle.low, candle.high]);
     const low = Math.min(...prices), high = Math.max(...prices),rawSpan=Math.max(high-low,.08),center=(high+low)/2,span=rawSpan/priceYZoom,padding=Math.max(span*.12,.02),priceLow=center-span/2-padding,priceHigh=center+span/2+padding;
     const priceY = price => top1 - (price - priceLow) / Math.max(priceHigh - priceLow, .01) * (top1 - top0);
     const candleWidth = Math.max(2, Math.min(9, plotWidth / Math.max(candles.length, 1) * .58));
@@ -129,7 +139,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       const openY = priceY(candle.open), closeY = priceY(candle.close);
       context.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1.5, Math.abs(closeY - openY)));
     });
-    const charmLimit=1/charmYZoom;
+    const visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),autoCharmLimit=Math.max(.12,...visibleCharmValues),charmLimit=Math.min(1,autoCharmLimit*1.12)/charmYZoom;
     context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48);
     context.fillStyle = "#8ea8b8"; context.font = "10px monospace"; context.fillText(priceHigh.toFixed(2), 9, top0 + 4); context.fillText(priceLow.toFixed(2), 9, top1); context.fillText(`+${charmLimit.toFixed(2)}`, 22, bottom0 + 4); context.fillText("0", 45, (bottom0 + bottom1) / 2 + 3); context.fillText(`−${charmLimit.toFixed(2)}`, 22, bottom1);
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
@@ -155,7 +165,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, charmYZoom, hover, priceYZoom, size, symbol, visibleIndexes,visualShift]);
+  }, [calculated, candles, charmYZoom, hover, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, size, symbol, viewportWidth, visibleIndexes,visualShift]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
@@ -165,7 +175,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const hoveredIndex = hover == null ? latestIndex : visibleIndexes[hover];
   const hoveredPrice = hoveredIndex == null ? null : calculated.prices[hoveredIndex];
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
-  const priceValues=candles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,charmLimit=1/charmYZoom;
+  const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;
   const zoomY=event=>{event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),factor=event.deltaY<0?1.12:.89;if(event.clientY-bounds.top<bounds.height/2)setPriceYZoom(value=>clamp(value*factor,.35,12));else setCharmYZoom(value=>clamp(value*factor,.35,12))};
   const resetView=()=>{setXZoom(1);setPriceYZoom(1);setCharmYZoom(1);setHover(null);followingLiveRef.current=true};
 
@@ -174,7 +184,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
     <div className="price-charmander-body">
       <nav className="price-charmander-controls" aria-label="Charmander time window"><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
       <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>CHARM<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
-      <div className="price-charmander-frame" ref={frameRef} onScroll={event=>{const node=event.currentTarget;followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;if(node.scrollLeft<80)loadEarlier()}} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
+      <div className="price-charmander-frame" ref={frameRef} onScroll={event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;if(node.scrollLeft<80)loadEarlier()}} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
         <canvas ref={canvasRef}/>
         {hoveredIndex != null && <aside><b>{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span><span>ZOOM <strong>{Math.round(xZoom*100)}%</strong></span></aside>}
       </div>

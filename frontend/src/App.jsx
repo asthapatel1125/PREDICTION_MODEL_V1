@@ -1845,7 +1845,6 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const followingLiveRef=useRef(true);
   const dragRef=useRef(null);
   const loadingEarlierRef=useRef(false);
-  const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"1M":60,"5M":300,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"1D":86400};
   const candleSeconds={"1M":5,"5M":5,"30M":15,"1H":30,"2H":60,"4H":120,"6H":180,"1D":300};
   useEffect(()=>{onNeedWindow?.(periods[period])},[onNeedWindow,period]);
@@ -1860,7 +1859,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const points=allPoints;
   // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
   // backfill into the viewport; the parent scroll area is the navigation.
-  useEffect(()=>{const canvas=canvasRef.current;if(canvas)canvas.style.width=`${Math.max(1100,points.length*9)*xZoom}px`},[points.length,xZoom]);
+  useEffect(()=>{const canvas=canvasRef.current;if(canvas)canvas.style.width=`${Math.max(1500,points.length*9)*xZoom}px`},[points.length,xZoom]);
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport)return undefined;const measure=()=>setViewportWidth(viewport.clientWidth);measure();const observer=new ResizeObserver(measure);observer.observe(viewport);return()=>observer.disconnect()},[points.length]);
   useEffect(()=>{const viewport=scrollRef.current;if(!viewport||!followingLiveRef.current)return;requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}))},[points.length,period,points.at(-1)?.timestamp,xZoom]);
   useEffect(()=>{if(!expanded)return;const close=event=>{if(event.key==="Escape")setExpanded(false)};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[expanded]);
@@ -1889,19 +1888,17 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   // Timeframe buttons fit the complete selected window into one frame. Scale
   // from that same complete window so a stale scroll offset can never exclude
   // the newest value or push a live label outside the plotting area.
-  const visiblePoints=points;
+  const renderedWidth=width,visibleStartIndex=clamp(Math.floor(scrollOffset/Math.max(renderedWidth,1)*points.length)-1,0,Math.max(points.length-1,0)),visibleEndIndex=clamp(Math.ceil((scrollOffset+Math.max(viewportWidth,1))/Math.max(renderedWidth,1)*points.length)+1,visibleStartIndex+1,points.length),visiblePoints=points.slice(visibleStartIndex,visibleEndIndex);
   const plottedLevel=point=>point.displayLevel??point.level;
   // One monotonic, gap-compressed USD scale preserves the real relationship
   // at every timestamp. A lower Gamma value is therefore always drawn below
   // QQQ, while rank compression prevents a large empty USD gap from making
   // the smaller QQQ moves appear flat.
-  const incomingValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,plottedLevel(point)]).filter(Number.isFinite))].sort((a,b)=>a-b);
-  const scaleKey=`${period}:${points[0]?.timestamp||"empty"}`;
-  if(scaleValuesRef.current.period!==scaleKey||!scaleValuesRef.current.values.length||scaleValuesRef.current.values.length<24)scaleValuesRef.current={period:scaleKey,values:incomingValues};
-  const orderedValues=scaleValuesRef.current.values,scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
+  const orderedValues=[...new Set(visiblePoints.flatMap(point=>[point.spot,plottedLevel(point)]).filter(Number.isFinite))].sort((a,b)=>a-b),scaleLow=orderedValues[0]??0,scaleHigh=orderedValues.at(-1)??1,linearSpan=Math.max(scaleHigh-scaleLow,.0001);
   const valueRank=value=>{if(orderedValues.length<2)return .5;let lowIndex=0,highIndex=orderedValues.length-1;while(lowIndex<=highIndex){const middle=(lowIndex+highIndex)>>1;if(orderedValues[middle]<value)lowIndex=middle+1;else highIndex=middle-1}const upper=Math.min(orderedValues.length-1,lowIndex),lower=Math.max(0,upper-1),lowerValue=orderedValues[lower],upperValue=orderedValues[upper],fraction=upperValue===lowerValue?0:(value-lowerValue)/(upperValue-lowerValue);return (lower+(upper-lower)*fraction)/(orderedValues.length-1)};
   const compressedRatio=value=>.90*valueRank(value)+.10*((value-scaleLow)/linearSpan),mapY=value=>{const ratio=.5+(compressedRatio(value)-.5)*yZoom;return plotBottom-ratio*(plotBottom-plotTop)},qqqY=mapY,gammaY=mapY,x=index=>left+index*plotWidth/Math.max(points.length-1,1);
-  const selectedSpan=Math.max(0,Date.parse(points.at(-1)?.timestamp||"")-Date.parse(points[0]?.timestamp||""))/1000,multiDay=selectedSpan>=86400,axisStamp=value=>{const date=new Date(value),shortDate=date.toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"}),shortTime=date.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"});if(!multiDay)return chartAxisTime(value,periods[period]>=1800||points.length>36).replace(/\s+EST$/i,"");return `${shortDate} · ${shortTime}`},visibleTickSlots=Math.max(2,Math.floor(Math.max(viewportWidth,320)/(multiDay?155:125))),tickCount=points.length>1?Math.min(points.length,multiDay?8:10,visibleTickSlots):points.length,timeTicks=Array.from({length:tickCount},(_,index)=>Math.round(index*(points.length-1)/Math.max(tickCount-1,1))),tickAnchor=(index,tickIndex)=>tickIndex===0?"start":tickIndex===timeTicks.length-1?"end":"middle";
+  const axisStamp=value=>{const date=new Date(value);return {time:date.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"}),date:date.toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"})}},visibleTickSlots=Math.max(3,Math.floor(Math.max(viewportWidth,320)/92)),tickCount=visiblePoints.length>1?Math.min(18,visiblePoints.length,visibleTickSlots):visiblePoints.length,timeTicks=Array.from({length:tickCount},(_,index)=>visibleStartIndex+Math.round(index*Math.max(visibleEndIndex-visibleStartIndex-1,0)/Math.max(tickCount-1,1))),tickAnchor=(index,tickIndex)=>tickIndex===0?"start":tickIndex===timeTicks.length-1?"end":"middle";
+  const watermarkX=clamp(scrollOffset+Math.max(viewportWidth,1)/2,left,width-right);
   const displayTicks=[0,.25,.5,.75,1].map((ratio,index)=>{const value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
   const qqqPaths=points.reduce((groups,point,index)=>{const prior=points[index-1],newSession=index>0&&Date.parse(point.timestamp)-Date.parse(prior.timestamp)>3600000;if(!groups.length||newSession)groups.push([]);groups.at(-1).push(x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1));return groups},[]).map(group=>group.join(" "));
   const candleWidth=Math.max(2,Math.min(12,plotWidth/Math.max(points.length,1)*.62));
@@ -1951,14 +1948,15 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false;if(event.currentTarget.scrollLeft<80)loadEarlierExposure()}}>
          <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>{symbol} <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
-         <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${xZoom*100}%`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
+         <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${width}px`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <defs><clipPath id={`exposure-plot-${wallKey}`}><rect x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/></clipPath></defs>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
+            <text className={`exposure-symbol-watermark ${symbol.toLowerCase()}`} x={watermarkX} y={(plotTop+plotBottom)/2} textAnchor="middle">{symbol.toUpperCase()}</text>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>{symbol} · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
-            {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-32} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
+            {timeTicks.map((index,tickIndex)=>{const stamp=axisStamp(points[index].timestamp);return <g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text className="exposure-time-stamp" x={x(index)} y={height-34} textAnchor={tickAnchor(index,tickIndex)}><tspan x={x(index)}>{stamp.time}</tspan><tspan className="date" x={x(index)} dy="13">{stamp.date}</tspan></text></g>})}
             <g clipPath={`url(#exposure-plot-${wallKey})`}>{points.map((bar,index)=>{const open=number(bar.open),close=number(bar.close),high=number(bar.high),low=number(bar.low),color=close>=open?"#00d084":"#ff4f69",bodyTop=Math.min(qqqY(open),qqqY(close)),bodyHeight=Math.max(1,Math.abs(qqqY(open)-qqqY(close)));return <g className="exposure-candle" key={`candle-${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={qqqY(high)} y2={qqqY(low)} stroke={color} strokeWidth="1.5"/><rect x={x(index)-candleWidth/2} y={bodyTop} width={Math.max(2,candleWidth)} height={bodyHeight} fill={color} opacity=".9"/></g>})}
             {levelPaths.positive&&<path d={levelPaths.positive} fill="none" stroke="#3296ff" strokeWidth="2.7" strokeDasharray="7 4"/>}
             {levelPaths.negative&&<path d={levelPaths.negative} fill="none" stroke="#f2f5f7" strokeWidth="2.7" strokeDasharray="7 4"/>}
