@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from axiom.application.direction_gate import DailyDirectionGate, gate_expiry
+from axiom.application.direction_gate import DailyDirectionGate, DirectionGateLockedError, gate_expiry
 from axiom.analytics.outcome_attribution import OutcomeAttributionTracker
 from axiom.infrastructure.database import ConfigurationRow, SqlAlchemyRepository
 
 
-def test_persist_restart_refresh_expiry_and_explicit_change(tmp_path):
+def test_persist_restart_lock_and_expiry(tmp_path):
     async def run():
         engine=create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'gate.db'}")
         async with engine.begin() as conn:
@@ -25,13 +25,16 @@ def test_persist_restart_refresh_expiry_and_explicit_change(tmp_path):
         restored=DailyDirectionGate(repository,[second],"America/New_York")
         assert (await restored.sync(morning))["mode"]=="LONG_ONLY"
         assert second.direction_gate=="LONG_ONLY"
-        await service.set("SHORT_ONLY",morning)
-        assert (await restored.sync(morning))["mode"]=="SHORT_ONLY"
+        with pytest.raises(DirectionGateLockedError):
+            await service.set("SHORT_ONLY",morning)
+        assert (await restored.sync(morning))["mode"]=="LONG_ONLY"
         before=datetime(2026,9,2,21,59,59,tzinfo=timezone.utc)
-        assert (await restored.sync(before))["mode"]=="SHORT_ONLY"
+        assert (await restored.sync(before))["mode"]=="LONG_ONLY"
         closing=datetime(2026,9,2,22,tzinfo=timezone.utc)
         assert (await restored.sync(closing))["mode"]=="BOTH"
         assert (await restored.sync(datetime(2026,9,3,14,tzinfo=timezone.utc)))["mode"]=="BOTH"
+        selected=await restored.set("NO_TRADE",datetime(2026,9,3,14,tzinfo=timezone.utc))
+        assert selected["mode"]=="NO_TRADE" and selected["locked"] is True
         await engine.dispose()
     asyncio.run(run())
 
@@ -43,6 +46,7 @@ def test_session_expiry_observes_eastern_dst_and_weekends():
 
 def test_failed_save_does_not_acknowledge_or_change_gate():
     class BrokenRepository:
+        async def load_direction_gate(self):return None
         async def save_direction_gate(self,payload):raise RuntimeError("database unavailable")
     tracker=OutcomeAttributionTracker()
     service=DailyDirectionGate(BrokenRepository(),[tracker],"America/New_York")

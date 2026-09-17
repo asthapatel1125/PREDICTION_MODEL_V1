@@ -22,7 +22,7 @@ from axiom.analytics.eod_snapshots import render_eod_svg,render_exposure_history
 from axiom.analytics.nasdaq_range_atlas import build_range_atlas,load_nas100_monthly_levels
 from axiom.application.engines import LiveWallExposureEngine,ReplayRequest,TrainingEngine
 from axiom.application.pipeline import DecisionPipeline
-from axiom.application.direction_gate import DailyDirectionGate
+from axiom.application.direction_gate import DailyDirectionGate,DirectionGateLockedError
 from axiom.config.schema import PlatformSettings,StrategyConfig
 from axiom.infrastructure.database import SqlAlchemyRepository,create_database
 from axiom.infrastructure.clickhouse import ClickHouseRepository
@@ -53,7 +53,7 @@ class LiveEngineRequest(BaseModel):
 
 
 class DynamicsDirectionGateRequest(BaseModel):
-    mode:Literal["BOTH","LONG_ONLY","SHORT_ONLY"]="BOTH"
+    mode:Literal["LONG_ONLY","SHORT_ONLY","NO_TRADE"]
 
 
 class Container:
@@ -243,7 +243,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         return {"server_time":datetime.now(timezone.utc),"database_connected":await container.repository.ping(),
         "engine":container.live.status(),"events":await container.repository.list_system_events(25),
         "dynamics_enabled":False,
-        "dynamics_direction_gate":"DISABLED",
+        "dynamics_direction_gate":gate["mode"],
         "dynamics_direction_gate_details":gate,
         "theta_transport":cfg.thetadata_transport,"theta_poll_seconds":cfg.thetadata_poll_seconds,
         "outcome_price_provider":"TWELVE_DATA" if cfg.twelve_data_api_key else "THETADATA_OPTIONS_UNDERLYING",
@@ -253,7 +253,12 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
 
     @api.post("/dynamics/direction-gate")
     async def set_dynamics_direction_gate(body:DynamicsDirectionGateRequest):
-        raise HTTPException(409,"Gamma Dynamics 1.0/2.0/3.0 and Delta Dynamics are disabled")
+        try:
+            payload=await container.direction_gate.set(body.mode)
+        except DirectionGateLockedError as error:
+            raise HTTPException(409,str(error)) from error
+        await container.bus.publish("dynamics_direction_gate",payload)
+        return payload
 
     def _wall_time(value:datetime|None)->datetime|None:
         return value.astimezone(timezone.utc) if value else None

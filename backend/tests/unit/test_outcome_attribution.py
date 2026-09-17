@@ -109,6 +109,15 @@ def test_direction_gate_reset_allows_both_dynamics_directions():
     assert tracker._direction_allowed("PRIMARY_OPTIONS",Direction.UP)
 
 
+def test_no_trade_gate_blocks_both_new_dynamics_directions():
+    tracker=OutcomeAttributionTracker()
+    tracker.set_direction_gate("NO_TRADE")
+    assert not tracker._direction_allowed("GAMMA_DYNAMICS",Direction.UP)
+    assert not tracker._direction_allowed("DELTA_DYNAMICS",Direction.DOWN)
+    # The dormant Dynamics preference must not alter the independent primary model.
+    assert tracker._direction_allowed("PRIMARY_OPTIONS",Direction.UP)
+
+
 def test_flicker_does_not_open_duplicate_same_direction_call():
     tracker = OutcomeAttributionTracker(horizon_minutes=30, cooldown_seconds=300)
     start = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)

@@ -18,7 +18,7 @@ SYSTEM_GREEKS = {
 }
 GAMMA_SYSTEMS = {"GAMMA_DYNAMICS", "GAMMA_DYNAMICS_V2", "GAMMA_DYNAMICS_V3"}
 DYNAMICS_SYSTEMS = GAMMA_SYSTEMS | {"DELTA_DYNAMICS"}
-DIRECTION_GATES = {"BOTH", "LONG_ONLY", "SHORT_ONLY"}
+DIRECTION_GATES = {"BOTH", "LONG_ONLY", "SHORT_ONLY", "NO_TRADE"}
 
 
 class OutcomeAttributionTracker:
@@ -63,6 +63,8 @@ class OutcomeAttributionTracker:
     def _direction_allowed(self, system: str, direction: Direction) -> bool:
         if system not in DYNAMICS_SYSTEMS:
             return True
+        if self.direction_gate == "NO_TRADE":
+            return False
         if self.direction_gate == "LONG_ONLY":
             return direction == Direction.UP
         if self.direction_gate == "SHORT_ONLY":

@@ -3,7 +3,11 @@ import asyncio
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-MODES = {"BOTH", "LONG_ONLY", "SHORT_ONLY"}
+MODES = {"BOTH", "LONG_ONLY", "SHORT_ONLY", "NO_TRADE"}
+
+
+class DirectionGateLockedError(ValueError):
+    pass
 
 
 def gate_expiry(now, market_timezone):
@@ -18,9 +22,10 @@ def gate_expiry(now, market_timezone):
 
 def effective_gate(saved, now):
     if not saved:
-        return {"mode": "BOTH", "expires_at": None, "updated_at": None}
+        return {"mode": "BOTH", "expires_at": None, "updated_at": None, "locked": False}
     expiry = datetime.fromisoformat(saved["expires_at"])
-    return {**saved, "mode": saved["mode"] if now < expiry else "BOTH"}
+    active = now < expiry and saved["mode"] != "BOTH"
+    return {**saved, "mode": saved["mode"] if active else "BOTH", "locked": active}
 
 
 class DailyDirectionGate:
@@ -42,12 +47,16 @@ class DailyDirectionGate:
             return self.apply(effective_gate(saved, now or datetime.now(timezone.utc)))
 
     async def set(self, mode, now=None):
-        if mode not in MODES:
+        if mode not in MODES or mode == "BOTH":
             raise ValueError("Invalid Dynamics direction gate")
         now = now or datetime.now(timezone.utc)
         payload = {"mode": mode, "updated_at": now.isoformat(),
-                   "expires_at": gate_expiry(now, self.market_timezone).isoformat()}
+                   "expires_at": gate_expiry(now, self.market_timezone).isoformat(), "locked": True}
         async with self.lock:
+            current = effective_gate(await self.repository.load_direction_gate(), now)
+            if current["locked"]:
+                raise DirectionGateLockedError(
+                    f"Session choice is locked as {current['mode']} until {current['expires_at']}")
             # Do not acknowledge/apply a preference that failed to persist.
             await self.repository.save_direction_gate(payload)
             return self.apply(payload)
