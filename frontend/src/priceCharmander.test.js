@@ -24,6 +24,11 @@ test("uses a trimmed bucket average so isolated bad ticks do not drive the signa
   assert.equal(bar.high,900);
 });
 
+test("preserves server-aggregated OHLC candles at the selected interval",()=>{
+  const [bar]=averagePriceBars([{timestamp:"2026-09-16T14:00:00Z",spot:102,open:100,high:106,low:98,close:104,samples:60}],3600);
+  assert.deepEqual({open:bar.open,high:bar.high,low:bar.low,close:bar.close,samples:bar.samples},{open:100,high:106,low:98,close:104,samples:60});
+});
+
 test("builds 29 bounded price-only horizons", () => {
   const result = computePriceCharmander(rows(Array.from({ length: 120 }, (_, index) => 700 + index * .04)));
   assert.equal(result.periods.length, 29);

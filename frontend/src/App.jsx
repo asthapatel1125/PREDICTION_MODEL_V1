@@ -5,7 +5,7 @@ import CvdPriceChart from "./CvdPriceChart";
 import PriceCharmanderChart from "./PriceCharmanderChart";
 import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallExposureSeries, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
   setDynamicsDirectionGate, startReplay, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
@@ -1839,20 +1839,20 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const [expanded,setExpanded]=useState(false);
   const [scrollOffset,setScrollOffset]=useState(0);
   const [viewportWidth,setViewportWidth]=useState(0);
+  const [archiveRows,setArchiveRows]=useState([]);
+  const [archiveState,setArchiveState]=useState("loading");
   const scrollRef=useRef(null);
   const canvasRef=useRef(null);
   const followingLiveRef=useRef(true);
   const dragRef=useRef(null);
   const scaleValuesRef=useRef({period:null,values:[]});
   const periods={"1M":60,"5M":300,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"1D":86400};
-  const candleSeconds={"1M":5,"5M":5,"30M":15,"1H":30,"2H":60,"4H":120,"6H":180,"1D":300};
-  useEffect(()=>{onNeedWindow?.(periods[period])},[onNeedWindow,period]);
+  useEffect(()=>{const controller=new AbortController();setArchiveState("loading");fetchWallExposureSeries(symbol,periods[period],controller.signal).then(result=>{setArchiveRows(result.rows||[]);setArchiveState("ready")}).catch(error=>{if(error.name!=="AbortError"){setArchiveRows([]);setArchiveState("live-only")}});return()=>controller.abort()},[symbol,period]);
   const allPoints=useMemo(()=>{
-    const formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),normalizedSymbol=symbol.toUpperCase(),source=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
-    const latestAt=Date.parse(source.at(-1)?.timestamp||""),latestFields=Number.isFinite(latestAt)?Object.fromEntries(formatter.formatToParts(new Date(latestAt)).map(part=>[part.type,part.value])):null,latestDay=latestFields?`${latestFields.year}-${latestFields.month}-${latestFields.day}`:"",windowSeconds=periods[period],bucketSeconds=candleSeconds[period],cutoff=latestAt-windowSeconds*1000,buckets=new Map();
-    source.forEach(row=>{const at=Date.parse(row.timestamp),spot=number(row.spot),level=number(row.walls?.[wallKey]?.strike);if(!Number.isFinite(at)||at<cutoff||spot<=0||level<=0)return;const fields=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value])),day=`${fields.year}-${fields.month}-${fields.day}`,minute=Number(fields.hour)*60+Number(fields.minute)+Number(fields.second)/60;if(day!==latestDay||minute<420||minute>1080)return;const index=Math.floor(at/(bucketSeconds*1000)),key=`${day}:${index}`,existing=buckets.get(key);if(!existing)buckets.set(key,{timestamp:row.timestamp,open:spot,high:spot,low:spot,close:spot,spot,level,zero:level,difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,spot);existing.low=Math.min(existing.low,spot);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.difference=spot-level;existing.positive=level<=spot;existing.timestamp=row.timestamp}});
+    const normalizedSymbol=symbol.toUpperCase(),source=[...archiveRows,...rows].filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol).slice().sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)),bucketSeconds=periods[period],bucketMilliseconds=bucketSeconds*1000,buckets=new Map();
+    source.forEach(row=>{const at=Date.parse(row.timestamp),spot=number(row.close??row.spot),open=number(row.open??spot),high=number(row.high??spot),low=number(row.low??spot),level=number(row.walls?.[wallKey]?.strike),signedExposure=number(row.walls?.[wallKey]?.signed_exposure,NaN);if(!Number.isFinite(at)||spot<=0||level<=0)return;const index=Math.floor(at/bucketMilliseconds),existing=buckets.get(index),timestamp=new Date(index*bucketMilliseconds).toISOString();if(!existing)buckets.set(index,{timestamp,open,high,low,close:spot,spot,level,zero:level,signedExposure,signKnown:Number.isFinite(signedExposure),difference:spot-level,positive:level<=spot});else{existing.high=Math.max(existing.high,high);existing.low=Math.min(existing.low,low);existing.close=spot;existing.spot=spot;existing.level=level;existing.zero=level;existing.signedExposure=signedExposure;existing.signKnown=Number.isFinite(signedExposure);existing.difference=spot-level;existing.positive=level<=spot}});
     return [...buckets.values()];
-  },[rows,symbol,wallKey,period]);
+  },[archiveRows,rows,symbol,wallKey,period]);
   const points=allPoints;
   // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
   // backfill into the viewport; the parent scroll area is the navigation.
@@ -1938,7 +1938,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   },{positive:"",negative:""});
   const levelPathAll=points.map((point,index)=>`${x(index).toFixed(1)},${gammaY(plottedLevel(point)).toFixed(1)}`).join(" ");
   const content=<section className={["exposure-level-map",embedded&&"embedded",expanded&&"expanded"].filter(Boolean).join(" ")}> 
-    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>LIVE SESSION ONLY · {symbol} OHLC · CLOSING {axisName} · THETADATA OPTIONS PRO</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
+    <header><div><span>{title}</span><h3>{heading}</h3></div><div className="exposure-map-head-actions"><small>{archiveState==="loading"?"LOADING SUPABASE ARCHIVE":archiveState==="ready"?`ALL SUPABASE · ${period} OHLC · CLOSING ${axisName}`:`LIVE ONLY · ${period} OHLC`} · THETADATA OPTIONS PRO</small><button type="button" onClick={()=>setExpanded(value=>!value)}>{expanded?"MINIMIZE":"EXPAND ↗"}</button></div></header>
     <div className="exposure-level-frame">
       <aside className="exposure-time-rail"><nav aria-label={title+" time interval"}>{Object.keys(periods).map(name=><button key={name} type="button" className={period===name?"active":""} onClick={()=>selectPeriod(name)}>{name}</button>)}</nav></aside>
       <aside className="exposure-axes">
@@ -1955,7 +1955,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>{symbol} · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>
             {timeTicks.map((index,tickIndex)=><g key={"time-"+index}><line className="wi-grid vertical" x1={x(index)} x2={x(index)} y1={plotTop} y2={plotBottom}/><text x={x(index)} y={height-32} textAnchor={tickAnchor(index,tickIndex)}>{axisStamp(points[index].timestamp)}</text></g>)}
-            <g clipPath={`url(#exposure-plot-${wallKey})`}>{points.map((bar,index)=>{const open=number(bar.open),close=number(bar.close),high=number(bar.high),low=number(bar.low),color=close>=open?"#00d084":"#ff4f69",bodyTop=Math.min(qqqY(open),qqqY(close)),bodyHeight=Math.max(1,Math.abs(qqqY(open)-qqqY(close)));return <g className="exposure-candle" key={`candle-${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={qqqY(high)} y2={qqqY(low)} stroke={color} strokeWidth="1.5"/><rect x={x(index)-candleWidth/2} y={bodyTop} width={Math.max(2,candleWidth)} height={bodyHeight} fill={color} opacity=".9"/></g>})}
+            <g clipPath={`url(#exposure-plot-${wallKey})`}><line className="instrument-live-guide" x1={left} x2={width-right} y1={qqqY(last.spot)} y2={qqqY(last.spot)} stroke={symbol.toUpperCase()==="SPY"?"#ff5c8a":"#58a6ff"}/>{points.map((bar,index)=>{const open=number(bar.open),close=number(bar.close),high=number(bar.high),low=number(bar.low),color=close>=open?"#00d084":"#ff4f69",bodyTop=Math.min(qqqY(open),qqqY(close)),bodyHeight=Math.max(1,Math.abs(qqqY(open)-qqqY(close)));return <g className="exposure-candle" key={`candle-${bar.timestamp}-${index}`}><line x1={x(index)} x2={x(index)} y1={qqqY(high)} y2={qqqY(low)} stroke={color} strokeWidth="1.5"/><rect x={x(index)-candleWidth/2} y={bodyTop} width={Math.max(2,candleWidth)} height={bodyHeight} fill={color} opacity=".9"/></g>})}
             {levelPaths.positive&&<path d={levelPaths.positive} fill="none" stroke="#3296ff" strokeWidth="2.7" strokeDasharray="7 4"/>}
             {levelPaths.negative&&<path d={levelPaths.negative} fill="none" stroke="#f2f5f7" strokeWidth="2.7" strokeDasharray="7 4"/>}
             {hover!==null&&<><line className="wi-crosshair" x1={x(hover)} x2={x(hover)} y1={plotTop} y2={plotBottom}/><circle className="exposure-hover-point qqq" cx={x(hover)} cy={qqqY(active.spot)} r="4"/><circle className="exposure-hover-point level" cx={x(hover)} cy={gammaY(plottedLevel(active))} r="4" style={{fill:gammaColor(active)}}/></>}</g>
@@ -1992,7 +1992,7 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PriceCharmanderChart rows={rows} symbol={symbol}/></>;
 }
 
 function LiveCharmanderExposurePanels({symbol="QQQ",rows=[],requestWindow}){
@@ -2495,11 +2495,11 @@ function NasdaqRangeAtlas({symbol,rows=[]}){
   </section>;
 }
 
-function useSharedWallSpectrum(symbol){
+function useSharedWallSpectrum(symbol,enabled=true){
   const [rows,setRows]=useState([]),[requestedLimit,setRequestedLimit]=useState(360);
   const requestWindow=useCallback(seconds=>setRequestedLimit(current=>Math.max(current,Math.min(5000,Math.ceil(seconds/5*1.5)))),[]);
-  useEffect(()=>{setRows([]);setRequestedLimit(360)},[symbol]);
-  useEffect(()=>{const controller=new AbortController(),normalized=symbol.toUpperCase();const merge=incoming=>setRows(current=>[...new Map([...current,...incoming].filter(row=>row?.timestamp&&String(row?.symbol||"").toUpperCase()===normalized).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-5000));const load=limit=>fetchWallSpectrum(normalized,controller.signal,limit).then(result=>merge(result.rows||[])).catch(error=>{if(error.name!=="AbortError")return undefined});load(requestedLimit);const unsubscribe=subscribeToEvents(message=>{const point=message?.payload;if(message?.topic==="wall_intelligence"&&String(point?.symbol||"").toUpperCase()===normalized)merge([point])},()=>{}),fallbackId=window.setInterval(()=>load(360),60000);return()=>{controller.abort();unsubscribe();clearInterval(fallbackId)}},[symbol,requestedLimit]);
+  useEffect(()=>{setRows([]);setRequestedLimit(360)},[symbol,enabled]);
+  useEffect(()=>{if(!enabled)return undefined;const controller=new AbortController(),normalized=symbol.toUpperCase();const merge=incoming=>setRows(current=>[...new Map([...current,...incoming].filter(row=>row?.timestamp&&String(row?.symbol||"").toUpperCase()===normalized).map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-5000));const load=limit=>fetchWallSpectrum(normalized,controller.signal,limit).then(result=>merge(result.rows||[])).catch(error=>{if(error.name!=="AbortError")return undefined});load(requestedLimit);const unsubscribe=subscribeToEvents(message=>{const point=message?.payload;if(message?.topic==="wall_intelligence"&&String(point?.symbol||"").toUpperCase()===normalized)merge([point])},()=>{}),fallbackId=window.setInterval(()=>load(360),60000);return()=>{controller.abort();unsubscribe();clearInterval(fallbackId)}},[symbol,requestedLimit,enabled]);
   return {rows,requestWindow};
 }
 
@@ -2563,6 +2563,8 @@ export default function Home() {
   const sectionMenuRef=useRef(null);
   const [moduleOrder,setModuleOrder]=useState(()=>{try{const saved=JSON.parse(window.localStorage.getItem("axiom-overview-module-order")??"null");return Array.isArray(saved)&&saved.length===DEFAULT_MODULE_ORDER.length&&DEFAULT_MODULE_ORDER.every(id=>saved.includes(id))?saved:DEFAULT_MODULE_ORDER}catch{return DEFAULT_MODULE_ORDER}}),[draggedModule,setDraggedModule]=useState(null),[dragOverModule,setDragOverModule]=useState(null);
   const {rows:sharedWallRows,requestWindow:requestSharedWallWindow}=useSharedWallSpectrum(symbol);
+  const {rows:standaloneQqqRows,requestWindow:requestStandaloneQqqWindow}=useSharedWallSpectrum("QQQ",symbol!=="QQQ");
+  const qqqWallRows=symbol==="QQQ"?sharedWallRows:standaloneQqqRows,requestQqqWallWindow=symbol==="QQQ"?requestSharedWallWindow:requestStandaloneQqqWindow;
   const state=dashboard.state, history=dashboard.history??[], alerts=dashboard.alerts??[], engine=dashboard.engine??{}, performance=dashboard.performance??{};
   const directionGateDetails=system?.dynamics_direction_gate_details??{},directionGateLocked=Boolean(directionGateDetails.locked),directionGateExpiry=directionGateDetails.expires_at;
   const notify=text=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
@@ -2622,7 +2624,7 @@ export default function Home() {
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
     <LiveSymbolExposurePanels symbol="SPY"/>
-    <LiveCharmanderExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow}/>
+    <LiveCharmanderExposurePanels symbol="QQQ" rows={qqqWallRows} requestWindow={requestQqqWallWindow}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">

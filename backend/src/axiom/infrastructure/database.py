@@ -312,6 +312,89 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement)).all()
             return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
 
+    async def wall_price_candles(self,symbol:str,bucket_seconds:int)->list[dict[str,Any]]:
+        """Aggregate the complete retained price archive inside Postgres.
+
+        Only compact OHLC rows cross the network; the large wall payload is never
+        materialized in the API process.  This is intentionally unbounded by date:
+        the selected candle interval is the only archive compaction applied.
+        """
+        query=text("""
+            WITH source AS (
+                SELECT
+                    timestamp,
+                    spot,
+                    to_timestamp(floor(extract(epoch FROM timestamp) / :bucket_seconds) * :bucket_seconds) AS bucket
+                FROM wall_intelligence
+                WHERE symbol = :symbol AND spot > 0
+            )
+            SELECT
+                bucket AS timestamp,
+                (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
+                max(spot) AS high,
+                min(spot) AS low,
+                (array_agg(spot ORDER BY timestamp DESC))[1] AS close,
+                avg(spot) AS spot,
+                count(*) AS samples
+            FROM source
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        """)
+        async with self.sessions() as s:
+            rows=(await s.execute(query,{"symbol":symbol.upper(),"bucket_seconds":int(bucket_seconds)})).mappings().all()
+        return [{
+            "timestamp":row["timestamp"],"spot":float(row["spot"]),
+            "open":float(row["open"]),"high":float(row["high"]),
+            "low":float(row["low"]),"close":float(row["close"]),
+            "samples":int(row["samples"]),
+        } for row in rows]
+
+    async def wall_exposure_candles(self,symbol:str,bucket_seconds:int)->list[dict[str,Any]]:
+        """Aggregate all retained SPY/QQQ price, ZG and ZD observations in SQL."""
+        query=text("""
+            WITH source AS (
+                SELECT
+                    timestamp,
+                    spot,
+                    to_timestamp(floor(extract(epoch FROM timestamp) / :bucket_seconds) * :bucket_seconds) AS bucket,
+                    CAST(NULLIF(payload -> 'walls' -> 'ZERO_GAMMA' ->> 'strike', '') AS DOUBLE PRECISION) AS zero_gamma,
+                    CAST(NULLIF(payload -> 'walls' -> 'ZERO_GAMMA' ->> 'signed_exposure', '') AS DOUBLE PRECISION) AS zero_gamma_signed,
+                    CAST(NULLIF(payload -> 'walls' -> 'ZERO_DELTA' ->> 'strike', '') AS DOUBLE PRECISION) AS zero_delta,
+                    CAST(NULLIF(payload -> 'walls' -> 'ZERO_DELTA' ->> 'signed_exposure', '') AS DOUBLE PRECISION) AS zero_delta_signed
+                FROM wall_intelligence
+                WHERE symbol = :symbol AND spot > 0
+            )
+            SELECT
+                bucket AS timestamp,
+                (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
+                max(spot) AS high,
+                min(spot) AS low,
+                (array_agg(spot ORDER BY timestamp DESC))[1] AS close,
+                (array_agg(zero_gamma ORDER BY timestamp DESC) FILTER (WHERE zero_gamma > 0))[1] AS zero_gamma,
+                (array_agg(zero_gamma_signed ORDER BY timestamp DESC) FILTER (WHERE zero_gamma IS NOT NULL))[1] AS zero_gamma_signed,
+                (array_agg(zero_delta ORDER BY timestamp DESC) FILTER (WHERE zero_delta > 0))[1] AS zero_delta,
+                (array_agg(zero_delta_signed ORDER BY timestamp DESC) FILTER (WHERE zero_delta IS NOT NULL))[1] AS zero_delta_signed,
+                count(*) AS samples
+            FROM source
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        """)
+        async with self.sessions() as s:
+            rows=(await s.execute(query,{"symbol":symbol.upper(),"bucket_seconds":int(bucket_seconds)})).mappings().all()
+        result=[]
+        for row in rows:
+            walls={}
+            if row["zero_gamma"] is not None:
+                walls["ZERO_GAMMA"]={"strike":float(row["zero_gamma"]),"signed_exposure":float(row["zero_gamma_signed"] or 0.0)}
+            if row["zero_delta"] is not None:
+                walls["ZERO_DELTA"]={"strike":float(row["zero_delta"]),"signed_exposure":float(row["zero_delta_signed"] or 0.0)}
+            result.append({
+                "timestamp":row["timestamp"],"symbol":symbol.upper(),"spot":float(row["close"]),
+                "open":float(row["open"]),"high":float(row["high"]),"low":float(row["low"]),
+                "close":float(row["close"]),"samples":int(row["samples"]),"walls":walls,
+            })
+        return result
+
     async def wall_break_events(self,symbol:str,start:datetime|None=None,end:datetime|None=None,wall_types:list[str]|None=None,tiers:list[str]|None=None,limit:int=1000)->list[dict[str,Any]]:
         async with self.sessions() as s:
             statement=select(WallBreakRow).where(WallBreakRow.symbol==symbol.upper())

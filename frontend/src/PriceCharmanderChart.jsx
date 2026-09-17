@@ -3,13 +3,13 @@ import { fetchWallPriceSeries } from "./api";
 import { averagePriceBars, charmPhase, computePriceCharmander } from "./priceCharmander";
 
 const RANGE_CONFIG = {
-  "5M": { seconds: 300, bucket: 10 },
-  "15M": { seconds: 900, bucket: 15 },
-  "30M": { seconds: 1800, bucket: 30 },
-  "1H": { seconds: 3600, bucket: 60 },
-  "4H": { seconds: 14400, bucket: 240 },
-  "6H": { seconds: 21600, bucket: 360 },
-  "8H": { seconds: 28800, bucket: 480 },
+  "5M": { bucket: 300 },
+  "15M": { bucket: 900 },
+  "30M": { bucket: 1800 },
+  "1H": { bucket: 3600 },
+  "4H": { bucket: 14400 },
+  "6H": { bucket: 21600 },
+  "8H": { bucket: 28800 },
 };
 const COLORS = {
   positive_rising: "#43d35d",
@@ -25,6 +25,8 @@ const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", {
 export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const [range, setRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
+  const [priceYZoom, setPriceYZoom] = useState(1);
+  const [charmYZoom, setCharmYZoom] = useState(1);
   const [view, setView] = useState({ start: 0, end: 1 });
   const [historyRows, setHistoryRows] = useState([]);
   const [historyState, setHistoryState] = useState("loading");
@@ -35,31 +37,29 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   useEffect(() => {
     const controller = new AbortController();
     setHistoryState("loading");
-    fetchWallPriceSeries(symbol, config.seconds, config.bucket, controller.signal)
+    fetchWallPriceSeries(symbol, config.bucket, controller.signal)
       .then(result => { setHistoryRows(result.rows || []); setHistoryState("ready"); })
       .catch(error => { if (error.name !== "AbortError") { setHistoryRows([]); setHistoryState("live-only"); } });
     return () => controller.abort();
-  }, [config.bucket, config.seconds, symbol]);
+  }, [config.bucket, symbol]);
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
     const merged = [...historyRows, ...rows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
     return averagePriceBars(merged, config.bucket);
   }, [config.bucket, historyRows, rows, symbol]);
   const calculated = useMemo(() => computePriceCharmander(analysisBars), [analysisBars]);
-  const latestAt = Date.parse(calculated.timestamps.at(-1) || "");
-  const cutoff = Number.isFinite(latestAt) ? latestAt - config.seconds * 1000 : 0;
   const visibleIndexes = useMemo(() => {
-    const indexes = calculated.timestamps.map((timestamp, index) => Date.parse(timestamp) >= cutoff ? index : -1).filter(index => index >= 0);
+    const indexes = calculated.timestamps.map((_, index) => index);
     const lastPosition = Math.max(indexes.length - 1, 0);
     const startPosition = Math.floor(view.start * lastPosition), endPosition = Math.ceil(view.end * lastPosition);
     const windowed = indexes.slice(startPosition, endPosition + 1), stride = Math.max(1, Math.ceil(windowed.length / 520));
     const sampled = windowed.filter((_, index) => index % stride === 0);
     if (windowed.length && sampled.at(-1) !== windowed.at(-1)) sampled.push(windowed.at(-1));
     return sampled;
-  }, [calculated.timestamps, cutoff, view]);
+  }, [calculated.timestamps, view]);
   const visibleStartAt = Date.parse(calculated.timestamps[visibleIndexes[0]] || ""), visibleEndAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)] || "");
   const candles = useMemo(() => analysisBars.filter(bar => bar.at >= visibleStartAt && bar.at <= visibleEndAt), [analysisBars, visibleEndAt, visibleStartAt]);
-  const warmupBars = useMemo(() => analysisBars.filter(bar => bar.at < cutoff).length, [analysisBars, cutoff]);
+  const warmupBars = analysisBars.length;
   const warmupReady = warmupBars >= 90;
 
   useEffect(() => {
@@ -119,8 +119,10 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       context.fillText(timeLabel(at), x, height - 10);
     }
     const prices = candles.flatMap(candle => [candle.low, candle.high]);
-    const low = Math.min(...prices), high = Math.max(...prices), padding = Math.max((high - low) * .12, .08), priceLow = low - padding, priceHigh = high + padding;
+    const low = Math.min(...prices), high = Math.max(...prices), rawSpan=Math.max(high-low,.08),center=(high+low)/2,span=rawSpan/priceYZoom,padding=Math.max(span*.12,.02),priceLow=center-span/2-padding,priceHigh=center+span/2+padding;
     const priceY = price => top1 - (price - priceLow) / Math.max(priceHigh - priceLow, .01) * (top1 - top0);
+    const livePrice=candles.at(-1)?.close,liveAccent=symbol.toUpperCase()==="SPY"?"#ff5c8a":"#58a6ff";
+    if(Number.isFinite(livePrice)){context.strokeStyle=liveAccent;context.globalAlpha=.48;context.lineWidth=1.2;context.beginPath();context.moveTo(left,priceY(livePrice));context.lineTo(width-right,priceY(livePrice));context.stroke();context.globalAlpha=1}
     const candleWidth = Math.max(2, Math.min(9, plotWidth / Math.max(candles.length, 1) * .58));
     candles.forEach(candle => {
       const x = xAt(candle.at), rising = candle.close >= candle.open;
@@ -129,7 +131,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       const openY = priceY(candle.open), closeY = priceY(candle.close);
       context.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1.5, Math.abs(closeY - openY)));
     });
-    const charmLimit=1;
+    const charmLimit=1/charmYZoom;
     context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48);
     context.fillStyle = "#8ea8b8"; context.font = "10px monospace"; context.fillText(priceHigh.toFixed(2), 9, top0 + 4); context.fillText(priceLow.toFixed(2), 9, top1); context.fillText(`+${charmLimit.toFixed(2)}`, 22, bottom0 + 4); context.fillText("0", 45, (bottom0 + bottom1) / 2 + 3); context.fillText(`−${charmLimit.toFixed(2)}`, 22, bottom1);
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
@@ -155,7 +157,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, hover, size, symbol, visibleIndexes,visualShift]);
+  }, [calculated, candles, charmYZoom, hover, priceYZoom, size, symbol, visibleIndexes,visualShift]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
@@ -165,16 +167,21 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const hoveredIndex = hover == null ? latestIndex : visibleIndexes[hover];
   const hoveredPrice = hoveredIndex == null ? null : calculated.prices[hoveredIndex];
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
+  const livePrice=candles.at(-1)?.close;
+  const livePriceTop=(()=>{if(!Number.isFinite(livePrice)||!candles.length)return 80;const height=size.height,top=24,bottom=top+Math.max(170,(height-top-32)/2),values=candles.flatMap(candle=>[candle.low,candle.high]),low=Math.min(...values),high=Math.max(...values),rawSpan=Math.max(high-low,.08),center=(high+low)/2,span=rawSpan/priceYZoom,padding=Math.max(span*.12,.02),scaleLow=center-span/2-padding,scaleHigh=center+span/2+padding;return clamp(top+(scaleHigh-livePrice)/Math.max(scaleHigh-scaleLow,.01)*(bottom-top),28,bottom-8)})();
+  const liveAccent=symbol.toUpperCase()==="SPY"?"#ff5c8a":"#58a6ff";
+  const zoomY=event=>{event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),factor=event.deltaY<0?1.12:.89;if(event.clientY-bounds.top<bounds.height/2)setPriceYZoom(value=>clamp(value*factor,.35,12));else setCharmYZoom(value=>clamp(value*factor,.35,12))};
 
   return <section className="price-charmander">
-    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
+    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · {range} OHLC candles · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING SUPABASE ARCHIVE" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
     <div className="price-charmander-body">
-      <nav className="price-charmander-controls" aria-label="Charmander time window"><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item); setView({start:0,end:1}); setHover(null); }} key={item}>{item}</button>)}<button type="button" onClick={()=>setView({start:0,end:1})}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
+      <nav className="price-charmander-controls" aria-label="Charmander candle interval"><b>CANDLE</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item); setView({start:0,end:1}); setPriceYZoom(1);setCharmYZoom(1);setHover(null); }} key={item}>{item}</button>)}<button type="button" onClick={()=>{setView({start:0,end:1});setPriceYZoom(1);setCharmYZoom(1)}}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
       <div className="price-charmander-frame" ref={frameRef} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={()=>setView({start:0,end:1})}>
         <canvas ref={canvasRef}/>
         {hoveredIndex != null && <aside><b>{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span><span>ZOOM <strong>{Math.round(100/(view.end-view.start))}%</strong></span></aside>}
       </div>
+      <aside className="price-charmander-live" onWheel={zoomY} title="Wheel upper half: price zoom · lower half: Charmander zoom"><b>LIVE · ET</b>{Number.isFinite(livePrice)&&<span className={symbol.toLowerCase()} style={{top:livePriceTop,"--instrument":liveAccent}}><i/>{symbol}<strong>{livePrice.toFixed(2)}</strong></span>}<small>WHEEL<br/>Y ZOOM</small></aside>
     </div>
-    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>{config.bucket}s range-aware averages · hidden warm-up · bold consensus is causal and live</small></footer>
+    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>{range} OHLC · full Supabase backfill · bold consensus is causal and live</small></footer>
   </section>;
 }
