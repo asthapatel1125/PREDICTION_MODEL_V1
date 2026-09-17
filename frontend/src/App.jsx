@@ -10,9 +10,9 @@ import {
 } from "./api";
 
 const OVERVIEW_SECTIONS = [
-  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["QQQ Price Charmander", "price-charmander"], ["Market Pressure Index (MPI)", "market-pressure-index"], ["Live alerts", "live-alerts"],
+  ["System scorecard", "system-scorecard"], ["Wall intelligence", "wall-intelligence"], ["Market Pressure Index (MPI)", "market-pressure-index"], ["Live alerts", "live-alerts"],
 ];
-const DEFAULT_MODULE_ORDER=["wall-intelligence","price-charmander","market-pressure-index","live-alerts"];
+const DEFAULT_MODULE_ORDER=["wall-intelligence","market-pressure-index","live-alerts"];
 // Keep every dynamics implementation in the bundle and backend, but pause its
 // browser-side panels/history while the lightweight Wall Intelligence view is
 // active. Setting this to false restores the panels without changing model code.
@@ -40,7 +40,6 @@ const OVERVIEW_CATEGORIES={
   "system-scorecard":"OUTCOME BRIEFING",
   decision:"DECISION",
   "wall-intelligence":"MARKET STRUCTURE",
-  "price-charmander":"PRICE MOMENTUM",
   "market-pressure-index":"MARKET CONFIRMATION",
   "gamma-dynamics":"SIGNAL MODEL",
   "gamma-dynamics-v2":"SIGNAL MODEL",
@@ -1993,7 +1992,14 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
 }
 
 function ZeroGammaExposureChart(props){
-  return <ModernExposureLevelChart {...props}/>;
+  if(props.wallKey)return <ModernExposureLevelChart {...props}/>;
+  const rows=props.rows||[],symbol=String(props.symbol||rows.at(-1)?.symbol||"QQQ").toUpperCase(),latest=rows.at(-1)||{};
+  return <div className="wall-live-stack">
+    <ModernExposureLevelChart {...props} symbol={symbol} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff"/>
+    <ModernExposureLevelChart {...props} symbol={symbol} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7"/>
+    <PriceCharmanderChart rows={rows} symbol={symbol}/>
+    <WallStrengthDashboard symbol={symbol} latest={latest}/>
+  </div>;
 }
 
 function ExposureSeparationZones({points=[],wallKey="ZERO_GAMMA"}){
@@ -2615,7 +2621,6 @@ export default function Home() {
     <LiveSymbolExposurePanels symbol="SPY"/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
-    <DraggableOverviewModule id="price-charmander" index={moduleOrder.indexOf("price-charmander")} {...draggableProps}><OverviewDisclosure id="price-charmander" title={`${symbol} Price Charmander`} description="Independent price-only 29-horizon momentum fan; observational and excluded from decisions"><PriceCharmanderChart rows={sharedWallRows} symbol={symbol} onNeedWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">
     <OverviewDisclosure id="market-pressure-index" title="Market Pressure Index (MPI) · Independent Market Module" description="Standalone pressure, acceleration, QQQ price, and flow confirmation; not part of Wall Intelligence"><MarketPressureIndexModule symbol={symbol} rows={sharedWallRows}/></OverviewDisclosure>
     </section>
