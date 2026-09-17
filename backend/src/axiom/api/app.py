@@ -280,27 +280,17 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/price-series")
-    async def wall_price_series(symbol:str="QQQ",window_seconds:int|None=None,bucket_seconds:int=300):
-        """Full compact price archive at the caller-selected candle interval."""
-        allowed={60,300,900,1800,3600,14400,21600,28800,86400}
-        safe_bucket=int(bucket_seconds)
-        if safe_bucket not in allowed:raise HTTPException(422,"Unsupported price candle interval")
+    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=30):
+        """Compact price-only warm-up for Charmander; deliberately skips wall payloads."""
+        safe_window=max(300,min(int(window_seconds),28_800))
+        safe_bucket=max(5,min(int(bucket_seconds),900))
         cadence=5
         warmup_bars=90
-        rows=await container.repository.wall_price_candles(symbol,safe_bucket)
+        warmup_points=warmup_bars*max(1,safe_bucket//cadence)
+        limit=min(15_000,max(300,safe_window//cadence+warmup_points))
+        rows=await container.repository.wall_price_points(symbol,limit)
         return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"RETAINED_UNDERLYING_PRICE_ONLY",
-            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"warmup_bars":warmup_bars,
-            "archive":"ALL_SUPABASE","rows":rows}
-
-    @api.get("/walls/exposure-series")
-    async def wall_exposure_series(symbol:str="QQQ",bucket_seconds:int=300):
-        """Full compact Supabase archive for price candles and closing ZG/ZD levels."""
-        allowed={60,300,1800,3600,7200,14400,21600,86400}
-        safe_bucket=int(bucket_seconds)
-        if safe_bucket not in allowed:raise HTTPException(422,"Unsupported exposure candle interval")
-        rows=await container.repository.wall_exposure_candles(symbol,safe_bucket)
-        return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","bucket_seconds":safe_bucket,
-            "archive":"ALL_SUPABASE","rows":rows}
+            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"warmup_bars":warmup_bars,"rows":rows}
 
     @api.get("/walls/nasdaq-range-atlas")
     async def nasdaq_range_atlas(symbol:str="QQQ"):

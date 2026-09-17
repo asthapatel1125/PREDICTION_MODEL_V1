@@ -11,20 +11,15 @@ export function averagePriceBars(rows = [], bucketSeconds = 30) {
   const buckets = new Map();
   clean.forEach(row => {
     const at = Date.parse(row.timestamp), price = Number(row.spot), key = Math.floor(at / milliseconds);
-    const open = Number.isFinite(Number(row.open)) ? Number(row.open) : price;
-    const high = Number.isFinite(Number(row.high)) ? Number(row.high) : price;
-    const low = Number.isFinite(Number(row.low)) ? Number(row.low) : price;
-    const close = Number.isFinite(Number(row.close)) ? Number(row.close) : price;
-    const samples = Math.max(1, Number(row.samples) || 1);
     const bar = buckets.get(key);
-    if (!bar) buckets.set(key, { timestamp: row.timestamp, at, spot: price, open, high, low, close, prices: [price], weights: [samples], samples });
+    if (!bar) buckets.set(key, { timestamp: row.timestamp, at, spot: price, open: price, high: price, low: price, close: price, prices: [price], samples: 1 });
     else {
-      bar.timestamp = row.timestamp; bar.at = at; bar.high = Math.max(bar.high, high); bar.low = Math.min(bar.low, low);
-      bar.close = close; bar.prices.push(price); bar.weights.push(samples); bar.samples += samples;
+      bar.timestamp = row.timestamp; bar.at = at; bar.high = Math.max(bar.high, price); bar.low = Math.min(bar.low, price);
+      bar.close = price; bar.prices.push(price); bar.samples += 1;
     }
   });
-  return [...buckets.values()].map(({ prices, weights, ...bar }) => {
-    const ordered = prices.flatMap((price,index)=>Array(Math.min(weights[index],100)).fill(price)).sort((a, b) => a - b), trim = ordered.length >= 10 ? Math.floor(ordered.length * .1) : 0;
+  return [...buckets.values()].map(({ prices, ...bar }) => {
+    const ordered = prices.sort((a, b) => a - b), trim = ordered.length >= 10 ? Math.floor(ordered.length * .1) : 0;
     const retained = ordered.slice(trim, ordered.length - trim || undefined);
     return { ...bar, spot: retained.reduce((sum, price) => sum + price, 0) / retained.length };
   });
