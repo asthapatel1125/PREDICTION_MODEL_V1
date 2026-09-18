@@ -448,10 +448,13 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-time-rail nav{align-content:start!important;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#315b75 #07111b}.exposure-time-rail button{flex:0 0 auto;min-height:24px}
 /* Final candle-frame geometry: reserve room for the x-axis before the
    scrollbar so dates never overlap or get clipped. */
-.exposure-level-map:not(.expanded) .exposure-level-frame{height:400px!important;min-height:400px!important;max-height:400px!important}
-.exposure-level-map:not(.expanded) .exposure-map-scroll{height:400px!important;max-height:400px!important;overflow-x:auto!important;overflow-y:hidden!important}
-.exposure-level-map:not(.expanded) .exposure-map-canvas{height:358px!important;min-height:358px!important;max-height:358px!important}
-.exposure-level-map:not(.expanded) .exposure-map-canvas svg{height:358px!important;min-height:358px!important;max-height:358px!important}
+.exposure-level-map:not(.expanded) .exposure-level-frame{grid-template-columns:44px 58px minmax(0,1fr) 112px!important;height:520px!important;min-height:520px!important;max-height:520px!important}
+.exposure-level-map:not(.expanded) .exposure-time-rail,.exposure-level-map:not(.expanded) .exposure-axes,.exposure-level-map:not(.expanded) .exposure-live-rail{height:520px!important;max-height:520px!important}
+.exposure-level-map:not(.expanded) .exposure-map-scroll{height:520px!important;max-height:520px!important;overflow-x:auto!important;overflow-y:hidden!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas{height:478px!important;min-height:478px!important;max-height:478px!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas svg{height:478px!important;min-height:478px!important;max-height:478px!important}
+.exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-name{left:6px!important}.exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-tick{left:6px!important;right:auto!important;font-size:10px!important}
+.exposure-level-map:not(.expanded) .exposure-live-rail .exposure-end-label{width:102px}
 .exposure-live-updated small{display:none!important}
 .exposure-map-canvas svg text:not(.exposure-panel-caption):not(.exposure-axis-heading){font-size:12px!important;letter-spacing:-.025em}
 .exposure-map-canvas svg text{dominant-baseline:auto}
