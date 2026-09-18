@@ -1949,10 +1949,10 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false;if(event.currentTarget.scrollLeft<80)loadEarlierExposure()}}>
          <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>{symbol} <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${width}px`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
+          <div className="exposure-html-watermark" style={{left:`${watermarkX}px`,top:`${((plotTop+plotBottom)/2/height)*100}%`}} aria-hidden="true">{symbol.toUpperCase()}</div>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
             <defs><clipPath id={`exposure-plot-${wallKey}`}><rect x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/></clipPath></defs>
             <rect className="exposure-panel-bg overlay" x={left} y={plotTop} width={plotWidth} height={plotBottom-plotTop}/>
-            <text className={`exposure-symbol-watermark ${symbol.toLowerCase()}`} x={watermarkX} y={(plotTop+plotBottom)/2} textAnchor="middle">{symbol.toUpperCase()}</text>
             {displayTicks.map(item=><line className="wi-grid" key={"grid-"+item.key} x1={left} x2={width-right} y1={item.y} y2={item.y}/>)}
             <text className="exposure-panel-caption qqq" x={left+10} y={plotTop+17}>{symbol} · USD</text>
             <text className="exposure-panel-caption gamma" x={width-right-10} y={plotTop+17} textAnchor="end">{axisName} · USD</text>

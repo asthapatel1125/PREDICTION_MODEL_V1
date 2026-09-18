@@ -459,6 +459,7 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-map-canvas svg text:not(.exposure-panel-caption):not(.exposure-axis-heading){font-size:12px!important;letter-spacing:-.025em}
 .exposure-map-canvas svg text{dominant-baseline:auto}
 .exposure-map-canvas svg .exposure-symbol-watermark{font-family:var(--font-sans,Arial,sans-serif)!important;font-size:72px!important;font-weight:300!important;letter-spacing:.08em!important;fill:#a8b0b8!important;fill-opacity:.13!important}
+.exposure-html-watermark{position:absolute;z-index:2;transform:translate(-50%,-50%);color:rgba(168,176,184,.16);font-family:var(--font-sans,Arial,sans-serif);font-size:clamp(88px,7vw,118px);font-weight:300;line-height:1;letter-spacing:.08em;white-space:nowrap;pointer-events:none;user-select:none}
 .exposure-axes{font-size:12px!important;overflow:hidden}
 .exposure-axes .exposure-axis-tick{font-size:12px!important}
 .exposure-time-rail{overflow:hidden}
