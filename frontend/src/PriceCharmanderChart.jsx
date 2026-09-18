@@ -110,13 +110,13 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
     const context = canvas.getContext("2d");
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
+    context.fillStyle="#000";context.fillRect(0,0,width,height);
     const left=68,right=20,top0=24,axisSpace=43,gap=0,panelHeight=Math.max(170,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
     const firstAt = Date.parse(calculated.timestamps[visibleIndexes[0]]), lastAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)]), timeSpan = Math.max(1, lastAt - firstAt);
     const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
-    context.fillStyle = "#061019"; context.fillRect(left, top0, plotWidth, top1 - top0); context.fillRect(left, bottom0, plotWidth, bottom1 - bottom0);
-    context.fillStyle="rgba(54,185,82,.055)";context.fillRect(left,bottom0,plotWidth,(bottom1-bottom0)/2);context.fillStyle="rgba(255,69,89,.05)";context.fillRect(left,(bottom0+bottom1)/2,plotWidth,(bottom1-bottom0)/2);
-    const watermarkX=clamp(scrollOffset+Math.max(viewportWidth,1)/2,left,width-right),watermarkColor=symbol.toUpperCase()==="SPY"?"rgba(255,92,138,.075)":"rgba(88,166,255,.075)";
-    context.fillStyle=watermarkColor;context.font="900 92px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(symbol.toUpperCase(),watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
+    context.fillStyle = "#000"; context.fillRect(left, top0, plotWidth, bottom1 - top0);
+    const watermarkX=clamp(scrollOffset+Math.max(viewportWidth,1)/2,left,width-right);
+    context.fillStyle="rgba(168,176,184,.13)";context.font="300 72px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(symbol.toUpperCase(),watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
     context.strokeStyle = "#183746"; context.lineWidth = 1;
     for (const y of [top0, (top0 + top1) / 2, top1, bottom0, (bottom0 + bottom1) / 2, bottom1]) { context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke(); }
     const tickCount=Math.max(2,Math.floor(plotWidth/118)+1);
