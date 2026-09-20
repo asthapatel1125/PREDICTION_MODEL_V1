@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchWallPriceSeries } from "./api";
-import { averagePriceBars, charmPhase, computePriceCharmander } from "./priceCharmander";
+import { averagePriceBars, charmPhase, computePricePhoenix } from "./priceCharmander";
 
 const RANGE_CONFIG = {
   "5M": { seconds: 300, bucket: 10 },
@@ -23,7 +23,7 @@ const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, v
 const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
-export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
+export default function PricePhoenixChart({ rows = [], symbol = "QQQ", source = "trimmed", version = "" }) {
   const [range, setRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
   const [xZoom, setXZoom] = useState(1);
@@ -51,7 +51,8 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
     const merged = [...historyRows, ...rows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
     return averagePriceBars(merged, config.bucket);
   }, [config.bucket, historyRows, rows, symbol]);
-  const calculated = useMemo(() => computePriceCharmander(analysisBars), [analysisBars]);
+  const calculated = useMemo(() => computePricePhoenix(analysisBars,source), [analysisBars,source]);
+  const phoenixName=version?`PHOENIX ${version}`:"PHOENIX",sourceLabel=source==="hl2"?"HIGH + LOW MIDPOINT":source==="close"?"BUCKET CLOSE":"TRIMMED BUCKET AVERAGE",watermarkLabel=version?`${symbol.toUpperCase()}, ${version}`:symbol.toUpperCase();
   const visibleIndexes = useMemo(() => {
     const indexes = calculated.timestamps.map((_, index) => index);
     const windowed = indexes, stride = Math.max(1, Math.ceil(windowed.length / 900));
@@ -116,7 +117,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
     const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
     context.fillStyle = "#000"; context.fillRect(left, top0, plotWidth, bottom1 - top0);
     const watermarkX=clamp(scrollOffset+Math.max(viewportWidth,1)/2,left,width-right);
-    context.fillStyle="rgba(168,176,184,.13)";context.font="300 72px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(symbol.toUpperCase(),watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
+    context.fillStyle="rgba(168,176,184,.13)";context.font="300 72px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(watermarkLabel,watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
     context.strokeStyle = "#183746"; context.lineWidth = 1;
     for (const y of [top0, (top0 + top1) / 2, top1, bottom0, (bottom0 + bottom1) / 2, bottom1]) { context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke(); }
     const tickCount=Math.max(2,Math.floor(plotWidth/118)+1);
@@ -165,7 +166,7 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, charmYZoom, hover, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, size, symbol, viewportWidth, visibleIndexes,visualShift]);
+  }, [calculated, candles, charmYZoom, hover, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, size, symbol, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
@@ -180,10 +181,10 @@ export default function PriceCharmanderChart({ rows = [], symbol = "QQQ" }) {
   const resetView=()=>{setXZoom(1);setPriceYZoom(1);setCharmYZoom(1);setHover(null);followingLiveRef.current=true};
 
   return <section className="price-charmander">
-    <header><div><span>AXIOM PRICE CHARMANDER · OBSERVATIONAL</span><h3>{symbol} price above · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
+    <header><div><span>AXIOM PRICE {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
     <div className="price-charmander-body">
-      <nav className="price-charmander-controls" aria-label="Charmander time window"><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
-      <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>CHARM<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
+      <nav className="price-charmander-controls" aria-label={`${phoenixName} time window`}><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
+      <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>PHX<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
       <div className="price-charmander-frame" ref={frameRef} onScroll={event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;if(node.scrollLeft<80)loadEarlier()}} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
         <canvas ref={canvasRef}/>
         {hoveredIndex != null && <aside><b>{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span><span>ZOOM <strong>{Math.round(xZoom*100)}%</strong></span></aside>}

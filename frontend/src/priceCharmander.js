@@ -1,4 +1,4 @@
-export const CHARMER_PERIODS = Array.from({ length: 29 }, (_, index) => index + 2);
+export const PHOENIX_PERIODS = Array.from({ length: 29 }, (_, index) => index + 2);
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
@@ -25,14 +25,25 @@ export function averagePriceBars(rows = [], bucketSeconds = 30) {
   });
 }
 
-// Price-only Axiom Charmander. A three-point median rejects isolated bad
+// Price-only Axiom Phoenix. A three-point median rejects isolated bad
 // ticks. Each of the 29 strands is its own volatility-normalized moving-
 // average slope. This lets the horizons expand, cross and knit naturally;
 // they are not scaled copies of a single oscillator.
-export function computePriceCharmander(rows = []) {
+export function computePricePhoenix(rows = [], source = "trimmed") {
+  const sourcePrice = row => {
+    if (source === "hl2") {
+      const high = Number(row?.high), low = Number(row?.low);
+      return Number.isFinite(high) && Number.isFinite(low) ? (high + low) / 2 : Number(row?.spot);
+    }
+    if (source === "close") {
+      const close = Number(row?.close);
+      return Number.isFinite(close) ? close : Number(row?.spot);
+    }
+    return Number(row?.spot);
+  };
   const clean = [...new Map(rows
-    .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && Number(row?.spot) > 0)
-    .map(row => [row.timestamp, { timestamp: row.timestamp, price: Number(row.spot) }]))
+    .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && sourcePrice(row) > 0)
+    .map(row => [row.timestamp, { timestamp: row.timestamp, price: sourcePrice(row) }]))
     .values()].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
 
   const length = clean.length;
@@ -55,7 +66,7 @@ export function computePriceCharmander(rows = []) {
   }
   if (length) volatility[0] = 8e-5;
 
-  const series = CHARMER_PERIODS.map(period => {
+  const series = PHOENIX_PERIODS.map(period => {
     const values = new Float32Array(length);
     const movingAverage = new Float64Array(length);
     const alpha = 2 / (period + 1);
@@ -75,10 +86,15 @@ export function computePriceCharmander(rows = []) {
   return {
     timestamps: clean.map(point => point.timestamp),
     prices: Float64Array.from(clean, point => point.price),
-    periods: CHARMER_PERIODS,
+    periods: PHOENIX_PERIODS,
     series,
   };
 }
+
+// Transitional aliases for any external imports while the product name moves
+// from Charmander to Phoenix. New code should use the Phoenix exports above.
+export const CHARMER_PERIODS = PHOENIX_PERIODS;
+export const computePriceCharmander = computePricePhoenix;
 
 export function charmPhase(value, previous) {
   if (!Number.isFinite(value) || !Number.isFinite(previous)) return "neutral";

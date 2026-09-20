@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { createPortal } from "react-dom";
 import MagnitudeSignedChart from "./MagnitudeSignedChart";
 import CvdPriceChart from "./CvdPriceChart";
-import PriceCharmanderChart from "./PriceCharmanderChart";
+import PricePhoenixChart from "./PriceCharmanderChart";
 import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
   fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallExposurePoints, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
@@ -1994,11 +1994,11 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PriceCharmanderChart rows={rows} symbol={symbol}/></>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol}/><PricePhoenixChart rows={rows} symbol={symbol} source="hl2" version="2.0"/><PricePhoenixChart rows={rows} symbol={symbol} source="close" version="3.0"/></>;
 }
 
-function LiveCharmanderExposurePanels({symbol="QQQ",rows=[],requestWindow}){
-  return <><PriceCharmanderChart rows={rows} symbol={symbol}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
+function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow}){
+  return <><PricePhoenixChart rows={rows} symbol={symbol}/><PricePhoenixChart rows={rows} symbol={symbol} source="hl2" version="2.0"/><PricePhoenixChart rows={rows} symbol={symbol} source="close" version="3.0"/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
 }
 
 function ZeroGammaExposureChart(props){
@@ -2624,7 +2624,7 @@ export default function Home() {
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
     <LiveSymbolExposurePanels symbol="SPY"/>
-    <LiveCharmanderExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow}/>
+    <LivePhoenixExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">
