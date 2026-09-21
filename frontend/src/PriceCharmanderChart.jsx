@@ -3,13 +3,14 @@ import { fetchWallPriceSeries } from "./api";
 import { averagePriceBars, charmPhase, computePricePhoenix } from "./priceCharmander";
 
 const RANGE_CONFIG = {
-  "5M": { seconds: 300, bucket: 10 },
-  "15M": { seconds: 900, bucket: 15 },
-  "30M": { seconds: 1800, bucket: 30 },
-  "1H": { seconds: 3600, bucket: 60 },
-  "4H": { seconds: 14400, bucket: 240 },
-  "6H": { seconds: 21600, bucket: 360 },
-  "8H": { seconds: 28800, bucket: 480 },
+  "1M": { seconds: 9000, bucket: 60 },
+  "5M": { seconds: 45000, bucket: 300 },
+  "15M": { seconds: 135000, bucket: 900 },
+  "30M": { seconds: 270000, bucket: 1800 },
+  "1H": { seconds: 540000, bucket: 3600 },
+  "2H": { seconds: 1080000, bucket: 7200 },
+  "4H": { seconds: 2160000, bucket: 14400 },
+  "6H": { seconds: 3240000, bucket: 21600 },
 };
 const COLORS = {
   positive_rising: "#43d35d",
@@ -23,7 +24,7 @@ const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, v
 const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
-export default function PricePhoenixChart({ rows = [], symbol = "QQQ", source = "trimmed", version = "" }) {
+export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
   const [range, setRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
   const [xZoom, setXZoom] = useState(1);
@@ -49,10 +50,10 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", source = 
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
     const merged = [...historyRows, ...rows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
-    return averagePriceBars(merged, config.bucket);
+    return averagePriceBars(merged, config.bucket,150);
   }, [config.bucket, historyRows, rows, symbol]);
-  const calculated = useMemo(() => computePricePhoenix(analysisBars,source), [analysisBars,source]);
-  const phoenixName=version?`PHOENIX ${version}`:"PHOENIX",sourceLabel=source==="hl2"?"HIGH + LOW MIDPOINT":source==="close"?"BUCKET CLOSE":"TRIMMED BUCKET AVERAGE",watermarkLabel=version?`${symbol.toUpperCase()}, ${version}`:symbol.toUpperCase();
+  const calculated = useMemo(() => computePricePhoenix(analysisBars), [analysisBars]);
+  const phoenixName="PHOENIX",sourceLabel="TRIMMED BUCKET AVERAGE",watermarkLabel=symbol.toUpperCase();
   const visibleIndexes = useMemo(() => {
     const indexes = calculated.timestamps.map((_, index) => index);
     const windowed = indexes, stride = Math.max(1, Math.ceil(windowed.length / 900));

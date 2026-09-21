@@ -19,7 +19,8 @@ def test_exposure_candle_query_has_valid_with_alias_syntax():
     assert "selected_days AS" in sql
     assert "toTime('07:00:00')" in sql
     assert "toTime('18:00:00')" in sql
-    assert "INTERVAL 7 HOUR" in sql
+    assert "toStartOfInterval(timestamp, INTERVAL 300 SECOND" in sql
+    assert "toDateTime('1970-01-01 00:00:00','America/New_York')" in sql
     assert "FORMAT JSONEachRow" in sql
 
 

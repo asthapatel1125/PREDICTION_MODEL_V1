@@ -313,6 +313,26 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement)).all()
             return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
 
+    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime)->list[dict[str,Any]]:
+        """Return compact one-minute OHLC inputs for calendar candle aggregation."""
+        query=text("""
+            SELECT date_trunc('minute', timestamp) AS timestamp,
+                   (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
+                   max(spot) AS high,
+                   min(spot) AS low,
+                   (array_agg(spot ORDER BY timestamp DESC))[1] AS close,
+                   avg(spot) AS spot
+            FROM wall_intelligence
+            WHERE symbol=:symbol AND timestamp>=:start AND timestamp<:end
+            GROUP BY date_trunc('minute', timestamp)
+            ORDER BY timestamp
+        """)
+        async with self.sessions() as s:
+            rows=(await s.execute(query,{"symbol":symbol.upper(),"start":start,"end":end})).mappings().all()
+        return [{"timestamp":row["timestamp"],"open":float(row["open"]),"high":float(row["high"]),
+            "low":float(row["low"]),"close":float(row["close"]),"spot":float(row["spot"]),"volume":0.0}
+            for row in rows]
+
     async def wall_exposure_points(self,symbol:str,limit:int=5_000,before:datetime|None=None)->list[dict[str,Any]]:
         """Return compact price/ZG/ZD pages without materializing full wall payloads."""
         query=text("""

@@ -1,46 +1,19 @@
+import { getCandles } from "./calendarCandles.js";
+
 export const PHOENIX_PERIODS = Array.from({ length: 29 }, (_, index) => index + 2);
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
-export function averagePriceBars(rows = [], bucketSeconds = 30) {
-  const milliseconds = Math.max(1, bucketSeconds) * 1000;
-  const clean = [...new Map(rows
-    .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && Number(row?.spot) > 0)
-    .map(row => [row.timestamp, row])).values()]
-    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
-  const buckets = new Map();
-  clean.forEach(row => {
-    const at = Date.parse(row.timestamp), price = Number(row.spot), key = Math.floor(at / milliseconds);
-    const bar = buckets.get(key);
-    if (!bar) buckets.set(key, { timestamp: row.timestamp, at, spot: price, open: price, high: price, low: price, close: price, prices: [price], samples: 1 });
-    else {
-      bar.timestamp = row.timestamp; bar.at = at; bar.high = Math.max(bar.high, price); bar.low = Math.min(bar.low, price);
-      bar.close = price; bar.prices.push(price); bar.samples += 1;
-    }
-  });
-  return [...buckets.values()].map(({ prices, ...bar }) => {
-    const ordered = prices.sort((a, b) => a - b), trim = ordered.length >= 10 ? Math.floor(ordered.length * .1) : 0;
-    const retained = ordered.slice(trim, ordered.length - trim || undefined);
-    return { ...bar, spot: retained.reduce((sum, price) => sum + price, 0) / retained.length };
-  });
+export function averagePriceBars(rows = [], bucketSeconds = 300, numCandles = 150) {
+  return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York"});
 }
 
 // Price-only Axiom Phoenix. A three-point median rejects isolated bad
 // ticks. Each of the 29 strands is its own volatility-normalized moving-
 // average slope. This lets the horizons expand, cross and knit naturally;
 // they are not scaled copies of a single oscillator.
-export function computePricePhoenix(rows = [], source = "trimmed") {
-  const sourcePrice = row => {
-    if (source === "hl2") {
-      const high = Number(row?.high), low = Number(row?.low);
-      return Number.isFinite(high) && Number.isFinite(low) ? (high + low) / 2 : Number(row?.spot);
-    }
-    if (source === "close") {
-      const close = Number(row?.close);
-      return Number.isFinite(close) ? close : Number(row?.spot);
-    }
-    return Number(row?.spot);
-  };
+export function computePricePhoenix(rows = []) {
+  const sourcePrice = row => Number(row?.spot);
   const clean = [...new Map(rows
     .filter(row => Number.isFinite(Date.parse(row?.timestamp || "")) && sourcePrice(row) > 0)
     .map(row => [row.timestamp, { timestamp: row.timestamp, price: sourcePrice(row) }]))

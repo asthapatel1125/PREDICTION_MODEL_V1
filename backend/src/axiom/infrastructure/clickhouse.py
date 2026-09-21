@@ -5,6 +5,8 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from typing import Any
 
+from axiom.analytics.candles import candle_is_confirmed
+
 import httpx
 
 
@@ -232,6 +234,8 @@ class ClickHouseRepository:
         row_limit=max(30,min(int(limit),20_000))
         day_limit=max(1,min(int(days),365))
         symbol_literal=_literal(symbol.upper())
+        bucket_expr=(f"toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND, "
+            "toDateTime('1970-01-01 00:00:00','America/New_York'), 'America/New_York')")
         selected_days=(
             f"SELECT toDate(timestamp) AS day FROM exposure_history FINAL "
             f"WHERE symbol={symbol_literal} AND interval_seconds=60 "
@@ -257,10 +261,7 @@ class ClickHouseRepository:
                 FROM
                 (
                     SELECT
-                        if({bucket_seconds}=86400,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR
-                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR), {bucket_seconds}) * {bucket_seconds})) AS bucket,
+                        {bucket_expr} AS bucket,
                         argMin(price,timestamp) AS open,
                         max(price) AS high,
                         min(price) AS low,
@@ -276,10 +277,7 @@ class ClickHouseRepository:
                 LEFT JOIN
                 (
                     SELECT
-                        if({bucket_seconds}=86400,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR,
-                           toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR
-                             + toIntervalSecond(intDiv(toUnixTimestamp(timestamp) - toUnixTimestamp(toDateTime(toDate(timestamp),'America/New_York') + INTERVAL 7 HOUR), {bucket_seconds}) * {bucket_seconds})) AS bucket,
+                        {bucket_expr} AS bucket,
                         argMax(zero_gamma,timestamp) AS zero_gamma,
                         argMax(zero_delta,timestamp) AS zero_delta
                     FROM exposure_history FINAL
@@ -305,8 +303,10 @@ class ClickHouseRepository:
             result.append({
                 "timestamp":datetime.fromtimestamp(int(item["timestamp_ms"])/1000.0,UTC).isoformat(),
                 "open":item["open"],"high":item["high"],"low":item["low"],"close":item["close"],
+                "volume":0.0,
                 "zero_gamma":item.get("zero_gamma"),"zero_delta":item.get("zero_delta"),
             })
+            result[-1]["is_confirmed"]=candle_is_confirmed(result[-1]["timestamp"],bucket_seconds)
         return result
 
     async def exposure_available_range(self,symbol:str)->dict[str,str|None]:

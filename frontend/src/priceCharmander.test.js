@@ -10,8 +10,8 @@ const rows = prices => prices.map((spot, index) => ({
 test("averages noisy ticks into OHLC analysis bars", () => {
   const bars=averagePriceBars([
     {timestamp:"2026-09-16T14:00:01Z",spot:100},{timestamp:"2026-09-16T14:00:06Z",spot:104},
-    {timestamp:"2026-09-16T14:00:11Z",spot:102},{timestamp:"2026-09-16T14:00:31Z",spot:106},
-  ],30);
+    {timestamp:"2026-09-16T14:00:11Z",spot:102},{timestamp:"2026-09-16T14:01:01Z",spot:106},
+  ],60);
   assert.equal(bars.length,2);
   assert.deepEqual({spot:bars[0].spot,open:bars[0].open,high:bars[0].high,low:bars[0].low,close:bars[0].close,samples:bars[0].samples},
     {spot:102,open:100,high:104,low:100,close:102,samples:3});
@@ -57,20 +57,4 @@ test("assigns all four live color phases", () => {
   assert.equal(charmPhase(.4, .5), "positive_falling");
   assert.equal(charmPhase(-.5, -.4), "negative_falling");
   assert.equal(charmPhase(-.4, -.5), "negative_rising");
-});
-
-test("Phoenix 2.0 uses the high-low midpoint source", () => {
-  const bars=[
-    {timestamp:"2026-09-16T14:00:00Z",spot:100,high:110,low:98,close:109},
-    {timestamp:"2026-09-16T14:01:00Z",spot:101,high:108,low:100,close:107},
-  ];
-  assert.deepEqual([...computePricePhoenix(bars,"hl2").prices],[104,104]);
-});
-
-test("Phoenix 3.0 uses bucket closes", () => {
-  const bars=[
-    {timestamp:"2026-09-16T14:00:00Z",spot:100,high:110,low:98,close:109},
-    {timestamp:"2026-09-16T14:01:00Z",spot:101,high:108,low:100,close:107},
-  ];
-  assert.deepEqual([...computePricePhoenix(bars,"close").prices],[109,107]);
 });

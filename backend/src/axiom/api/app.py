@@ -20,6 +20,7 @@ from axiom.adapters.thetadata import ThetaDataV3Client
 from axiom.analytics.zone_intelligence import ZoneIntelligenceEngine
 from axiom.analytics.eod_snapshots import render_eod_svg,render_exposure_history_svg
 from axiom.analytics.nasdaq_range_atlas import build_range_atlas,load_nas100_monthly_levels
+from axiom.analytics.candles import get_candles,timeframe_seconds
 from axiom.application.engines import LiveWallExposureEngine,ReplayRequest,TrainingEngine
 from axiom.application.pipeline import DecisionPipeline
 from axiom.application.direction_gate import DailyDirectionGate,DirectionGateLockedError
@@ -280,20 +281,20 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/price-series")
-    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=30,before:datetime|None=None):
-        """Compact price-only warm-up for Charmander; deliberately skips wall payloads."""
-        safe_window=max(300,min(int(window_seconds),28_800))
-        safe_bucket=max(5,min(int(bucket_seconds),900))
-        cadence=5
+    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=300,before:datetime|None=None,num_candles:int=Query(150,ge=30,le=500)):
+        """Calendar-bucketed price warm-up; deliberately skips wall payloads."""
+        try:safe_bucket=timeframe_seconds(int(bucket_seconds))
+        except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+        safe_window=max(safe_bucket*int(num_candles),int(window_seconds))
+        end=_wall_time(before) or datetime.now(timezone.utc)
+        start=end-timedelta(seconds=safe_window+safe_bucket)
+        minute_rows=await container.repository.wall_price_minute_points(symbol,start,end)
+        rows=get_candles(minute_rows,safe_bucket,num_candles,exchange_tz=cfg.market_timezone,now=datetime.now(timezone.utc))
+        has_more=bool(minute_rows)
+        cadence=60
         warmup_bars=90
-        warmup_points=warmup_bars*max(1,safe_bucket//cadence)
-        limit=min(15_000,max(300,safe_window//cadence+warmup_points))
-        if before is not None:limit=15_000
-        rows=await container.repository.wall_price_points(symbol,limit+1,_wall_time(before))
-        has_more=len(rows)>limit
-        if has_more:rows=rows[1:]
         return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"RETAINED_UNDERLYING_PRICE_ONLY",
-            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"warmup_bars":warmup_bars,"has_more":has_more,"rows":rows}
+            "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"num_candles":num_candles,"warmup_bars":warmup_bars,"has_more":has_more,"rows":rows}
 
     @api.get("/walls/exposure-points")
     async def wall_exposure_points(symbol:str="QQQ",limit:int=Query(5_000,ge=100,le=5_000),before:datetime|None=None):
