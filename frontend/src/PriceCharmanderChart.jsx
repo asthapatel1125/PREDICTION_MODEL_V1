@@ -23,6 +23,7 @@ const COLORS = {
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
+const dateKey = timestamp => new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPointsPer50Nq = 1.235 }) {
   const [range, setRange] = useState("5M");
@@ -121,14 +122,20 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPoints
     context.fillStyle="rgba(168,176,184,.13)";context.font="300 72px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(watermarkLabel,watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
     context.strokeStyle = "#183746"; context.lineWidth = 1;
     for (const y of [top0, (top0 + top1) / 2, top1, bottom0, (bottom0 + bottom1) / 2, bottom1]) { context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke(); }
-    const tickCount=Math.max(2,Math.floor(plotWidth/118)+1);
-    for (let tick = 0; tick < tickCount; tick += 1) {
-      const at = firstAt + timeSpan * tick / Math.max(tickCount-1,1), x = xAt(at);
+    // Use real candle timestamps and admit labels only when their rendered
+    // positions are far enough apart. This stays readable while scrolling or
+    // zooming and avoids inventing timestamps between sparse candles.
+    const tickCandidates=scaleCharmIndexes.length?scaleCharmIndexes:visibleIndexes,tickIndexes=[],minimumTickGap=124;
+    let nextTickX=Number.POSITIVE_INFINITY;
+    for(let candidate=tickCandidates.length-1;candidate>=0;candidate-=1){const index=tickCandidates[candidate],position=xAt(Date.parse(calculated.timestamps[index]));if(nextTickX-position>=minimumTickGap||!tickIndexes.length){tickIndexes.push(index);nextTickX=position}}
+    tickIndexes.reverse();
+    const visibleCanvasLeft=scrollOffset+4,visibleCanvasRight=Math.min(width-right,scrollOffset+Math.max(viewportWidth,1)-4);
+    for (let tick = 0; tick < tickIndexes.length; tick += 1) {
+      const index=tickIndexes[tick],at=Date.parse(calculated.timestamps[index]),x=xAt(at),showDate=tick===0||dateKey(at)!==dateKey(calculated.timestamps[tickIndexes[tick-1]]);
       context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke();
-      context.fillStyle = "#9db5c4"; context.font = "10px monospace"; context.textAlign = tick === 0 ? "left" : tick === tickCount-1 ? "right" : "center";
+      context.fillStyle = "#9db5c4"; context.font = "10px monospace"; context.textAlign = tick === 0&&x-visibleCanvasLeft<55 ? "left" : tick === tickIndexes.length-1&&visibleCanvasRight-x<55 ? "right" : "center";
       context.fillText(timeLabel(at), x, height - 21);
-      context.fillStyle = "#658292"; context.font = "9px monospace";
-      context.fillText(dateLabel(at), x, height - 8);
+      if(showDate){context.fillStyle = "#658292"; context.font = "9px monospace";context.fillText(dateLabel(at), x, height - 8)}
     }
     const prices = scaleCandles.flatMap(candle => [candle.low, candle.high]);
     const low = Math.min(...prices), high = Math.max(...prices),rawSpan=Math.max(high-low,.08),center=(high+low)/2,span=rawSpan/priceYZoom,padding=Math.max(span*.12,.02),priceLow=center-span/2-padding,priceHigh=center+span/2+padding;
