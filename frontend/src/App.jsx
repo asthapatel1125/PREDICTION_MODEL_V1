@@ -6,7 +6,7 @@ import PricePhoenixChart from "./PriceCharmanderChart";
 import { getCandles } from "./calendarCandles";
 import { zoomAtlasPrice } from "./rangeAtlasZoom";
 import {
-  fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallExposureCandles, fetchWallExposurePoints, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
+  fetchChart, fetchConfiguration, fetchDashboard, fetchEodSnapshot, fetchExposureHistoryRange, fetchExposureHistorySnapshot, fetchInstruments, fetchNasdaqRangeAtlas, fetchOutcomeAttribution, fetchOutcomeCall, fetchReplay, fetchSystem, fetchWallExposureCandles, fetchWallSpectrum, fetchWallBreaks, fetchWallDealerFlow, fetchWallSummaryHistory,
   setDynamicsDirectionGate, startReplay, subscribeToEvents, toDashboardAlert,
 } from "./api";
 
@@ -1830,6 +1830,8 @@ function LegacyExposureLevelMap({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
   return expanded?createPortal(content,document.body):<>{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows}/>}</>;
 }
 
+const normalizeExposureCandleRows=(items,symbol)=>items.map(row=>({timestamp:row.timestamp,symbol:symbol.toUpperCase(),spot:number(row.close),open:number(row.open),high:number(row.high),low:number(row.low),close:number(row.close),volume:number(row.volume),is_confirmed:row.is_confirmed!==false,walls:{ZERO_GAMMA:{strike:number(row.zero_gamma)},ZERO_DELTA:{strike:number(row.zero_delta)}}}));
+
 function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false,onNeedWindow}){
    const [period,setPeriod]=useState("5M");
    const [hover,setHover]=useState(null);
@@ -1848,10 +1850,10 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const loadingEarlierRef=useRef(false);
   const periods={"1M":60,"5M":300,"15M":900,"30M":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600};
   useEffect(()=>{onNeedWindow?.(periods[period]*150)},[onNeedWindow,period]);
-  useEffect(()=>{const controller=new AbortController();setBackfillRows([]);setHasEarlier(false);fetchWallExposureCandles(symbol,periods[period],150,controller.signal).then(result=>{setBackfillRows((result.rows||[]).map(row=>({timestamp:row.timestamp,symbol:symbol.toUpperCase(),spot:number(row.close),open:number(row.open),high:number(row.high),low:number(row.low),close:number(row.close),volume:number(row.volume),is_confirmed:row.is_confirmed!==false,walls:{ZERO_GAMMA:{strike:number(row.zero_gamma)},ZERO_DELTA:{strike:number(row.zero_delta)}}})));setHasEarlier(false)}).catch(error=>{if(error.name!=="AbortError")setBackfillRows([])});return()=>controller.abort()},[symbol,period]);
-  const loadEarlierExposure=async()=>{if(loadingEarlierRef.current||!hasEarlier)return;const combined=[...backfillRows,...rows].filter(row=>row?.timestamp).sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)),first=combined[0];if(!first)return;loadingEarlierRef.current=true;try{const before=new Date(Date.parse(first.timestamp)-1).toISOString(),result=await fetchWallExposurePoints(symbol,undefined,before),incoming=result.rows||[];setBackfillRows(current=>[...new Map([...incoming,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));if(result.has_more===false||!incoming.length)setHasEarlier(false)}finally{loadingEarlierRef.current=false}};
+  useEffect(()=>{const controller=new AbortController();setBackfillRows([]);setHasEarlier(true);fetchWallExposureCandles(symbol,periods[period],150,controller.signal).then(result=>{setBackfillRows(normalizeExposureCandleRows(result.rows||[],symbol));setHasEarlier(result.has_more!==false)}).catch(error=>{if(error.name!=="AbortError")setBackfillRows([])});return()=>controller.abort()},[symbol,period]);
+  const loadEarlierExposure=async()=>{if(loadingEarlierRef.current||!hasEarlier||!backfillRows.length)return;const first=backfillRows[0];loadingEarlierRef.current=true;try{const before=new Date(Date.parse(first.timestamp)-1).toISOString(),result=await fetchWallExposureCandles(symbol,periods[period],150,undefined,before),incoming=normalizeExposureCandleRows(result.rows||[],symbol);setBackfillRows(current=>[...new Map([...incoming,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));if(result.has_more===false||!incoming.length)setHasEarlier(false)}finally{loadingEarlierRef.current=false}};
   const allPoints=useMemo(()=>{
-    const normalizedSymbol=symbol.toUpperCase(),historical=backfillRows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&number(row.spot)>0&&number(row.walls?.[wallKey]?.strike)>0).map(row=>{const spot=number(row.spot),level=number(row.walls?.[wallKey]?.strike);return {...row,level,zero:level,difference:spot-level,positive:level<=spot}}),liveSource=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol),priceCandles=getCandles(liveSource,periods[period],150,{exchangeTimeZone:"America/New_York"}),levelCandles=getCandles(liveSource.map(row=>({...row,spot:number(row.walls?.[wallKey]?.strike),price:number(row.walls?.[wallKey]?.strike),open:undefined,high:undefined,low:undefined,close:undefined})).filter(row=>number(row.spot)>0),periods[period],150,{exchangeTimeZone:"America/New_York"}),levels=new Map(levelCandles.map(row=>[row.timestamp,row.close])),live=priceCandles.map(row=>{const level=number(levels.get(row.timestamp));return {...row,level,zero:level,difference:row.spot-level,positive:level<=row.spot}}).filter(row=>row.level>0),merged=new Map(historical.map(row=>[row.timestamp,row]));live.forEach(row=>merged.set(row.timestamp,row));return [...merged.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).slice(-150);
+    const normalizedSymbol=symbol.toUpperCase(),historical=backfillRows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&number(row.spot)>0&&number(row.walls?.[wallKey]?.strike)>0).map(row=>{const spot=number(row.spot),level=number(row.walls?.[wallKey]?.strike);return {...row,level,zero:level,difference:spot-level,positive:level<=spot}}),liveSource=rows.filter(row=>Number.isFinite(Date.parse(row?.timestamp||""))&&String(row?.symbol||normalizedSymbol).toUpperCase()===normalizedSymbol),priceCandles=getCandles(liveSource,periods[period],150,{exchangeTimeZone:"America/New_York"}),levelCandles=getCandles(liveSource.map(row=>({...row,spot:number(row.walls?.[wallKey]?.strike),price:number(row.walls?.[wallKey]?.strike),open:undefined,high:undefined,low:undefined,close:undefined})).filter(row=>number(row.spot)>0),periods[period],150,{exchangeTimeZone:"America/New_York"}),levels=new Map(levelCandles.map(row=>[row.timestamp,row.close])),live=priceCandles.map(row=>{const level=number(levels.get(row.timestamp));return {...row,level,zero:level,difference:row.spot-level,positive:level<=row.spot}}).filter(row=>row.level>0),merged=new Map(historical.map(row=>[row.timestamp,row]));live.forEach(row=>merged.set(row.timestamp,row));return [...merged.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
   },[backfillRows,rows,symbol,wallKey,period]);
   const points=allPoints;
   // Keep a real pixel slot for every candle.  Do not let CSS shrink the full
@@ -1975,7 +1977,7 @@ function ExposurePair({symbol,rows,onNeedWindow,className=""}){
   return <div className={`live-symbol-exposure-panels ${className}`} data-symbol={symbol}><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded onNeedWindow={onNeedWindow}/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded onNeedWindow={onNeedWindow}/></div>;
 }
 
-function LiveSymbolExposurePanels({symbol="SPY"}){
+function LiveSymbolExposurePanels({symbol="SPY",qqqPointsPer50Nq=1.235}){
   const [rows,setRows]=useState([]),[requestedLimit,setRequestedLimit]=useState(360);
   const requestWindow=useCallback(seconds=>setRequestedLimit(current=>Math.max(current,Math.min(5000,Math.ceil(seconds/5*1.5)))),[]);
   useEffect(()=>{setRows([]);setRequestedLimit(360)},[symbol]);
@@ -1991,11 +1993,11 @@ function LiveSymbolExposurePanels({symbol="SPY"}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol}/></>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/></>;
 }
 
-function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow}){
-  return <><PricePhoenixChart rows={rows} symbol={symbol}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
+function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow,qqqPointsPer50Nq=1.235}){
+  return <><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
 }
 
 function ZeroGammaExposureChart(props){
@@ -2620,8 +2622,8 @@ export default function Home() {
     <section className="dynamics-direction-gate disabled" aria-label="Dynamics systems disabled"><div><span>DYNAMICS SYSTEMS DISABLED</span><b>Gamma 1.0 · Gamma 2.0 · Gamma 3.0 · Delta Dynamics</b><small>No live provider subscription, calculation, history load, or call generation is active.</small></div></section>
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
-    <LiveSymbolExposurePanels symbol="SPY"/>
-    <LivePhoenixExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow}/>
+    <LiveSymbolExposurePanels symbol="SPY" qqqPointsPer50Nq={qqqPointsPer50Nq}/>
+    <LivePhoenixExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow} qqqPointsPer50Nq={qqqPointsPer50Nq}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">

@@ -71,9 +71,9 @@ export function fetchWallExposurePoints(symbol,signal,before=null,limit=5000){
   if(!wallExposurePageRequests.has(key))wallExposurePageRequests.set(key,request(`/api/v1/walls/exposure-points?symbol=${encodeURIComponent(symbol)}&limit=${encodeURIComponent(limit)}${before?`&before=${encodeURIComponent(before)}`:""}`).finally(()=>wallExposurePageRequests.delete(key)));
   return wallExposurePageRequests.get(key).then(result=>{if(signal?.aborted)throw new DOMException("Aborted","AbortError");return result});
 }
-export const fetchWallExposureCandles=(symbol,intervalSeconds,numCandles=150,signal)=>{
+export const fetchWallExposureCandles=(symbol,intervalSeconds,numCandles=150,signal,before=null)=>{
   const days=Math.min(365,Math.max(2,Math.ceil(intervalSeconds*numCandles/86400)+7));
-  return request(`/api/v1/walls/exposure-candles?symbol=${encodeURIComponent(symbol)}&interval_seconds=${encodeURIComponent(intervalSeconds)}&days=${days}&limit=${Math.min(20000,numCandles+20)}`,{signal});
+  return request(`/api/v1/walls/exposure-candles?symbol=${encodeURIComponent(symbol)}&interval_seconds=${encodeURIComponent(intervalSeconds)}&days=${days}&limit=${Math.min(20000,numCandles)}${before?`&before=${encodeURIComponent(before)}`:""}`,{signal});
 };
 export const fetchWallBreaks = (symbol, signal) =>
   request(`/api/v1/walls/breaks?symbol=${encodeURIComponent(symbol)}`, { signal });

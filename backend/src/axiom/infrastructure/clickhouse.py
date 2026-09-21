@@ -224,7 +224,7 @@ class ClickHouseRepository:
         return rows
 
     async def exposure_candles(self, symbol: str, days: int, interval_seconds: int, limit: int = 2500,
-        start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
+        start_date: date | None = None, end_date: date | None = None, before: datetime | None = None) -> list[dict[str, Any]]:
         """Return session-anchored QQQ OHLC candles with closing ZG/ZD levels.
 
         Both source tables are compact.  Bucketing happens in ClickHouse and
@@ -234,16 +234,17 @@ class ClickHouseRepository:
         row_limit=max(30,min(int(limit),20_000))
         day_limit=max(1,min(int(days),365))
         symbol_literal=_literal(symbol.upper())
+        before_filter=(f"AND timestamp < toDateTime64({_literal(before.isoformat())},3,'UTC')" if before else "")
         bucket_expr=(f"toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND, "
             "toDateTime('1970-01-01 00:00:00','America/New_York'), 'America/New_York')")
         selected_days=(
             f"SELECT toDate(timestamp) AS day FROM exposure_history FINAL "
-            f"WHERE symbol={symbol_literal} AND interval_seconds=60 "
+            f"WHERE symbol={symbol_literal} AND interval_seconds=60 {before_filter} "
             f"AND toDate(timestamp) BETWEEN toDate({_literal(start_date.isoformat())}) AND toDate({_literal(end_date.isoformat())}) "
             "GROUP BY day ORDER BY day"
             if start_date and end_date else
             f"SELECT toDate(timestamp) AS day FROM exposure_history FINAL "
-            f"WHERE symbol={symbol_literal} AND interval_seconds=60 "
+            f"WHERE symbol={symbol_literal} AND interval_seconds=60 {before_filter} "
             f"GROUP BY day ORDER BY day DESC LIMIT {day_limit}"
         )
         sql=f"""
@@ -270,6 +271,7 @@ class ClickHouseRepository:
                     WHERE symbol={symbol_literal}
                       AND interval_seconds=60
                       AND toDate(timestamp) IN (SELECT day FROM selected_days)
+                      {before_filter}
                       AND toTime(timestamp) >= toTime('07:00:00')
                       AND toTime(timestamp) <= toTime('18:00:00')
                     GROUP BY bucket
@@ -283,6 +285,7 @@ class ClickHouseRepository:
                     FROM exposure_history FINAL
                     WHERE symbol={symbol_literal} AND interval_seconds=60
                       AND toDate(timestamp) IN (SELECT day FROM selected_days)
+                      {before_filter}
                       AND toTime(timestamp) >= toTime('07:00:00')
                       AND toTime(timestamp) <= toTime('18:00:00')
                     GROUP BY bucket

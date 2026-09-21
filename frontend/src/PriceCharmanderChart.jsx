@@ -24,7 +24,7 @@ const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, v
 const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
-export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
+export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPointsPer50Nq = 1.235 }) {
   const [range, setRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
   const [xZoom, setXZoom] = useState(1);
@@ -50,7 +50,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
     const merged = [...historyRows, ...rows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
-    return averagePriceBars(merged, config.bucket,150);
+    return averagePriceBars(merged, config.bucket,Number.MAX_SAFE_INTEGER);
   }, [config.bucket, historyRows, rows, symbol]);
   const calculated = useMemo(() => computePricePhoenix(analysisBars), [analysisBars]);
   const phoenixName="PHOENIX",sourceLabel="TRIMMED BUCKET AVERAGE",watermarkLabel=symbol.toUpperCase();
@@ -113,7 +113,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
     context.fillStyle="#000";context.fillRect(0,0,width,height);
-    const left=68,right=20,top0=24,axisSpace=43,gap=0,panelHeight=Math.max(170,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
+    const left=68,right=20,top0=58,axisSpace=43,gap=0,panelHeight=Math.max(150,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
     const firstAt = Date.parse(calculated.timestamps[visibleIndexes[0]]), lastAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)]), timeSpan = Math.max(1, lastAt - firstAt);
     const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
     context.fillStyle = "#000"; context.fillRect(left, top0, plotWidth, bottom1 - top0);
@@ -142,24 +142,15 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
       context.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1.5, Math.abs(closeY - openY)));
     });
     const visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),autoCharmLimit=Math.max(.12,...visibleCharmValues),charmLimit=Math.min(1,autoCharmLimit*1.12)/charmYZoom;
-    context.fillStyle = "#dceaf2"; context.font = "700 11px monospace"; context.textAlign = "left"; context.fillText(`${symbol} PRICE · USD`, 9, 48);
-    context.fillStyle = "#8ea8b8"; context.font = "10px monospace"; context.fillText(priceHigh.toFixed(2), 9, top0 + 4); context.fillText(priceLow.toFixed(2), 9, top1); context.fillText(`+${charmLimit.toFixed(2)}`, 22, bottom0 + 4); context.fillText("0", 45, (bottom0 + bottom1) / 2 + 3); context.fillText(`−${charmLimit.toFixed(2)}`, 22, bottom1);
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
     calculated.series.forEach((line, lineIndex) => {
       for (let point = 1; point < visibleIndexes.length; point += 1) {
         const prior = visibleIndexes[point - 1], current = visibleIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
         if(currentValueIndex>=line.length)continue;
         context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
-        context.globalAlpha = .26 + lineIndex / calculated.series.length * .32;
-        context.lineWidth = lineIndex % 5 === 0 ? 1.1 : .75;
+        context.globalAlpha = .68;
+        context.lineWidth = 1.35;
         context.beginPath(); context.moveTo(xAt(Date.parse(calculated.timestamps[prior])), charmY(line[priorValueIndex])); context.lineTo(xAt(Date.parse(calculated.timestamps[current])), charmY(line[currentValueIndex])); context.stroke();
-      }
-    });
-    const consensusGroups=[[0,6],[6,15],[15,29]];
-    consensusGroups.forEach(([start,end],groupIndex)=>{
-      for(let point=1;point<visibleIndexes.length;point+=1){
-        const prior=visibleIndexes[point-1],current=visibleIndexes[point],lines=calculated.series.slice(start,end),priorValue=lines.reduce((sum,line)=>sum+line[prior],0)/lines.length,currentValue=lines.reduce((sum,line)=>sum+line[current],0)/lines.length;
-        context.strokeStyle=COLORS[charmPhase(currentValue,priorValue)];context.globalAlpha=1;context.lineWidth=3.6-groupIndex*.55;context.beginPath();context.moveTo(xAt(Date.parse(calculated.timestamps[prior])),charmY(priorValue));context.lineTo(xAt(Date.parse(calculated.timestamps[current])),charmY(currentValue));context.stroke();
       }
     });
     context.globalAlpha = 1;
@@ -177,6 +168,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
   const hoveredIndex = hover == null ? latestIndex : visibleIndexes[hover];
   const hoveredPrice = hoveredIndex == null ? null : calculated.prices[hoveredIndex];
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
+  const nqEstimate=symbol.toUpperCase()==="QQQ"&&Number.isFinite(hoveredPrice)?hoveredPrice*50/Math.max(Number(qqqPointsPer50Nq)||1.235,.0001):null;
   const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;
   const zoomY=event=>{event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),factor=event.deltaY<0?1.12:.89;if(event.clientY-bounds.top<bounds.height/2)setPriceYZoom(value=>clamp(value*factor,.35,12));else setCharmYZoom(value=>clamp(value*factor,.35,12))};
   const resetView=()=>{setXZoom(1);setPriceYZoom(1);setCharmYZoom(1);setHover(null);followingLiveRef.current=true};
@@ -188,7 +180,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ" }) {
       <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>PHX<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
       <div className="price-charmander-frame" ref={frameRef} onScroll={event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;if(node.scrollLeft<80)loadEarlier()}} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
         <canvas ref={canvasRef}/>
-        {hoveredIndex != null && <aside><b>{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span><span>ZOOM <strong>{Math.round(xZoom*100)}%</strong></span></aside>}
+        {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{hover!==null&&nqEstimate!==null&&<span className="phoenix-nq-conversion" title={`Estimated NQ conversion: QQQ × 50 ÷ ${Math.max(Number(qqqPointsPer50Nq)||1.235,.0001).toFixed(3)}. Proxy only; not a live CME quote.`}>NQ EST <strong>{nqEstimate.toFixed(2)}</strong></span>}<span>ZOOM <strong>{Math.round(xZoom*100)}%</strong></span></aside>}
       </div>
     </div>
     <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>

@@ -335,16 +335,19 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         interval_seconds:int=Query(300),
         days:int=Query(365,ge=1,le=365),
         limit:int=Query(20000,ge=30,le=20000),
+        before:datetime|None=None,
     ):
         allowed={60,300,600,900,1800,3600,7200,10800,14400,18000,21600,86400}
         if interval_seconds not in allowed:
             raise HTTPException(422,"Unsupported candle interval")
         if not container.clickhouse:
             raise HTTPException(503,"ClickHouse is not configured")
-        rows=await container.clickhouse.exposure_candles(symbol,days,interval_seconds,limit)
+        rows=await container.clickhouse.exposure_candles(symbol,days,interval_seconds,min(20000,limit+1),before=_wall_time(before))
+        has_more=len(rows)>limit
+        if has_more:rows=rows[1:]
         return {
             "symbol":symbol.upper(),"market_timezone":cfg.market_timezone,
-            "interval_seconds":interval_seconds,"days":days,"rows":rows,
+            "interval_seconds":interval_seconds,"days":days,"has_more":has_more,"rows":rows,
         }
 
     @api.get("/walls/exposure-history-range")
