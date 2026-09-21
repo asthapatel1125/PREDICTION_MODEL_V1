@@ -392,8 +392,6 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-info-strip b{padding-right:12px;border-right:1px solid #284d61;color:#eef8ff}
 .exposure-info-strip span{display:inline-flex;align-items:center;gap:7px}
 .exposure-info-strip strong{color:inherit;font-size:12px}
-.exposure-top-scroll{position:sticky;z-index:14;left:0;box-sizing:border-box;flex:0 0 16px;width:100%;min-width:100%;height:16px;margin:0;accent-color:#5c86a2;background:#07111b;cursor:ew-resize}
-.exposure-info-strip>*{flex:0 0 auto}.exposure-index-conversion{color:#8fdfff}
 .exposure-map-canvas{cursor:grab;user-select:none;touch-action:none;overscroll-behavior:contain}
 .exposure-map-canvas.is-panning{cursor:grabbing}
 .exposure-map-controls button{min-width:30px}
@@ -453,8 +451,8 @@ svg text[text-anchor="end"]{font-size:13px!important}
 .exposure-level-map:not(.expanded) .exposure-level-frame{grid-template-columns:44px 58px minmax(0,1fr) 112px!important;height:520px!important;min-height:520px!important;max-height:520px!important}
 .exposure-level-map:not(.expanded) .exposure-time-rail,.exposure-level-map:not(.expanded) .exposure-axes,.exposure-level-map:not(.expanded) .exposure-live-rail{height:520px!important;max-height:520px!important}
 .exposure-level-map:not(.expanded) .exposure-map-scroll{height:520px!important;max-height:520px!important;overflow-x:auto!important;overflow-y:hidden!important}
-.exposure-level-map:not(.expanded) .exposure-map-canvas{height:462px!important;min-height:462px!important;max-height:462px!important}
-.exposure-level-map:not(.expanded) .exposure-map-canvas svg{height:462px!important;min-height:462px!important;max-height:462px!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas{height:478px!important;min-height:478px!important;max-height:478px!important}
+.exposure-level-map:not(.expanded) .exposure-map-canvas svg{height:478px!important;min-height:478px!important;max-height:478px!important}
 .exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-name{left:6px!important}.exposure-level-map:not(.expanded) .exposure-axes .exposure-axis-tick{left:6px!important;right:auto!important;font-size:10px!important}
 .exposure-level-map:not(.expanded) .exposure-live-rail .exposure-end-label{width:102px}
 .exposure-live-updated small{display:none!important}

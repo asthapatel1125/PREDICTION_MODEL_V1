@@ -1832,7 +1832,7 @@ function LegacyExposureLevelMap({rows=[],wallKey="ZERO_GAMMA",title="ZERO GAMMA 
 
 const normalizeExposureCandleRows=(items,symbol)=>items.map(row=>({timestamp:row.timestamp,symbol:symbol.toUpperCase(),spot:number(row.close),open:number(row.open),high:number(row.high),low:number(row.low),close:number(row.close),volume:number(row.volume),is_confirmed:row.is_confirmed!==false,walls:{ZERO_GAMMA:{strike:number(row.zero_gamma)},ZERO_DELTA:{strike:number(row.zero_delta)}}}));
 
-function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false,onNeedWindow,qqqPointsPer50Nq=1.235}){
+function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",title="ZERO GAMMA EXPOSURE",heading="QQQ price and zero-gamma level",accent="#b56cff",embedded=false,onNeedWindow}){
    const [period,setPeriod]=useState("5M");
    const [hover,setHover]=useState(null);
    const [hoverPoint,setHoverPoint]=useState(null);
@@ -1910,7 +1910,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const displayTickCount=Math.min(5,Math.max(orderedValues.length,1)),displayTicks=Array.from({length:displayTickCount},(_,index)=>{const ratio=index/Math.max(displayTickCount-1,1),value=orderedValues[Math.round(ratio*Math.max(orderedValues.length-1,0))]??0;return {key:`shared-${index}`,value,y:mapY(value)}});
   const qqqPaths=points.reduce((groups,point,index)=>{const prior=points[index-1],newSession=index>0&&Date.parse(point.timestamp)-Date.parse(prior.timestamp)>3600000;if(!groups.length||newSession)groups.push([]);groups.at(-1).push(x(index).toFixed(1)+","+qqqY(point.spot).toFixed(1));return groups},[]).map(group=>group.join(" "));
   const candleWidth=Math.max(4,Math.min(8,candlePitch*.68));
-  const active=hover===null?points.at(-1):points[hover];
+  const active=hover===null?null:points[hover];
   const returnToLatest=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const node=scrollRef.current;if(!node)return;node.scrollLeft=Math.max(0,node.scrollWidth-node.clientWidth);setScrollOffset(node.scrollLeft)}));
   const selectPeriod=name=>{followingLiveRef.current=true;setPeriod(name);setXZoom(1);setYZoom(1);setYPan(0);setHover(null);returnToLatest()};
   const reset=()=>{followingLiveRef.current=true;setXZoom(1);setYZoom(1);setYPan(0);setHover(null);returnToLatest()};
@@ -1920,7 +1920,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   const beginPan=event=>{if(event.button!==0||event.target.closest("button"))return;event.preventDefault();followingLiveRef.current=false;dragRef.current={x:event.clientX,scrollLeft:scrollRef.current?.scrollLeft??0,pointerId:event.pointerId};event.currentTarget.setPointerCapture?.(event.pointerId);event.currentTarget.classList.add("is-panning")};
    const move=event=>{const rect=event.currentTarget.getBoundingClientRect(),ratio=clamp((event.clientX-rect.left)/Math.max(rect.width,1),0,1),index=Math.round(ratio*Math.max(points.length-1,0));setHover(index);setHoverPoint({x:event.clientX-rect.left,y:event.clientY-rect.top});const drag=dragRef.current;if(drag&&scrollRef.current){event.preventDefault();scrollRef.current.scrollLeft=clamp(drag.scrollLeft-(event.clientX-drag.x),0,scrollRef.current.scrollWidth-scrollRef.current.clientWidth)}};
   const stopPan=event=>{if(!dragRef.current)return;event.currentTarget?.releasePointerCapture?.(dragRef.current.pointerId);dragRef.current=null;event.currentTarget?.classList.remove("is-panning")};
-  const last=points.at(-1),gammaColor=point=>(point.displayPositive??point.positive)?"#3296ff":"#f2f5f7",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ",hoverTime=value=>new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).format(new Date(value)),indexEquivalent=symbol.toUpperCase()==="QQQ"?{label:"NQ EST",value:active.spot*50/Math.max(Number(qqqPointsPer50Nq)||1.235,.0001),title:`Estimated NQ equivalent: QQQ × 50 ÷ ${Math.max(Number(qqqPointsPer50Nq)||1.235,.0001).toFixed(3)}. Proxy only; not a live CME quote.`}:symbol.toUpperCase()==="SPY"?{label:"S&P 500 EST",value:active.spot*10,title:"Estimated S&P 500 index equivalent: SPY × 10. Proxy only; not an official index quote."}:null;
+  const last=points.at(-1),gammaColor=point=>(point.displayPositive??point.positive)?"#3296ff":"#f2f5f7",levelName=wallKey==="ZERO_DELTA"?"ZERO DELTA":"ZERO GAMMA",axisName=wallKey==="ZERO_DELTA"?"ZERO Δ":"ZERO Γ",hoverTime=value=>new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).format(new Date(value));
   // Render each dashed portion using the relationship at that portion. This
   // prevents a color from bleeding across a zero-gamma/QQQ sign transition.
   const levelSegments=[];
@@ -1955,8 +1955,7 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
         {displayTicks.map(item=><span className="exposure-axis-tick qqq" key={item.key} style={{top:item.y+42}}>{item.value.toFixed(2)}</span>)}
       </aside>
       <div className="exposure-map-scroll" ref={scrollRef} onScroll={event=>{setScrollOffset(event.currentTarget.scrollLeft);if(event.currentTarget.scrollLeft<event.currentTarget.scrollWidth-event.currentTarget.clientWidth-18)followingLiveRef.current=false;if(event.currentTarget.scrollLeft<80)loadEarlierExposure()}}>
-         <input className="exposure-top-scroll" type="range" min="0" max={Math.max(0,width-viewportWidth)} value={Math.min(scrollOffset,Math.max(0,width-viewportWidth))} onChange={event=>{const left=Number(event.currentTarget.value);if(scrollRef.current)scrollRef.current.scrollLeft=left;setScrollOffset(left)}} aria-label={`Scroll ${symbol} ${levelName} chart history`}/>
-         <div className="exposure-info-strip" aria-live="polite"><b>{hover===null?"LIVE · ":""}{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>{symbol} <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span>{indexEquivalent&&<span className="exposure-index-conversion" title={indexEquivalent.title}>{indexEquivalent.label} <strong>{indexEquivalent.value.toFixed(2)}</strong></span>}</div>
+         <div className="exposure-info-strip" aria-live="polite">{active?<><b>{logDate(active.timestamp)} · {hoverTime(active.timestamp)}</b><span>{symbol} <strong>{active.spot.toFixed(2)} USD</strong></span><span style={{color:gammaColor(active)}}>{levelName} <strong>{active.level.toFixed(2)} USD RAW</strong>{active.displayLevel!=null&&<small> · PLOT {active.displayLevel.toFixed(2)}</small>}</span></>:<span>Hover over the graph for exact stored values</span>}</div>
          <div className="exposure-map-canvas" ref={canvasRef} style={{width:`${width}px`,minWidth:"100%"}} onWheel={wheel} onDoubleClick={reset} onPointerDown={beginPan} onPointerMove={move} onPointerUp={stopPan} onPointerCancel={stopPan} onPointerLeave={event=>{stopPan(event);setHover(null);setHoverPoint(null)}}>
           <div className="exposure-html-watermark" style={{left:`${watermarkX}px`,top:`${((plotTop+plotBottom)/2/height)*100}%`}} aria-hidden="true">{symbol.toUpperCase()}</div>
           <svg viewBox={"0 0 "+width+" "+height} preserveAspectRatio="none" role="img" aria-label={heading}>
@@ -1983,8 +1982,8 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   return expanded?createPortal(content,document.body):<>{historyArchive}{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows} onNeedWindow={onNeedWindow}/>}</>;
 }
 
-function ExposurePair({symbol,rows,onNeedWindow,className="",qqqPointsPer50Nq=1.235}){
-  return <div className={`live-symbol-exposure-panels ${className}`} data-symbol={symbol}><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded onNeedWindow={onNeedWindow} qqqPointsPer50Nq={qqqPointsPer50Nq}/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded onNeedWindow={onNeedWindow} qqqPointsPer50Nq={qqqPointsPer50Nq}/></div>;
+function ExposurePair({symbol,rows,onNeedWindow,className=""}){
+  return <div className={`live-symbol-exposure-panels ${className}`} data-symbol={symbol}><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded onNeedWindow={onNeedWindow}/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded onNeedWindow={onNeedWindow}/></div>;
 }
 
 function LiveSymbolExposurePanels({symbol="SPY",qqqPointsPer50Nq=1.235}){
@@ -2003,11 +2002,11 @@ function LiveSymbolExposurePanels({symbol="SPY",qqqPointsPer50Nq=1.235}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()} qqqPointsPer50Nq={qqqPointsPer50Nq}/><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/></>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/></>;
 }
 
 function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow,qqqPointsPer50Nq=1.235}){
-  return <><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq" qqqPointsPer50Nq={qqqPointsPer50Nq}/></>;
+  return <><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
 }
 
 function ZeroGammaExposureChart(props){
