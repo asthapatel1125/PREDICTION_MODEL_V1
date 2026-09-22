@@ -175,7 +175,13 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPoints
   const hoveredIndex = hover == null ? latestIndex : visibleIndexes[hover];
   const hoveredPrice = hoveredIndex == null ? null : calculated.prices[hoveredIndex];
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
-  const nqEstimate=symbol.toUpperCase()==="QQQ"&&Number.isFinite(hoveredPrice)?hoveredPrice*50/Math.max(Number(qqqPointsPer50Nq)||1.235,.0001):null;
+  const normalizedSymbol=symbol.toUpperCase(),indexEstimate=Number.isFinite(hoveredPrice)
+    ?normalizedSymbol==="SPY"
+      ?{label:"S&P 500 EST",value:hoveredPrice*10,title:"Estimated S&P 500 cash-index level: SPY × 10. Proxy only; not a live SPX quote."}
+      :normalizedSymbol==="QQQ"
+        ?{label:hover===null?"NQ EST":"NAS100 EST",value:hoveredPrice*50/Math.max(Number(qqqPointsPer50Nq)||1.235,.0001),title:`Estimated ${hover===null?"NQ":"NAS100"} level using QQQ × 50 ÷ ${Math.max(Number(qqqPointsPer50Nq)||1.235,.0001).toFixed(3)}. Calibrated proxy only; not a live NDX or NQ quote.`}
+        :null
+    :null;
   const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;
   const zoomY=event=>{event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),factor=event.deltaY<0?1.12:.89;if(event.clientY-bounds.top<bounds.height/2)setPriceYZoom(value=>clamp(value*factor,.35,12));else setCharmYZoom(value=>clamp(value*factor,.35,12))};
   const resetView=()=>{setXZoom(1);setPriceYZoom(1);setCharmYZoom(1);setHover(null);followingLiveRef.current=true};
@@ -187,7 +193,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPoints
       <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>PHX<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
       <div className="price-charmander-frame" ref={frameRef} onScroll={event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;if(node.scrollLeft<80)loadEarlier()}} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
         <canvas ref={canvasRef}/>
-        {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{hover!==null&&nqEstimate!==null&&<span className="phoenix-nq-conversion" title={`Estimated NQ conversion: QQQ × 50 ÷ ${Math.max(Number(qqqPointsPer50Nq)||1.235,.0001).toFixed(3)}. Proxy only; not a live CME quote.`}>NQ EST <strong>{nqEstimate.toFixed(2)}</strong></span>}<span>ZOOM <strong>{Math.round(xZoom*100)}%</strong></span></aside>}
+        {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
       </div>
     </div>
     <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>
