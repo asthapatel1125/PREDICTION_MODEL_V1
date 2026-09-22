@@ -37,7 +37,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPoints
   const [size, setSize] = useState({ width: 1200, height: 610 });
   const [scrollOffset,setScrollOffset]=useState(0),[viewportWidth,setViewportWidth]=useState(1200);
   const [hover, setHover] = useState(null);
-  const canvasRef = useRef(null), frameRef = useRef(null),loadingEarlierRef=useRef(false),backfillAnchorRef=useRef(null),followingLiveRef=useRef(true);
+  const canvasRef = useRef(null), frameRef = useRef(null),topScrollRef=useRef(null),bottomScrollRef=useRef(null),scrollSyncRef=useRef(false),loadingEarlierRef=useRef(false),backfillAnchorRef=useRef(null),followingLiveRef=useRef(true);
   const config = RANGE_CONFIG[range];
   useEffect(() => {
     const controller = new AbortController();
@@ -185,15 +185,22 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPoints
   const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;
   const zoomY=event=>{event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),factor=event.deltaY<0?1.12:.89;if(event.clientY-bounds.top<bounds.height/2)setPriceYZoom(value=>clamp(value*factor,.35,12));else setCharmYZoom(value=>clamp(value*factor,.35,12))};
   const resetView=()=>{setXZoom(1);setPriceYZoom(1);setCharmYZoom(1);setHover(null);followingLiveRef.current=true};
+  const syncScroll=(source,targets)=>{if(scrollSyncRef.current)return;scrollSyncRef.current=true;for(const target of targets)if(target&&Math.abs(target.scrollLeft-source.scrollLeft)>.5)target.scrollLeft=source.scrollLeft;requestAnimationFrame(()=>{scrollSyncRef.current=false})};
+  const scrollFromRail=event=>{const source=event.currentTarget,frame=frameRef.current,other=source===topScrollRef.current?bottomScrollRef.current:topScrollRef.current;followingLiveRef.current=false;syncScroll(source,[frame,other])};
+  const scrollFromFrame=event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;syncScroll(node,[topScrollRef.current,bottomScrollRef.current]);if(node.scrollLeft<80)loadEarlier()};
 
   return <section className="price-charmander">
     <header><div><span>AXIOM PRICE {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
     <div className="price-charmander-body">
       <nav className="price-charmander-controls" aria-label={`${phoenixName} time window`}><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
       <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>PHX<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
-      <div className="price-charmander-frame" ref={frameRef} onScroll={event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;if(node.scrollLeft<80)loadEarlier()}} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
-        <canvas ref={canvasRef}/>
-        {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
+      <div className="price-charmander-plot">
+        <div className="price-charmander-scrollbar top" ref={topScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart top scrollbar"><div style={{width:size.width}}/></div>
+        <div className="price-charmander-frame" ref={frameRef} onScroll={scrollFromFrame} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
+          <canvas ref={canvasRef}/>
+          {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
+        </div>
+        <div className="price-charmander-scrollbar bottom" ref={bottomScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart bottom scrollbar"><div style={{width:size.width}}/></div>
       </div>
     </div>
     <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>

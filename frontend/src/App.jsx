@@ -53,7 +53,7 @@ const OVERVIEW_CATEGORIES={
 };
 
 const CHART_SCROLL_VIEWPORTS=[
-  ".price-charmander-frame",".exposure-map-scroll",".zero-gamma-scroll",".qqq-micro-scroll",
+  ".exposure-map-scroll",".zero-gamma-scroll",".qqq-micro-scroll",
   ".zero-gamma-histogram-scroll",".exposure-separation-scroll",".daily-wall-chart-scroll",
   ".dealer-lane-scroll",".hedge-map-plot-scroll",".hedge-plot-viewport",".dealer-flow-viewport",
   ".mpi-chart-scroll",".mpi-plot-viewport",".signed-pressure-viewport",
@@ -805,8 +805,16 @@ function SystemScorecardRow({system,label,calls,overallCalls,state}){
 }
 
 function PhoenixLagTable(){
-  const columns=[["1M","0.3 hr · 0.05 sessions"],["5M","1.5 hr · 0.23 sessions"],["15M","4.5 hr · 0.69 sessions"],["30M","9 hr · 1.38 sessions"],["1H","18 hr · 2.77 sessions"],["4H","72 hr · 11.08 sessions"],["6H","108 hr · 16.62 sessions"]];
-  return <section className="phoenix-lag-strip" aria-label="Phoenix slow-strand lag reference"><header><span>PHOENIX · LAG REFERENCE</span><small>Approximate slowest 30-period strand · 6.5-hour trading sessions</small></header><div className="phoenix-lag-table-wrap"><table><tbody><tr><th>CANDLE SIZE</th>{columns.map(([size])=><td key={size}>{size}</td>)}</tr><tr><th>LAG</th>{columns.map(([size,lag])=><td key={size}>{lag}</td>)}</tr></tbody></table></div></section>;
+  const columns=[
+    {size:"1M",hours:"0.3 hr",sessions:"0 full sessions + 0.3 hr",clock:"~9:48 AM · MORNING"},
+    {size:"5M",hours:"1.5 hr",sessions:"0 full sessions + 1.5 hr",clock:"~11:00 AM · MORNING"},
+    {size:"15M",hours:"4.5 hr",sessions:"0 full sessions + 4.5 hr",clock:"~2:00 PM · AFTER LUNCH"},
+    {size:"30M",hours:"9 hr",sessions:"1 full session + 2.5 hr",clock:"~12:00 PM · MIDDAY"},
+    {size:"1H",hours:"18 hr",sessions:"2 full sessions + 5 hr",clock:"~2:30 PM · AFTERNOON"},
+    {size:"4H",hours:"72 hr",sessions:"11 full sessions + 0.5 hr",clock:"~10:00 AM · MORNING"},
+    {size:"6H",hours:"108 hr",sessions:"16 full sessions + 4 hr",clock:"~1:30 PM · AFTER LUNCH"},
+  ];
+  return <section className="phoenix-lag-strip" aria-label="Phoenix slow-strand lag reference"><header><span>PHOENIX · LAG REFERENCE</span><small>Slowest 30-period strand · session clock assumes a 9:30 AM ET market open</small></header><div className="phoenix-lag-table-wrap"><table><tbody><tr><th>CANDLE SIZE</th>{columns.map(item=><td key={item.size}>{item.size}</td>)}</tr><tr className="phoenix-lag-values"><th>LAG</th>{columns.map(item=><td key={item.size}><b>{item.hours}</b><span>{item.sessions}</span><small>{item.clock}</small></td>)}</tr></tbody></table></div></section>;
 }
 
 function SystemScorecard({attribution,state,symbol}){
