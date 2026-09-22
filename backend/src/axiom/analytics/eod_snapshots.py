@@ -71,14 +71,14 @@ def _empty_svg(width:int,height:int,title:str)->str:
 
 def render_exposure_history_svg(rows:list[dict[str,Any]],map_name:str,start_date:str,end_date:str,
     interval_seconds:int,market_timezone:str="America/New_York")->str:
-    """Render bounded ClickHouse candles without allocating a server-side bitmap."""
+    """Render bounded Supabase candles without allocating a server-side bitmap."""
     if map_name not in {"zero-gamma","zero-delta"}:raise ValueError("Unsupported exposure snapshot map")
     key,label,color=("zero_gamma","ZERO GAMMA","#b56cff") if map_name=="zero-gamma" else ("zero_delta","ZERO DELTA","#62c8ff")
     clean=[]
     for row in rows:
         values={name:_number(row.get(name)) for name in ("open","high","low","close",key)}
         if row.get("timestamp") and all(value is not None for value in values.values()):clean.append({**row,**values})
-    title=f"ClickHouse Historical · QQQ vs {label.title()}"
+    title=f"Supabase Historical · QQQ vs {label.title()}"
     width,height,left,right,top,bottom=1800,980,118,48,162,118
     if not clean:return _empty_svg(width,height,title)
     values=[value for row in clean for value in (row["low"],row["high"],row[key])]
@@ -97,5 +97,5 @@ def render_exposure_history_svg(rows:list[dict[str,Any]],map_name:str,start_date
     for tick in range(tick_count):
         row_index=round(tick*(len(clean)-1)/max(tick_count-1,1));xx=x(row_index);observed=datetime.fromisoformat(str(clean[row_index]["timestamp"]).replace("Z","+00:00")).astimezone(tz);stamp=observed.strftime("%b %d · %I:%M %p").replace(" 0"," ")
         parts.extend([f'<line x1="{xx:.1f}" y1="{top}" x2="{xx:.1f}" y2="{height-bottom}" stroke="#24495e" stroke-dasharray="3 6"/>',f'<text x="{xx:.1f}" y="{height-bottom+34}" text-anchor="middle" fill="#d4e5ee" font-family="monospace" font-size="16" font-weight="700">{escape(stamp)}</text>'])
-    parts.extend([f'<text x="30" y="{top+plot_h/2}" transform="rotate(-90 30 {top+plot_h/2})" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">PRICE · USD</text>',f'<text x="{left+plot_w/2}" y="{height-24}" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">CLICKHOUSE SNAPSHOT · {len(clean)} BOUNDED CANDLES</text>','</svg>'])
+    parts.extend([f'<text x="30" y="{top+plot_h/2}" transform="rotate(-90 30 {top+plot_h/2})" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">PRICE · USD</text>',f'<text x="{left+plot_w/2}" y="{height-24}" text-anchor="middle" fill="#b9ced9" font-family="monospace" font-size="17">SUPABASE SNAPSHOT · {len(clean)} BOUNDED CANDLES</text>','</svg>'])
     return "".join(parts)

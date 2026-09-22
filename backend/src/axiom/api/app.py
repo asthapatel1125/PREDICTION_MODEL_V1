@@ -26,7 +26,6 @@ from axiom.application.pipeline import DecisionPipeline
 from axiom.application.direction_gate import DailyDirectionGate,DirectionGateLockedError
 from axiom.config.schema import PlatformSettings,StrategyConfig
 from axiom.infrastructure.database import SqlAlchemyRepository,create_database
-from axiom.infrastructure.clickhouse import ClickHouseRepository
 
 
 INSTRUMENTS={
@@ -62,7 +61,6 @@ class Container:
     data:ThetaDataV3Client;training:TrainingEngine;live:LiveWallExposureEngine;live_spy:LiveWallExposureEngine|None=None;live_task:asyncio.Task|None=None;live_spy_task:asyncio.Task|None=None;auto_stream_task:asyncio.Task|None=None
     replay_runs:dict[str,dict[str,Any]];replay_tasks:set[asyncio.Task]
     nasdaq_range_atlas:dict[str,Any]|None
-    clickhouse:ClickHouseRepository|None
 
 
 def create_app(settings:PlatformSettings|None=None)->FastAPI:
@@ -73,12 +71,9 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         config_path=Path(cfg.strategy_config_path)
         if not config_path.exists():config_path=Path(__file__).parents[4]/"config"/"strategy.yaml"
         container.config=StrategyConfig.from_yaml(config_path);_,container.repository=await create_database(cfg.database_url)
-        container.clickhouse=None
-        if cfg.clickhouse_host and cfg.clickhouse_password:
-            container.clickhouse=ClickHouseRepository(
-                cfg.clickhouse_host,cfg.clickhouse_port,cfg.clickhouse_database,cfg.clickhouse_user,
-                cfg.clickhouse_password.get_secret_value(),cfg.clickhouse_secure,
-            )
+        # Historical chart reads are intentionally Supabase-only. Keep the
+        # optional ClickHouse client detached so stale Render configuration
+        # cannot add startup, health-check, or request latency.
         container.bus=InMemoryEventBus(cfg.websocket_queue_size)
         api_key=cfg.thetadata_api_key.get_secret_value() if cfg.thetadata_api_key else None
         container.data=ThetaDataV3Client(cfg.thetadata_base_url,cfg.thetadata_timeout_seconds,api_key=api_key,
@@ -134,9 +129,8 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
     @api.get("/health")
     async def health()->dict[str,str]:
         database="connected" if await container.repository.ping() else "disconnected"
-        clickhouse="connected" if container.clickhouse and await container.clickhouse.ping() else "not_configured" if not container.clickhouse else "disconnected"
-        return {"status":"healthy" if database=="connected" and clickhouse!="disconnected" else "degraded",
-            "database":database,"clickhouse":clickhouse,"event_bus":"connected","version":__version__}
+        return {"status":"healthy" if database=="connected" else "degraded",
+            "database":database,"clickhouse":"disabled_supabase_only","event_bus":"connected","version":__version__}
 
     @api.get("/alerts")
     async def alerts(limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0)):return await container.repository.list_alert_views(limit,offset)
@@ -340,34 +334,38 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         allowed={60,300,600,900,1800,3600,7200,10800,14400,18000,21600,86400}
         if interval_seconds not in allowed:
             raise HTTPException(422,"Unsupported candle interval")
-        if not container.clickhouse:
-            raise HTTPException(503,"ClickHouse is not configured")
-        rows=await container.clickhouse.exposure_candles(symbol,days,interval_seconds,min(20000,limit+1),before=_wall_time(before))
+        rows=await container.repository.wall_exposure_candles(symbol,interval_seconds,min(20000,limit+1),
+            before=_wall_time(before),days=days,exchange_tz=cfg.market_timezone)
         has_more=len(rows)>limit
         if has_more:rows=rows[1:]
+        now=datetime.now(timezone.utc)
+        for row in rows:
+            timestamp=row["timestamp"]
+            if isinstance(timestamp,str):timestamp=datetime.fromisoformat(timestamp.replace("Z","+00:00"))
+            row["timestamp"]=timestamp.isoformat()
+            row["is_confirmed"]=timestamp+timedelta(seconds=interval_seconds)<=now
         return {
-            "symbol":symbol.upper(),"market_timezone":cfg.market_timezone,
+            "symbol":symbol.upper(),"provider":"SUPABASE","market_timezone":cfg.market_timezone,
             "interval_seconds":interval_seconds,"days":days,"has_more":has_more,"rows":rows,
         }
 
     @api.get("/walls/exposure-history-range")
     async def wall_exposure_history_range(symbol:str="QQQ"):
-        if not container.clickhouse:raise HTTPException(503,"ClickHouse is not configured")
-        available=await container.clickhouse.exposure_available_range(symbol)
+        available=await container.repository.wall_exposure_available_range(symbol)
         return {"symbol":symbol.upper(),**available}
 
     @api.get("/walls/exposure-history-snapshot/{map_name}")
     async def wall_exposure_history_snapshot(map_name:str,symbol:str="QQQ",from_date:date|None=None,to_date:date|None=None):
         if map_name not in {"zero-gamma","zero-delta"}:raise HTTPException(422,"Unsupported exposure snapshot selection")
-        if not container.clickhouse:raise HTTPException(503,"ClickHouse is not configured")
-        available=await container.clickhouse.exposure_available_range(symbol)
-        if not available.get("first_date") or not available.get("last_date"):raise HTTPException(404,"No ClickHouse exposure history is available")
+        available=await container.repository.wall_exposure_available_range(symbol)
+        if not available.get("first_date") or not available.get("last_date"):raise HTTPException(404,"No Supabase exposure history is available")
         start=from_date or date.fromisoformat(str(available["first_date"]));end=to_date or date.fromisoformat(str(available["last_date"]))
         if end<start:raise HTTPException(422,"The To date must not precede the From date")
         span=(end-start).days+1
         if span>365:raise HTTPException(422,"Historical snapshots are limited to 365 calendar days")
         interval_seconds=60 if span<=5 else 300 if span<=30 else 1800 if span<=180 else 3600
-        rows=await container.clickhouse.exposure_candles(symbol,span,interval_seconds,5_000,start,end)
+        rows=await container.repository.wall_exposure_candles(symbol,interval_seconds,5_000,days=span,
+            start_date=start,end_date=end,exchange_tz=cfg.market_timezone)
         svg=render_exposure_history_svg(rows,map_name,start.isoformat(),end.isoformat(),interval_seconds,cfg.market_timezone)
         filename=f'{symbol.upper()}-{map_name}-{start.isoformat()}-{end.isoformat()}.svg'
         return Response(svg,media_type="image/svg+xml",headers={"Content-Disposition":f'inline; filename="{filename}"',"Cache-Control":"private, max-age=300","X-Candle-Interval-Seconds":str(interval_seconds)})
@@ -383,28 +381,14 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         """
         market_tz=ZoneInfo(cfg.market_timezone)
         day=session_date or datetime.now(market_tz).date()
-        # Supabase supplies the live/recent overlay. Do not scan a year of its
-        # nested wall records when ClickHouse already owns retained history.
-        live_lookback_days=min(max(0,days*2),20)
+        # Supabase is the sole retained-history source for this endpoint.
+        live_lookback_days=min(max(0,days*2),365)
         session_start=datetime.combine(day-timedelta(days=live_lookback_days),time(7,0),tzinfo=market_tz).astimezone(timezone.utc)
         end=datetime.combine(day,time(18,0),tzinfo=market_tz).astimezone(timezone.utc)
         requested_bucket=5 if int(display_bucket_seconds)<=5 else 60
         requested_since=_wall_time(since)
         start=max(session_start,requested_since) if requested_since else session_start
         rows=await container.repository.wall_intelligence_points(symbol,start,end,100_000)
-        # Historical exposure buckets live in ClickHouse; today's live stream
-        # remains authoritative in Supabase.  Merge by timestamp so an overlap
-        # is deterministic and the browser receives one continuous contract.
-        historical=[]
-        if container.clickhouse and not requested_since:
-            try:
-                historical=await container.clickhouse.exposure_history(symbol,days,requested_bucket)
-            except Exception:
-                historical=[]
-        if historical:
-            merged={str(row.get("timestamp")):row for row in historical}
-            merged.update({str(row.get("timestamp")):row for row in rows})
-            rows=sorted(merged.values(),key=lambda row:datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")))
         def observed_at(row:dict[str,Any])->datetime:
             return datetime.fromisoformat(str(row["timestamp"]).replace("Z","+00:00")).astimezone(market_tz)
 

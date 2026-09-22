@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime,timezone
+from datetime import date,datetime,timezone
 from typing import Any
 
 from sqlalchemy import JSON,DateTime,Float,ForeignKey,Integer,String,Text,UniqueConstraint,func,select,text
@@ -351,6 +351,65 @@ class SqlAlchemyRepository:
             "timestamp":row["timestamp"],"symbol":symbol.upper(),"spot":float(row["spot"]),
             "walls":{"ZERO_GAMMA":row["zero_gamma"] or {},"ZERO_DELTA":row["zero_delta"] or {}},
         } for row in rows]))
+
+    async def wall_exposure_candles(self,symbol:str,interval_seconds:int,limit:int=150,
+        before:datetime|None=None,days:int=30,start_date:date|None=None,end_date:date|None=None,
+        exchange_tz:str="America/New_York")->list[dict[str,Any]]:
+        """Aggregate retained Supabase wall rows into exchange-calendar candles.
+
+        Bucketing is performed inside Postgres so multi-hour backfills do not
+        transfer five-second observations to the API process. Converting to
+        exchange-local wall time before flooring preserves DST clock boundaries.
+        """
+        bucket=max(60,min(int(interval_seconds),86_400));row_limit=max(1,min(int(limit),20_000));day_limit=max(1,min(int(days),365))
+        range_filter=""
+        params={"symbol":symbol.upper(),"before":before or datetime.now(timezone.utc),"bucket":bucket,
+            "limit":row_limit,"days":day_limit,"tz":exchange_tz}
+        if start_date and end_date:
+            range_filter="AND (timestamp AT TIME ZONE :tz)::date BETWEEN :start_date AND :end_date"
+            params.update({"start_date":start_date,"end_date":end_date})
+        query=text(f"""
+            WITH selected_days AS (
+                SELECT DISTINCT (timestamp AT TIME ZONE :tz)::date AS day
+                FROM wall_intelligence
+                WHERE symbol=:symbol AND timestamp<:before {range_filter}
+                ORDER BY day DESC LIMIT :days
+            ), raw AS (
+                SELECT timestamp,spot,
+                    NULLIF(payload #>> '{{walls,ZERO_GAMMA,strike}}','')::double precision AS zero_gamma,
+                    NULLIF(payload #>> '{{walls,ZERO_DELTA,strike}}','')::double precision AS zero_delta,
+                    timestamp AT TIME ZONE :tz AS local_timestamp
+                FROM wall_intelligence
+                WHERE symbol=:symbol AND timestamp<:before
+                  AND (timestamp AT TIME ZONE :tz)::date IN (SELECT day FROM selected_days)
+            ), bucketed AS (
+                SELECT *, date_trunc('day',local_timestamp)
+                    + floor(extract(epoch FROM (local_timestamp-date_trunc('day',local_timestamp)))/:bucket)
+                    * make_interval(secs=>:bucket) AS local_bucket
+                FROM raw
+            ), candles AS (
+                SELECT local_bucket AT TIME ZONE :tz AS timestamp,
+                    (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
+                    max(spot) AS high,min(spot) AS low,
+                    (array_agg(spot ORDER BY timestamp DESC))[1] AS close,
+                    (array_agg(zero_gamma ORDER BY timestamp DESC) FILTER (WHERE zero_gamma IS NOT NULL))[1] AS zero_gamma,
+                    (array_agg(zero_delta ORDER BY timestamp DESC) FILTER (WHERE zero_delta IS NOT NULL))[1] AS zero_delta
+                FROM bucketed GROUP BY local_bucket ORDER BY local_bucket DESC LIMIT :limit
+            ) SELECT * FROM candles ORDER BY timestamp
+        """)
+        async with self.sessions() as s:
+            rows=(await s.execute(query,params)).mappings().all()
+        return [{"timestamp":row["timestamp"],"open":float(row["open"]),"high":float(row["high"]),
+            "low":float(row["low"]),"close":float(row["close"]),"volume":0.0,
+            "zero_gamma":float(row["zero_gamma"]) if row["zero_gamma"] is not None else None,
+            "zero_delta":float(row["zero_delta"]) if row["zero_delta"] is not None else None} for row in rows]
+
+    async def wall_exposure_available_range(self,symbol:str)->dict[str,Any]:
+        async with self.sessions() as s:
+            row=(await s.execute(select(func.min(WallIntelligenceRow.timestamp),func.max(WallIntelligenceRow.timestamp))
+                .where(WallIntelligenceRow.symbol==symbol.upper()))).one()
+        return {"first_date":row[0].date().isoformat() if row[0] else None,
+            "last_date":row[1].date().isoformat() if row[1] else None}
 
     async def wall_break_events(self,symbol:str,start:datetime|None=None,end:datetime|None=None,wall_types:list[str]|None=None,tiers:list[str]|None=None,limit:int=1000)->list[dict[str,Any]]:
         async with self.sessions() as s:
