@@ -25,7 +25,7 @@ const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", {
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 const dateKey = timestamp => new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
-export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPointsPer50Nq = 1.235 }) {
+export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Calibration = null, spxCashBasis = 28.4 }) {
   const [range, setRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
   const [xZoom, setXZoom] = useState(1);
@@ -177,9 +177,11 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", qqqPoints
   const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
   const normalizedSymbol=symbol.toUpperCase(),indexEstimate=Number.isFinite(hoveredPrice)
     ?normalizedSymbol==="SPY"
-      ?{label:"S&P 500 EST",value:hoveredPrice*10,title:"Estimated S&P 500 cash-index level: SPY × 10. Proxy only; not a live SPX quote."}
+      ?{label:"S&P 500 EST",value:hoveredPrice*10+spxCashBasis,title:`Estimated S&P 500 cash-index level: SPY × 10 + ${Number(spxCashBasis).toFixed(2)} synchronized cash basis. Not a live SPX quote.`}
       :normalizedSymbol==="QQQ"
-        ?{label:hover===null?"NQ EST":"NAS100 EST",value:hoveredPrice*50/Math.max(Number(qqqPointsPer50Nq)||1.235,.0001),title:`Estimated ${hover===null?"NQ":"NAS100"} level using QQQ × 50 ÷ ${Math.max(Number(qqqPointsPer50Nq)||1.235,.0001).toFixed(3)}. Calibrated proxy only; not a live NDX or NQ quote.`}
+        ?Number.isFinite(Number(nas100Calibration?.slope))&&Math.abs(Number(nas100Calibration.slope))>.000001
+          ?{label:"NAS100 EST",value:(hoveredPrice-Number(nas100Calibration.intercept))/Number(nas100Calibration.slope),title:`Estimated NASDAQ-100 cash level using the ${nas100Calibration.month??"latest"} range-calibrated QQQ affine mapping. Not a live NDX, NAS100 CFD, or NQ quote.`}
+          :null
         :null
     :null;
   const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;

@@ -115,6 +115,10 @@ const FALLBACK_INSTRUMENTS = ["SPY", "QQQ", "NDX", "NQ", "ES", "YM"].map(symbol 
   symbol, available: ["SPY", "QQQ", "NDX"].includes(symbol),
   provider: ["SPY", "QQQ", "NDX"].includes(symbol) ? "ThetaData Options Pro" : "Futures feed required",
 }));
+// The SPY/SPX cash basis is approximately additive between SPY dividend
+// distributions. This reference synchronizes the user's Sep 22, 2026 SPX500
+// screenshot (7,764.90) with the retained SPY tick (773.65).
+const SPX500_SPY_CASH_BASIS=28.4;
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const optionalNumber = (value) => value === null || value === undefined || value === "" ? NaN : number(value, NaN);
 const compactNumber = value => {const numeric=optionalNumber(value);if(!Number.isFinite(numeric))return "—";const absolute=Math.abs(numeric);if(absolute>=1e9)return `${numeric<0?"-":""}${(absolute/1e9).toFixed(2)}B`;if(absolute>=1e6)return `${numeric<0?"-":""}${(absolute/1e6).toFixed(2)}M`;if(absolute>=1e3)return `${numeric<0?"-":""}${(absolute/1e3).toFixed(1)}K`;return numeric.toFixed(3)};
@@ -2029,7 +2033,7 @@ function ExposurePair({symbol,rows,onNeedWindow,className=""}){
   return <div className={`live-symbol-exposure-panels ${className}`} data-symbol={symbol}><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_GAMMA" title={`${symbol} ZERO GAMMA EXPOSURE`} heading={`${symbol} price vs live zero-gamma`} accent="#3296ff" embedded onNeedWindow={onNeedWindow}/><ModernExposureLevelChart symbol={symbol} rows={rows} wallKey="ZERO_DELTA" title={`${symbol} ZERO DELTA EXPOSURE`} heading={`${symbol} price vs live zero-delta`} accent="#f2f5f7" embedded onNeedWindow={onNeedWindow}/></div>;
 }
 
-function LiveSymbolExposurePanels({symbol="SPY",qqqPointsPer50Nq=1.235}){
+function LiveSymbolExposurePanels({symbol="SPY",nas100Calibration=null,spxCashBasis=SPX500_SPY_CASH_BASIS}){
   const [rows,setRows]=useState([]),[requestedLimit,setRequestedLimit]=useState(360);
   const requestWindow=useCallback(seconds=>setRequestedLimit(current=>Math.max(current,Math.min(5000,Math.ceil(seconds/5*1.5)))),[]);
   useEffect(()=>{setRows([]);setRequestedLimit(360)},[symbol]);
@@ -2045,11 +2049,11 @@ function LiveSymbolExposurePanels({symbol="SPY",qqqPointsPer50Nq=1.235}){
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/></>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol} nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/></>;
 }
 
-function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow,qqqPointsPer50Nq=1.235}){
-  return <><PricePhoenixChart rows={rows} symbol={symbol} qqqPointsPer50Nq={qqqPointsPer50Nq}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
+function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow,nas100Calibration=null,spxCashBasis=SPX500_SPY_CASH_BASIS}){
+  return <><PricePhoenixChart rows={rows} symbol={symbol} nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
 }
 
 function ZeroGammaExposureChart(props){
@@ -2614,6 +2618,7 @@ export default function Home() {
   const [directionGate,setDirectionGate]=useState(null),[directionGateBusy,setDirectionGateBusy]=useState(false);const directionGateVersionRef=useRef(0);
   const [instruments,setInstruments]=useState(FALLBACK_INSTRUMENTS);
   const [liveEtfQuotes,setLiveEtfQuotes]=useState({SPY:NaN,QQQ:NaN});
+  const [nas100Calibration,setNas100Calibration]=useState(null);
   const [activeSection,setActiveSection]=useState("system-scorecard"),[clock,setClock]=useState(Date.now()),[sectionMenuOpen,setSectionMenuOpen]=useState(false);
   const sectionMenuRef=useRef(null);
   const [moduleOrder,setModuleOrder]=useState(()=>{try{const saved=JSON.parse(window.localStorage.getItem("axiom-overview-module-order")??"null");return Array.isArray(saved)&&saved.length===DEFAULT_MODULE_ORDER.length&&DEFAULT_MODULE_ORDER.every(id=>saved.includes(id))?saved:DEFAULT_MODULE_ORDER}catch{return DEFAULT_MODULE_ORDER}}),[draggedModule,setDraggedModule]=useState(null),[dragOverModule,setDragOverModule]=useState(null);
@@ -2625,6 +2630,7 @@ export default function Home() {
   const refresh=async(signal)=>{const gateVersion=directionGateVersionRef.current;const [dash,sys]=await Promise.allSettled([fetchDashboard(symbol,signal),fetchSystem(signal)]);if(signal.aborted)return;setApiConnected(sys.status==="fulfilled");if(dash.status==="fulfilled"){setDashboard(current=>mergePausedDashboard(current,dash.value));if(!DYNAMICS_STREAMS_PAUSED||!dynamicsHistoryFrozenRef.current){setChartHistoryState(current=>[...new Map([...current,...(dash.value.history??[])].map(row=>[row.timestamp,row])).values()].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).slice(-5000));dynamicsHistoryFrozenRef.current=true}}if(sys.status==="fulfilled"){setSystem(sys.value);if(gateVersion===directionGateVersionRef.current)setDirectionGate(sys.value.dynamics_direction_gate_details?.mode??sys.value.dynamics_direction_gate??null)}};
   useEffect(()=>{const controller=new AbortController();refresh(controller.signal);const id=window.setInterval(()=>refresh(controller.signal),30000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchConfiguration(controller.signal).then(setConfig).catch(()=>{});return()=>controller.abort()},[]);
+  useEffect(()=>{const controller=new AbortController();fetchNasdaqRangeAtlas("QQQ",controller.signal).then(atlas=>{const levels=atlas?.levels??[],latest=levels.find(level=>level.month===atlas.latest_supplied_month&&level.calibrated)??levels.filter(level=>level.calibrated).at(-1)??null;if(!controller.signal.aborted)setNas100Calibration(latest)}).catch(()=>{if(!controller.signal.aborted)setNas100Calibration(null)});return()=>controller.abort()},[]);
   useEffect(()=>{const controller=new AbortController();const refreshOutcomes=()=>fetchOutcomeAttribution(symbol,controller.signal).then(setAttribution).catch(error=>{if(error.name!=="AbortError")setAttribution({symbol,systems:{},unavailable:true,error:error.message})});refreshOutcomes();const id=window.setInterval(refreshOutcomes,30000);return()=>{controller.abort();clearInterval(id)}},[symbol]);
   useEffect(()=>{const controller=new AbortController();fetchInstruments(controller.signal).then(setInstruments).catch(()=>{});return()=>controller.abort()},[]);
   useEffect(()=>{const controller=new AbortController();Promise.all(["SPY","QQQ"].map(item=>fetchWallSpectrum(item,controller.signal,1).then(result=>[item,optionalNumber(result.rows?.at(-1)?.spot)]).catch(()=>[item,NaN]))).then(entries=>{if(!controller.signal.aborted)setLiveEtfQuotes(current=>({...current,...Object.fromEntries(entries)}))});return()=>controller.abort()},[]);
@@ -2657,7 +2663,7 @@ export default function Home() {
   const dropModule=(event,target)=>{event.preventDefault();const source=draggedModule??event.dataTransfer.getData("text/plain"),position=dragOverModule?.id===target?dragOverModule.position:"before";if(source&&source!==target)setModuleOrder(current=>{const next=current.filter(id=>id!==source),targetIndex=next.indexOf(target),insertAt=Math.max(0,targetIndex+(position==="after"?1:0));next.splice(insertAt,0,source);return next});setDraggedModule(null);setDragOverModule(null)};
   const endModuleDrag=()=>{setDraggedModule(null);setDragOverModule(null)};
   const draggableProps={dragged:draggedModule,dragOver:dragOverModule,onDragStart:startModuleDrag,onDragOver:overModule,onDrop:dropModule,onDragEnd:endModuleDrag};
-  const qqqPointsPer50Nq=Math.max(number(config?.outcome_qqq_points_per_50_nq,1.235),.0001),liveQqq=Number.isFinite(liveEtfQuotes.QQQ)?liveEtfQuotes.QQQ:symbol==="QQQ"?headerQuote:NaN,liveSpy=Number.isFinite(liveEtfQuotes.SPY)?liveEtfQuotes.SPY:symbol==="SPY"?headerQuote:NaN,estimatedNqPrice=Number.isFinite(liveQqq)?liveQqq*50/qqqPointsPer50Nq:NaN,estimatedSpxPrice=Number.isFinite(liveSpy)?liveSpy*10:NaN;
+  const liveQqq=Number.isFinite(liveEtfQuotes.QQQ)?liveEtfQuotes.QQQ:symbol==="QQQ"?headerQuote:NaN,liveSpy=Number.isFinite(liveEtfQuotes.SPY)?liveEtfQuotes.SPY:symbol==="SPY"?headerQuote:NaN,nasSlope=optionalNumber(nas100Calibration?.slope),nasIntercept=optionalNumber(nas100Calibration?.intercept),estimatedNas100Price=Number.isFinite(liveQqq)&&Number.isFinite(nasSlope)&&Math.abs(nasSlope)>.000001?(liveQqq-nasIntercept)/nasSlope:NaN,estimatedSpxPrice=Number.isFinite(liveSpy)?liveSpy*10+SPX500_SPY_CASH_BASIS:NaN;
   return <main className={`workspace focus-${focusTone}`}><header className="topbar">
     <div className="section-launcher" ref={sectionMenuRef}><button type="button" className="section-launcher-trigger" aria-expanded={sectionMenuOpen} aria-haspopup="menu" onClick={()=>setSectionMenuOpen(value=>!value)} title="Open section navigation"><span className="section-launcher-icon">☰</span><span>SECTIONS</span></button>{sectionMenuOpen&&<div className="section-launcher-menu" role="menu">{orderedOverviewSections.map(([label,id],index)=><button type="button" role="menuitem" className={activeSection===id?"active":""} style={{"--section-accent":id==="wall-intelligence"?"#4cc9f0":id==="market-pressure-index"?"#ff5c8a":id.includes("gamma")?"#b56cff":id==="six-greek-dynamics"?"#62c8ff":"#00d084"}} onClick={()=>{jumpTo(id);setSectionMenuOpen(false)}} key={id}><i>{String(index+1).padStart(2,"0")}</i><span>{label}</span></button>)}</div>}</div>
     <div className="brand"><div className="brandmark"><span/><span/><span/></div><div><b>AXIOM</b><small>PRESSURE INTELLIGENCE</small></div></div>
@@ -2666,8 +2672,8 @@ export default function Home() {
       <label className={`status-chip direction-gate-status ${(directionGate||"CHECKING").toLowerCase()} ${directionGateLocked?"locked":""}`} title={directionGateLocked?`Locked until ${directionGateExpiry}`:"Choose once for this session · unlocks at 6 PM Eastern"}><span>REGIME</span><select aria-label="Session trade regime" value={directionGateLocked?directionGate:""} disabled={!apiConnected||directionGateBusy||directionGateLocked} onChange={event=>changeDirectionGate(event.target.value)}><option value="" disabled>{directionGateBusy?"SAVING…":"SELECT"}</option><option value="LONG_ONLY">LONG ONLY</option><option value="SHORT_ONLY">SHORT ONLY</option><option value="NO_TRADE">NO TRADE</option></select>{directionGateLocked&&<small>LOCKED · EOD</small>}</label>
       <span className="status-chip market-clock" title="Current Eastern Time">EST <b>{easternNow}</b></span>
       <span className="status-chip market-quote" title={`Latest persisted ${symbol} underlying price`}>{symbol} <b>{Number.isFinite(headerQuote)?headerQuote.toFixed(2):"—"}</b></span>
-      <span className="status-chip nq-impact" title={`Live-updating QQQ-derived estimate using ${qqqPointsPer50Nq.toFixed(3)} QQQ points per 50 NQ points. Not a CME quote and not tradable.`}><b>NQ EST {Number.isFinite(estimatedNqPrice)?estimatedNqPrice.toFixed(2):"—"}</b></span>
-      <span className="status-chip nq-impact" title="Live-updating SPY-derived S&P 500 estimate using SPY × 10. Not a live SPX quote and not tradable."><b>S&amp;P 500 EST {Number.isFinite(estimatedSpxPrice)?estimatedSpxPrice.toFixed(2):"—"}</b></span>
+      <span className="status-chip nq-impact" title={`Live-updating NASDAQ-100 cash estimate from QQQ using the ${nas100Calibration?.month??"latest available"} range-calibrated affine mapping. This is not a live NDX, NAS100 CFD, or CME NQ quote.`}><b>NAS100 EST {Number.isFinite(estimatedNas100Price)?estimatedNas100Price.toFixed(2):"—"}</b></span>
+      <span className="status-chip nq-impact" title={`Live-updating S&P 500 cash estimate using SPY × 10 plus the synchronized ${SPX500_SPY_CASH_BASIS.toFixed(2)} cash basis. This is not a live SPX or SPX500 CFD quote.`}><b>S&amp;P 500 EST {Number.isFinite(estimatedSpxPrice)?estimatedSpxPrice.toFixed(2):"—"}</b></span>
       <span className={`status-chip ${apiConnected?"is-good":"is-bad"}`}>API <b>{apiConnected?"ONLINE":"OFFLINE"}</b></span>
       <span className={`status-chip ${engine.running?"is-good":"is-idle"}`}>ENGINE <b>{engine.running?"ON":"IDLE"}</b></span>
       <span className={`status-chip ${dataFresh?"is-good":dataDelayed?"is-bad":"is-idle"}`}>DATA <b>{dataFresh?`${stateAge}s`:dataDelayed?"STALE":"IDLE"}</b></span>
@@ -2679,8 +2685,8 @@ export default function Home() {
     <PhoenixLagTable/>
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
-    <LiveSymbolExposurePanels symbol="SPY" qqqPointsPer50Nq={qqqPointsPer50Nq}/>
-    <LivePhoenixExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow} qqqPointsPer50Nq={qqqPointsPer50Nq}/>
+    <LiveSymbolExposurePanels symbol="SPY" nas100Calibration={nas100Calibration} spxCashBasis={SPX500_SPY_CASH_BASIS}/>
+    <LivePhoenixExposurePanels symbol={symbol} rows={sharedWallRows} requestWindow={requestSharedWallWindow} nas100Calibration={nas100Calibration} spxCashBasis={SPX500_SPY_CASH_BASIS}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
     <section className="independent-module-stack" aria-label="Independent market analytics">
