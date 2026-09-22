@@ -168,7 +168,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
         if(currentValueIndex>=line.length)continue;
         context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
         context.globalAlpha = showingOptions && !optionsOverlay?.valid[current] ? .35 : .75;
-        context.lineWidth = showingOptions?1.5:1.35;
+        context.lineWidth = 1.35;
         context.beginPath(); context.moveTo(xAt(Date.parse(calculated.timestamps[prior])), charmY(line[priorValueIndex])); context.lineTo(xAt(Date.parse(calculated.timestamps[current])), charmY(line[currentValueIndex])); context.stroke();
       }
     });
