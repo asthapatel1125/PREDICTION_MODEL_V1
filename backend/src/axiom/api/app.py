@@ -285,7 +285,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         include_options=symbol.upper() in {"QQQ","SPY"}
         minute_rows=await container.repository.wall_price_minute_points(symbol,start,end,include_options=include_options)
         rows=get_candles(minute_rows,safe_bucket,num_candles,exchange_tz=cfg.market_timezone,now=datetime.now(timezone.utc),
-            last_fields=("options_at","dex_signed_raw","dex_imbalance_pct","gex_imbalance_pct") if include_options else ())
+            last_fields=("options_at","dex_signed_raw","gamma_exposure_raw","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct") if include_options else ())
         has_more=bool(minute_rows)
         cadence=60
         warmup_bars=90

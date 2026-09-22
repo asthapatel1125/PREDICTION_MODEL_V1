@@ -158,7 +158,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     const visibleCharmValues=displaySeries.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),autoCharmLimit=Math.max(.12,...visibleCharmValues),charmLimit=Math.min(1,autoCharmLimit*1.12)/charmYZoom;
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
     if(showingOptions){
-      context.strokeStyle="#8b9aa4";context.lineWidth=1.15;context.globalAlpha=.55;context.beginPath();
+      context.strokeStyle="#aeb9c2";context.lineWidth=2.25;context.globalAlpha=.8;context.beginPath();
       visibleIndexes.forEach((index,point)=>{const raw=calculated.series.reduce((sum,line)=>sum+line[index],0)/calculated.series.length,xx=xAt(Date.parse(calculated.timestamps[index])),yy=charmY(raw);if(point)context.lineTo(xx,yy);else context.moveTo(xx,yy)});
       context.stroke();context.globalAlpha=1;
     }

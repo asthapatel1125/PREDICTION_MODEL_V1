@@ -47,13 +47,18 @@ def test_duplicate_timestamp_and_trade_id_volume_is_not_double_counted():
 
 def test_options_fields_keep_last_snapshot_in_calendar_candle():
     rows = [
-        {"timestamp": "2026-09-17T14:01:00Z", "spot": 700, "dex": 1_000_000,
+        {"timestamp": "2026-09-17T14:01:00Z", "spot": 700, "dex_signed_raw": 1_000_000,
+         "gamma_exposure_raw": 2_000_000, "charm_exposure_raw": 30, "speed_exposure_raw": 4,
          "gex_imbalance_pct": 10, "options_at": "2026-09-17T14:01:15Z"},
-        {"timestamp": "2026-09-17T14:03:00Z", "spot": 701, "dex": 1_100_000,
+        {"timestamp": "2026-09-17T14:03:00Z", "spot": 701, "dex_signed_raw": 1_100_000,
+         "gamma_exposure_raw": 2_100_000, "charm_exposure_raw": 35, "speed_exposure_raw": 5,
          "gex_imbalance_pct": 20, "options_at": "2026-09-17T14:03:20Z"},
     ]
     [candle] = get_candles(rows, "5M", now=datetime(2026, 9, 18, tzinfo=timezone.utc),
-        last_fields=("dex", "gex_imbalance_pct", "options_at"))
-    assert candle["dex"] == 1_100_000
+        last_fields=("dex_signed_raw", "gamma_exposure_raw", "charm_exposure_raw", "speed_exposure_raw", "gex_imbalance_pct", "options_at"))
+    assert candle["dex_signed_raw"] == 1_100_000
+    assert candle["gamma_exposure_raw"] == 2_100_000
+    assert candle["charm_exposure_raw"] == 35
+    assert candle["speed_exposure_raw"] == 5
     assert candle["gex_imbalance_pct"] == 20
     assert candle["options_at"].startswith("2026-09-17T14:03:20")

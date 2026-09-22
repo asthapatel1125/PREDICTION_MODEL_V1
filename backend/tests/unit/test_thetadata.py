@@ -63,6 +63,9 @@ def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
     assert metrics["put_wall_strike"]==716
     assert metrics["put_wall_gex"]<0
     assert metrics["dex_signed_raw"]==pytest.approx(metrics["positive_dex"]+metrics["negative_dex"])
+    assert metrics["gex_raw"]==pytest.approx(metrics["positive_gex"]+metrics["negative_gex"])
+    assert metrics["charm_exposure_raw"]==pytest.approx((1200-1100+300)*.1*100*722)
+    assert metrics["speed_exposure_raw"]==pytest.approx((1200-1100+300)*.1*100*722)
     assert metrics["call_wall_method"]=="WEIGHTED_EXPOSURE_CLUSTER_V2"
     assert metrics["put_wall_method"]=="WEIGHTED_EXPOSURE_CLUSTER_V2"
     assert 0<metrics["call_wall_score"]<=100

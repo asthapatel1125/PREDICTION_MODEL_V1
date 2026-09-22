@@ -317,6 +317,9 @@ class SqlAlchemyRepository:
         """Return compact one-minute OHLC inputs for calendar candle aggregation."""
         option_select="""\n                   max(timestamp) AS options_at,
                    (array_agg(NULLIF(payload ->> 'dex_signed_raw','')::double precision ORDER BY timestamp DESC))[1] AS dex_signed_raw,
+                   (array_agg(NULLIF(payload ->> 'gamma_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS gamma_exposure_raw,
+                   (array_agg(NULLIF(payload ->> 'charm_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS charm_exposure_raw,
+                   (array_agg(NULLIF(payload ->> 'speed_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS speed_exposure_raw,
                    (array_agg(NULLIF(payload ->> 'dex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS dex_imbalance_pct,
                    (array_agg(NULLIF(payload ->> 'gex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS gex_imbalance_pct""" if include_options else ""
         query=text(f"""
@@ -337,6 +340,9 @@ class SqlAlchemyRepository:
             "low":float(row["low"]),"close":float(row["close"]),"spot":float(row["spot"]),"volume":0.0,
             **({"options_at":row["options_at"],
                 "dex_signed_raw":float(row["dex_signed_raw"]) if row["dex_signed_raw"] is not None else None,
+                "gamma_exposure_raw":float(row["gamma_exposure_raw"]) if row["gamma_exposure_raw"] is not None else None,
+                "charm_exposure_raw":float(row["charm_exposure_raw"]) if row["charm_exposure_raw"] is not None else None,
+                "speed_exposure_raw":float(row["speed_exposure_raw"]) if row["speed_exposure_raw"] is not None else None,
                 "dex_imbalance_pct":float(row["dex_imbalance_pct"]) if row["dex_imbalance_pct"] is not None else None,
                 "gex_imbalance_pct":float(row["gex_imbalance_pct"]) if row["gex_imbalance_pct"] is not None else None} if include_options else {})}
             for row in rows]

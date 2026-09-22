@@ -63,8 +63,17 @@ export const fetchDynamicsHistory = (symbol, signal) =>
   request(`/api/v1/dynamics-history/${encodeURIComponent(symbol)}?limit=150000&display_bucket_seconds=60`, { signal });
 export const fetchWallSpectrum = (symbol, signal, limit = null, end = null) =>
   request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}${limit ? `&limit=${encodeURIComponent(limit)}` : ""}${end ? `&end=${encodeURIComponent(end)}` : ""}`, { signal });
-export const fetchWallPriceSeries = (symbol, windowSeconds, bucketSeconds, signal, before = null) =>
-  request(`/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}&bucket_seconds=${encodeURIComponent(bucketSeconds)}${before ? `&before=${encodeURIComponent(before)}` : ""}`, { signal });
+const wallPriceSeriesRequests = new Map();
+export const fetchWallPriceSeries = (symbol, windowSeconds, bucketSeconds, signal, before = null) => {
+  const path = `/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}&bucket_seconds=${encodeURIComponent(bucketSeconds)}${before ? `&before=${encodeURIComponent(before)}` : ""}`;
+  if (!wallPriceSeriesRequests.has(path)) {
+    wallPriceSeriesRequests.set(path, request(path).finally(() => wallPriceSeriesRequests.delete(path)));
+  }
+  return wallPriceSeriesRequests.get(path).then(result => {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    return result;
+  });
+};
 const wallExposurePageRequests=new Map();
 export function fetchWallExposurePoints(symbol,signal,before=null,limit=5000){
   const key=`${String(symbol).toUpperCase()}:${before||"latest"}:${limit}`;

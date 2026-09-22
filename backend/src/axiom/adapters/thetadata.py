@@ -702,6 +702,11 @@ class ThetaDataV3Client(MarketDataPort):
             cls._right_sign(row.get("right")) * cls._number(row.get(greek)) * cls._number(row.get("open_interest")) * 100.0 * spot ** power * scale
             for row in contracts
         )
+        # These are signed OI proxies, not observed dealer positions. Delta
+        # already carries the put sign; the other Greeks use the same
+        # call-minus-put convention as the existing GEX calculation.
+        charm_exposure = exposure("charm", 1)
+        speed_exposure = exposure("speed", 1)
         return {
             "observed_epoch": observed_at.timestamp(),
             "spot": spot,
@@ -730,6 +735,8 @@ class ThetaDataV3Client(MarketDataPort):
             "positive_dex": positive_dex,
             "negative_dex": negative_dex,
             "dex_signed_raw": positive_dex + negative_dex,
+            "charm_exposure_raw": charm_exposure,
+            "speed_exposure_raw": speed_exposure,
             "call_volume": call_volume,
             "put_volume": put_volume,
             "is_estimated_oi_delayed": 1.0,
