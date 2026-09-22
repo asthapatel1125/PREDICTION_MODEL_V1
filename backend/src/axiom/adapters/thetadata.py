@@ -729,6 +729,7 @@ class ThetaDataV3Client(MarketDataPort):
             "negative_gex": negative_gex,
             "positive_dex": positive_dex,
             "negative_dex": negative_dex,
+            "dex_signed_raw": positive_dex + negative_dex,
             "call_volume": call_volume,
             "put_volume": put_volume,
             "is_estimated_oi_delayed": 1.0,

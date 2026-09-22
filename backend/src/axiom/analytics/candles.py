@@ -81,6 +81,7 @@ def get_candles(
     exchange_tz: str = "America/New_York",
     input_tz: str = "UTC",
     now: datetime | pd.Timestamp | None = None,
+    last_fields: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     """Aggregate trade/minute rows into exchange-calendar OHLCV candles.
 
@@ -121,13 +122,14 @@ def get_candles(
     pieces: list[pd.DataFrame] = []
     for (_, session), group in frame.groupby(["local_day", "session"], sort=True):
         indexed = group.set_index("local_timestamp").sort_index()
+        aggregations = {
+            "open": ("open", "first"), "high": ("high", "max"),
+            "low": ("low", "min"), "close": ("close", "last"),
+            "volume": ("volume", "sum"), "spot": ("spot", _trimmed_mean),
+        }
+        aggregations.update({field: (field, "last") for field in last_fields if field in indexed.columns})
         candles = indexed.resample(rule, origin="start_day", label="left", closed="left").agg(
-            open=("open", "first"),
-            high=("high", "max"),
-            low=("low", "min"),
-            close=("close", "last"),
-            volume=("volume", "sum"),
-            spot=("spot", _trimmed_mean),
+            **aggregations
         ).dropna(subset=["open", "high", "low", "close"])
         if not candles.empty:
             candles["session"] = session
@@ -150,7 +152,7 @@ def get_candles(
         elif session == "RTH":
             naive_end = min(naive_end, local_start.normalize().tz_localize(None) + timedelta(hours=16))
         local_end = _localize_boundary(naive_end, exchange_tz)
-        output.append({
+        candle = {
             "timestamp": local_start.tz_convert("UTC").isoformat(),
             "open": float(row["open"]),
             "high": float(row["high"]),
@@ -160,5 +162,10 @@ def get_candles(
             "spot": float(row["spot"]),
             "session": session,
             "is_confirmed": bool(current >= local_end),
-        })
+        }
+        for field in last_fields:
+            if field in row and pd.notna(row[field]):
+                value = row[field]
+                candle[field] = pd.Timestamp(value).isoformat() if field == "options_at" else float(value)
+        output.append(candle)
     return output

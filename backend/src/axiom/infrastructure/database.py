@@ -313,15 +313,19 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement)).all()
             return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
 
-    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime)->list[dict[str,Any]]:
+    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime,include_options:bool=False)->list[dict[str,Any]]:
         """Return compact one-minute OHLC inputs for calendar candle aggregation."""
-        query=text("""
+        option_select="""\n                   max(timestamp) AS options_at,
+                   (array_agg(NULLIF(payload ->> 'dex_signed_raw','')::double precision ORDER BY timestamp DESC))[1] AS dex_signed_raw,
+                   (array_agg(NULLIF(payload ->> 'dex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS dex_imbalance_pct,
+                   (array_agg(NULLIF(payload ->> 'gex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS gex_imbalance_pct""" if include_options else ""
+        query=text(f"""
             SELECT date_trunc('minute', timestamp) AS timestamp,
                    (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
                    max(spot) AS high,
                    min(spot) AS low,
                    (array_agg(spot ORDER BY timestamp DESC))[1] AS close,
-                   avg(spot) AS spot
+                   avg(spot) AS spot{(','+option_select) if include_options else ''}
             FROM wall_intelligence
             WHERE symbol=:symbol AND timestamp>=:start AND timestamp<:end
             GROUP BY date_trunc('minute', timestamp)
@@ -330,7 +334,11 @@ class SqlAlchemyRepository:
         async with self.sessions() as s:
             rows=(await s.execute(query,{"symbol":symbol.upper(),"start":start,"end":end})).mappings().all()
         return [{"timestamp":row["timestamp"],"open":float(row["open"]),"high":float(row["high"]),
-            "low":float(row["low"]),"close":float(row["close"]),"spot":float(row["spot"]),"volume":0.0}
+            "low":float(row["low"]),"close":float(row["close"]),"spot":float(row["spot"]),"volume":0.0,
+            **({"options_at":row["options_at"],
+                "dex_signed_raw":float(row["dex_signed_raw"]) if row["dex_signed_raw"] is not None else None,
+                "dex_imbalance_pct":float(row["dex_imbalance_pct"]) if row["dex_imbalance_pct"] is not None else None,
+                "gex_imbalance_pct":float(row["gex_imbalance_pct"]) if row["gex_imbalance_pct"] is not None else None} if include_options else {})}
             for row in rows]
 
     async def wall_exposure_points(self,symbol:str,limit:int=5_000,before:datetime|None=None)->list[dict[str,Any]]:

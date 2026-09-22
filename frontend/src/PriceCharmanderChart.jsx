@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchWallPriceSeries } from "./api";
 import { averagePriceBars, charmPhase, computePricePhoenix } from "./priceCharmander";
+import { computeOptionsPhoenix, nextCandleOutlook } from "./optionsPhoenix";
 
 const RANGE_CONFIG = {
   "1M": { seconds: 9000, bucket: 60 },
@@ -25,7 +26,7 @@ const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", {
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 const dateKey = timestamp => new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
-export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Calibration = null, spxCashBasis = 28.4 }) {
+export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant = "price", nas100Calibration = null, spxCashBasis = 28.4 }) {
   const [range, setRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
   const [xZoom, setXZoom] = useState(1);
@@ -33,12 +34,14 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
   const [charmYZoom, setCharmYZoom] = useState(1);
   const [historyRows, setHistoryRows] = useState([]);
   const [historyState, setHistoryState] = useState("loading");
+  const [forecastNow,setForecastNow]=useState(Date.now());
   const [hasEarlier,setHasEarlier]=useState(true);
   const [size, setSize] = useState({ width: 1200, height: 610 });
   const [scrollOffset,setScrollOffset]=useState(0),[viewportWidth,setViewportWidth]=useState(1200);
   const [hover, setHover] = useState(null);
   const canvasRef = useRef(null), frameRef = useRef(null),topScrollRef=useRef(null),bottomScrollRef=useRef(null),scrollSyncRef=useRef(false),loadingEarlierRef=useRef(false),backfillAnchorRef=useRef(null),followingLiveRef=useRef(true);
   const config = RANGE_CONFIG[range];
+  useEffect(()=>{const timer=window.setInterval(()=>setForecastNow(Date.now()),15000);return()=>window.clearInterval(timer)},[]);
   useEffect(() => {
     const controller = new AbortController();
     setHistoryRows([]);setHasEarlier(true);
@@ -50,11 +53,15 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
   }, [config.bucket, config.seconds, symbol]);
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
-    const merged = [...historyRows, ...rows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
+    const merged = [...historyRows, ...rows.map(row=>({...row,options_at:row.options_at??row.timestamp}))].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
     return averagePriceBars(merged, config.bucket,Number.MAX_SAFE_INTEGER);
   }, [config.bucket, historyRows, rows, symbol]);
   const calculated = useMemo(() => computePricePhoenix(analysisBars), [analysisBars]);
-  const phoenixName="PHOENIX",sourceLabel="TRIMMED BUCKET AVERAGE",watermarkLabel=symbol.toUpperCase();
+  const optionsOverlay=useMemo(()=>variant==="options"&&["QQQ","SPY"].includes(symbol.toUpperCase())?computeOptionsPhoenix(calculated,analysisBars,config.bucket):null,[analysisBars,calculated,config.bucket,symbol,variant]);
+  const showingOptions=Boolean(optionsOverlay);
+  const displaySeries=showingOptions?optionsOverlay.series:calculated.series;
+  const outlook=useMemo(()=>optionsOverlay?nextCandleOutlook(analysisBars,optionsOverlay,config.bucket,{now:forecastNow}):null,[analysisBars,optionsOverlay,config.bucket,forecastNow]);
+  const phoenixName="PHOENIX",sourceLabel=showingOptions?"PRICE + OPTIONS EXPOSURE":"TRIMMED BUCKET AVERAGE",watermarkLabel=showingOptions?`${symbol.toUpperCase()}, OP`:symbol.toUpperCase();
   const visibleIndexes = useMemo(() => {
     const indexes = calculated.timestamps.map((_, index) => index);
     const windowed = indexes, stride = Math.max(1, Math.ceil(windowed.length / 900));
@@ -97,10 +104,10 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
   useEffect(()=>{const frame=frameRef.current;if(!frame||!followingLiveRef.current||backfillAnchorRef.current)return;requestAnimationFrame(()=>{if(frameRef.current)frameRef.current.scrollLeft=frameRef.current.scrollWidth-frameRef.current.clientWidth})},[analysisBars.length,range]);
 
   const latestIndex = visibleIndexes.at(-1);
-  const breadth = latestIndex == null ? 0 : calculated.series.reduce((sum, line) => sum + (line[latestIndex] > 0 ? 1 : 0), 0) / calculated.series.length;
+  const breadth = latestIndex == null ? 0 : displaySeries.reduce((sum, line) => sum + (line[latestIndex] > 0 ? 1 : 0), 0) / displaySeries.length;
   const previousIndex = visibleIndexes.at(-2) ?? latestIndex;
-  const consensus = latestIndex == null ? 0 : calculated.series.reduce((sum, line) => sum + line[latestIndex], 0) / calculated.series.length;
-  const previousConsensus = previousIndex == null ? consensus : calculated.series.reduce((sum, line) => sum + line[previousIndex], 0) / calculated.series.length;
+  const consensus = latestIndex == null ? 0 : displaySeries.reduce((sum, line) => sum + line[latestIndex], 0) / displaySeries.length;
+  const previousConsensus = previousIndex == null ? consensus : displaySeries.reduce((sum, line) => sum + line[previousIndex], 0) / displaySeries.length;
   const state = Math.abs(consensus) < .08 ? "NEUTRAL" : consensus > 0 ? "BULLISH" : "BEARISH";
   const phase = charmPhase(consensus, previousConsensus);
 
@@ -148,15 +155,20 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
       const openY = priceY(candle.open), closeY = priceY(candle.close);
       context.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1.5, Math.abs(closeY - openY)));
     });
-    const visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),autoCharmLimit=Math.max(.12,...visibleCharmValues),charmLimit=Math.min(1,autoCharmLimit*1.12)/charmYZoom;
+    const visibleCharmValues=displaySeries.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),autoCharmLimit=Math.max(.12,...visibleCharmValues),charmLimit=Math.min(1,autoCharmLimit*1.12)/charmYZoom;
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
-    calculated.series.forEach((line, lineIndex) => {
+    if(showingOptions){
+      context.strokeStyle="#8b9aa4";context.lineWidth=1.15;context.globalAlpha=.55;context.beginPath();
+      visibleIndexes.forEach((index,point)=>{const raw=calculated.series.reduce((sum,line)=>sum+line[index],0)/calculated.series.length,xx=xAt(Date.parse(calculated.timestamps[index])),yy=charmY(raw);if(point)context.lineTo(xx,yy);else context.moveTo(xx,yy)});
+      context.stroke();context.globalAlpha=1;
+    }
+    displaySeries.forEach((line, lineIndex) => {
       for (let point = 1; point < visibleIndexes.length; point += 1) {
         const prior = visibleIndexes[point - 1], current = visibleIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
         if(currentValueIndex>=line.length)continue;
         context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
-        context.globalAlpha = .68;
-        context.lineWidth = 1.35;
+        context.globalAlpha = showingOptions && !optionsOverlay?.valid[current] ? .35 : .75;
+        context.lineWidth = showingOptions?1.5:1.35;
         context.beginPath(); context.moveTo(xAt(Date.parse(calculated.timestamps[prior])), charmY(line[priorValueIndex])); context.lineTo(xAt(Date.parse(calculated.timestamps[current])), charmY(line[currentValueIndex])); context.stroke();
       }
     });
@@ -165,7 +177,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, charmYZoom, hover, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, size, symbol, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
+  }, [calculated, candles, charmYZoom, displaySeries, hover, optionsOverlay, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, showingOptions, size, symbol, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
@@ -174,7 +186,8 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
   };
   const hoveredIndex = hover == null ? latestIndex : visibleIndexes[hover];
   const hoveredPrice = hoveredIndex == null ? null : calculated.prices[hoveredIndex];
-  const hoveredConsensus = hoveredIndex == null ? null : calculated.series.reduce((sum, line) => sum + line[hoveredIndex], 0) / calculated.series.length;
+  const hoveredConsensus = hoveredIndex == null ? null : displaySeries.reduce((sum, line) => sum + line[hoveredIndex], 0) / displaySeries.length;
+  const hoveredOptions=hoveredIndex==null||!optionsOverlay?.valid[hoveredIndex]?null:{gex:optionsOverlay.gexBalance[hoveredIndex],dex:optionsOverlay.dexImpulse[hoveredIndex],source:optionsOverlay.dexSource[hoveredIndex]};
   const normalizedSymbol=symbol.toUpperCase(),indexEstimate=Number.isFinite(hoveredPrice)
     ?normalizedSymbol==="SPY"
       ?{label:"S&P 500 EST",value:hoveredPrice*10+spxCashBasis,title:`Estimated S&P 500 cash-index level: SPY × 10 + ${Number(spxCashBasis).toFixed(2)} synchronized cash basis. Not a live SPX quote.`}
@@ -184,7 +197,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
           :null
         :null
     :null;
-  const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=calculated.series.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;
+  const priceValues=scaleCandles.flatMap(candle=>[candle.low,candle.high]),axisLow=priceValues.length?Math.min(...priceValues):0,axisHigh=priceValues.length?Math.max(...priceValues):1,axisRawSpan=Math.max(axisHigh-axisLow,.08),axisCenter=(axisHigh+axisLow)/2,axisSpan=axisRawSpan/priceYZoom,axisPadding=Math.max(axisSpan*.12,.02),priceScaleLow=axisCenter-axisSpan/2-axisPadding,priceScaleHigh=axisCenter+axisSpan/2+axisPadding,visibleCharmValues=displaySeries.flatMap(line=>scaleCharmIndexes.map(index=>Math.abs(line[index]||0))),charmLimit=Math.min(1,Math.max(.12,...visibleCharmValues)*1.12)/charmYZoom;
   const zoomY=event=>{event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),factor=event.deltaY<0?1.12:.89;if(event.clientY-bounds.top<bounds.height/2)setPriceYZoom(value=>clamp(value*factor,.35,12));else setCharmYZoom(value=>clamp(value*factor,.35,12))};
   const resetView=()=>{setXZoom(1);setPriceYZoom(1);setCharmYZoom(1);setHover(null);followingLiveRef.current=true};
   const syncScroll=(source,targets)=>{if(scrollSyncRef.current)return;scrollSyncRef.current=true;for(const target of targets)if(target&&Math.abs(target.scrollLeft-source.scrollLeft)>.5)target.scrollLeft=source.scrollLeft;requestAnimationFrame(()=>{scrollSyncRef.current=false})};
@@ -192,7 +205,8 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
   const scrollFromFrame=event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;syncScroll(node,[topScrollRef.current,bottomScrollRef.current]);if(node.scrollLeft<80)loadEarlier()};
 
   return <section className="price-charmander">
-    <header><div><span>AXIOM PRICE {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · READY` : `WARMING ${warmupBars}/90`}</small></div></header>
+    <header><div><span>AXIOM PRICE {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · ${showingOptions?"OPTIONS FAN":"PRICE FAN"}` : `WARMING ${warmupBars}/90`}</small></div></header>
+    {optionsOverlay&&<div className="price-charmander-options-head"><span>OPTIONS-ADJUSTED FAN · GEX + DEX</span><div className="price-charmander-outlook" aria-live="polite">{outlook?.status==="READY"?<><b className={outlook.direction.toLowerCase().replace(" ","-")}>NEXT {range} {symbol.toUpperCase()} · {outlook.direction}</b><span>FROM <strong>{outlook.base.toFixed(2)}</strong></span><span>HIST MEDIAN <strong>{outlook.median.toFixed(2)}</strong></span><span>HIST 20–80% <strong>{outlook.low.toFixed(2)}–{outlook.high.toFixed(2)}</strong></span><span>HIST UP {outlook.upCount}/{outlook.samples}</span></>:<span>NEXT {range} {symbol.toUpperCase()} · {outlook?.reason??"Waiting for options"}</span>}</div></div>}
     <div className="price-charmander-body">
       <nav className="price-charmander-controls" aria-label={`${phoenixName} time window`}><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
       <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>PHX<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
@@ -200,11 +214,11 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", nas100Cal
         <div className="price-charmander-scrollbar top" ref={topScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart top scrollbar"><div style={{width:size.width}}/></div>
         <div className="price-charmander-frame" ref={frameRef} onScroll={scrollFromFrame} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
           <canvas ref={canvasRef}/>
-          {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>CONSENSUS <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
+          {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>{showingOptions?"ADJ PHX":"PHX"} <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{showingOptions&&hoveredOptions&&<span>GEX BAL <strong>{(hoveredOptions.gex*100).toFixed(0)}%</strong></span>}{showingOptions&&hoveredOptions&&<span>DEX {hoveredOptions.source==="BALANCE"?"BAL Δ":"Δ"} <strong>{hoveredOptions.dex>=0?"+":""}{hoveredOptions.dex.toFixed(2)}</strong></span>}{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
         </div>
         <div className="price-charmander-scrollbar bottom" ref={bottomScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart bottom scrollbar"><div style={{width:size.width}}/></div>
       </div>
     </div>
-    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span><small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>
+    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span>{showingOptions&&<span><i className="baseline"/>PRICE-ONLY BASELINE</span>}<small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>
   </section>;
 }

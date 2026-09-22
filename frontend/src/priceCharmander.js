@@ -5,7 +5,7 @@ export const PHOENIX_PERIODS = Array.from({ length: 29 }, (_, index) => index + 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
 export function averagePriceBars(rows = [], bucketSeconds = 300, numCandles = 150) {
-  return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York"});
+  return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York",lastFields:["options_at","dex_signed_raw","dex_imbalance_pct","gex_imbalance_pct"]});
 }
 
 // Price-only Axiom Phoenix. A three-point median rejects isolated bad

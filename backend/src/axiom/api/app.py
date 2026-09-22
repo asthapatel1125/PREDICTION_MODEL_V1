@@ -282,12 +282,14 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         safe_window=max(safe_bucket*int(num_candles),int(window_seconds))
         end=_wall_time(before) or datetime.now(timezone.utc)
         start=end-timedelta(seconds=safe_window+safe_bucket)
-        minute_rows=await container.repository.wall_price_minute_points(symbol,start,end)
-        rows=get_candles(minute_rows,safe_bucket,num_candles,exchange_tz=cfg.market_timezone,now=datetime.now(timezone.utc))
+        include_options=symbol.upper() in {"QQQ","SPY"}
+        minute_rows=await container.repository.wall_price_minute_points(symbol,start,end,include_options=include_options)
+        rows=get_candles(minute_rows,safe_bucket,num_candles,exchange_tz=cfg.market_timezone,now=datetime.now(timezone.utc),
+            last_fields=("options_at","dex_signed_raw","dex_imbalance_pct","gex_imbalance_pct") if include_options else ())
         has_more=bool(minute_rows)
         cadence=60
         warmup_bars=90
-        return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"RETAINED_UNDERLYING_PRICE_ONLY",
+        return {"symbol":symbol.upper(),"provider":"THETADATA_OPTIONS_PRO","feed":"RETAINED_PRICE_AND_OPTIONS_EXPOSURE",
             "cadence_seconds":cadence,"bucket_seconds":safe_bucket,"num_candles":num_candles,"warmup_bars":warmup_bars,"has_more":has_more,"rows":rows}
 
     @api.get("/walls/exposure-points")

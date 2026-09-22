@@ -2049,11 +2049,11 @@ function LiveSymbolExposurePanels({symbol="SPY",nas100Calibration=null,spxCashBa
     const timer=window.setInterval(()=>load(360),60000);
     return()=>{controller.abort();window.clearInterval(timer);unsubscribe()};
   },[symbol,requestedLimit]);
-  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol} nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/></>;
+  return <><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className={symbol.toLowerCase()}/><PricePhoenixChart rows={rows} symbol={symbol} nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/>{symbol.toUpperCase()==="SPY"&&<PricePhoenixChart rows={rows} symbol={symbol} variant="options" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/>}</>;
 }
 
 function LivePhoenixExposurePanels({symbol="QQQ",rows=[],requestWindow,nas100Calibration=null,spxCashBasis=SPX500_SPY_CASH_BASIS}){
-  return <><PricePhoenixChart rows={rows} symbol={symbol} nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/><ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
+  return <><PricePhoenixChart rows={rows} symbol={symbol} nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/>{symbol.toUpperCase()==="QQQ"&&<PricePhoenixChart rows={rows} symbol={symbol} variant="options" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/>}<ExposurePair symbol={symbol} rows={rows} onNeedWindow={requestWindow} className="qqq"/></>;
 }
 
 function ZeroGammaExposureChart(props){
