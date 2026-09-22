@@ -51,6 +51,36 @@ const OVERVIEW_CATEGORIES={
   "greek-orders":"MARKET DATA",
   "live-alerts":"AUDIT",
 };
+
+const CHART_SCROLL_VIEWPORTS=[
+  ".price-charmander-frame",".exposure-map-scroll",".zero-gamma-scroll",".qqq-micro-scroll",
+  ".zero-gamma-histogram-scroll",".exposure-separation-scroll",".daily-wall-chart-scroll",
+  ".dealer-lane-scroll",".hedge-map-plot-scroll",".hedge-plot-viewport",".dealer-flow-viewport",
+  ".mpi-chart-scroll",".mpi-plot-viewport",".signed-pressure-viewport",
+  ".magnitude-signed-viewport",".cvd-price-viewport",
+].join(",");
+
+function useChartTopScrollbars(){
+  useEffect(()=>{
+    const attached=new Map();
+    const detach=target=>{const item=attached.get(target);if(!item)return;item.resize.disconnect();target.removeEventListener("scroll",item.fromTarget);item.bar.removeEventListener("scroll",item.fromBar);item.bar.remove();attached.delete(target)};
+    const attach=target=>{
+      if(attached.has(target)||target.closest(".axiom-chart-top-scroll"))return;
+      const bar=document.createElement("div"),track=document.createElement("div");
+      bar.className="axiom-chart-top-scroll";bar.setAttribute("aria-label","Chart history scrollbar at top");bar.append(track);target.prepend(bar);
+      let syncing=false;
+      const measure=()=>{const width=Math.max(target.clientWidth,target.scrollWidth);track.style.width=`${width}px`;bar.style.width=`${Math.max(0,target.clientWidth)}px`;bar.hidden=target.scrollWidth<=target.clientWidth+2;bar.scrollLeft=target.scrollLeft};
+      const fromBar=()=>{if(syncing)return;syncing=true;target.scrollLeft=bar.scrollLeft;requestAnimationFrame(()=>{syncing=false})};
+      const fromTarget=()=>{if(syncing)return;syncing=true;bar.scrollLeft=target.scrollLeft;requestAnimationFrame(()=>{syncing=false})};
+      const stop=event=>event.stopPropagation();bar.addEventListener("pointerdown",stop);bar.addEventListener("pointermove",stop);bar.addEventListener("scroll",fromBar,{passive:true});target.addEventListener("scroll",fromTarget,{passive:true});
+      const resize=new ResizeObserver(measure);resize.observe(target);for(const child of target.children)if(child!==bar)resize.observe(child);
+      attached.set(target,{bar,resize,fromBar,fromTarget});requestAnimationFrame(measure);
+    };
+    const scan=()=>{document.querySelectorAll(CHART_SCROLL_VIEWPORTS).forEach(attach);for(const target of attached.keys())if(!target.isConnected)detach(target)};
+    scan();const observer=new MutationObserver(scan);observer.observe(document.body,{childList:true,subtree:true});
+    return()=>{observer.disconnect();for(const target of [...attached.keys()])detach(target)};
+  },[]);
+}
 const GREEKS = ["gamma", "vanna", "charm", "vomma", "veta", "speed", "zomma", "color", "ultima"];
 const CHART_INTERVALS = [
   ["5s", 5], ["15s", 15], ["1m", 60], ["3m", 180], ["5m", 300],
@@ -775,8 +805,8 @@ function SystemScorecardRow({system,label,calls,overallCalls,state}){
 }
 
 function PhoenixLagTable(){
-  const columns=[["1M","0.3 hr (0.01 day)"],["5M","1.5 hr (0.06 day)"],["15M","4.5 hr (0.19 day)"],["30M","9 hr (0.38 day)"],["1H","18 hr (0.75 day)"],["4H","72 hr (3 days)"],["6H","108 hr (4.5 days)"]];
-  return <section className="phoenix-lag-strip" aria-label="Phoenix slow-strand lag reference"><header><span>PHOENIX · LAG REFERENCE</span><small>Approximate slowest 30-period strand</small></header><div className="phoenix-lag-table-wrap"><table><tbody><tr><th>CANDLE SIZE</th>{columns.map(([size])=><td key={size}>{size}</td>)}</tr><tr><th>LAG</th>{columns.map(([size,lag])=><td key={size}>{lag}</td>)}</tr></tbody></table></div></section>;
+  const columns=[["1M","0.3 hr · 0.05 sessions"],["5M","1.5 hr · 0.23 sessions"],["15M","4.5 hr · 0.69 sessions"],["30M","9 hr · 1.38 sessions"],["1H","18 hr · 2.77 sessions"],["4H","72 hr · 11.08 sessions"],["6H","108 hr · 16.62 sessions"]];
+  return <section className="phoenix-lag-strip" aria-label="Phoenix slow-strand lag reference"><header><span>PHOENIX · LAG REFERENCE</span><small>Approximate slowest 30-period strand · 6.5-hour trading sessions</small></header><div className="phoenix-lag-table-wrap"><table><tbody><tr><th>CANDLE SIZE</th>{columns.map(([size])=><td key={size}>{size}</td>)}</tr><tr><th>LAG</th>{columns.map(([size,lag])=><td key={size}>{lag}</td>)}</tr></tbody></table></div></section>;
 }
 
 function SystemScorecard({attribution,state,symbol}){
@@ -2567,6 +2597,7 @@ function WallStrengthDashboard({symbol,latest={}}){
 }
 
 export default function Home() {
+  useChartTopScrollbars();
   const [view,setView]=useState("Overview"), [symbol,setSymbol]=useState("QQQ"), [resolution,setResolution]=useState(5);
   const [dashboard,setDashboard]=useState({history:[],alerts:[],engine:{},performance:{}}), [system,setSystem]=useState(null), [config,setConfig]=useState(null);
   const [chartHistory,setChartHistoryState]=useState([]),dynamicsHistoryFrozenRef=useRef(false);
