@@ -34,7 +34,7 @@ export default function GreekExposureChart({ symbol = "QQQ", rows = [] }) {
     return averagePriceBars(merged, seconds, Number.MAX_SAFE_INTEGER);
   }, [history, rows, seconds, symbol]);
   const indexed = useMemo(() => indexGreekExposures(bars), [bars]);
-  const width = Math.max(viewportWidth, bars.length * 13 + 100), height = 330, left = 56, right = 18, top = 28, bottom = 44;
+  const width = Math.max(viewportWidth, bars.length * 13 + 100), height = 520, left = 56, right = 18, top = 28, bottom = 48;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const x = index => left + index * plotWidth / Math.max(1, bars.length - 1);
   const y = value => top + (100 - value) * plotHeight / 200;
@@ -101,8 +101,10 @@ export default function GreekExposureChart({ symbol = "QQQ", rows = [] }) {
   }, [bars.length, timeframe, width]);
 
   return <section className="greek-exposure-chart" aria-label={`${symbol} four-Greek exposure index`}>
+    <nav className="greek-exposure-time-rail" aria-label={`${symbol} exposure candle size`}><b>TIME</b>{Object.keys(TIMEFRAMES).map(label => <button type="button" key={label} className={timeframe === label ? "active" : ""} aria-pressed={timeframe === label} onClick={() => setTimeframe(label)}>{label}</button>)}</nav>
+    <div className="greek-exposure-panel">
     <header><div><span>{symbol} · OPTIONS EXPOSURE INDEX</span><h3>Delta · Gamma · Charm · Speed</h3></div><small>OI-BASED PROXY · NOT OBSERVED DEALER INVENTORY</small></header>
-    <div className="greek-exposure-toolbar"><nav aria-label="Exposure candle size">{Object.entries(TIMEFRAMES).map(([label]) => <button type="button" key={label} className={timeframe === label ? "active" : ""} onClick={() => setTimeframe(label)}>{label}</button>)}</nav><span>{complete < 10 ? `WARMING · ${complete}/10 CONFIRMED FOUR-GREEK CANDLES` : `${complete} CONFIRMED FOUR-GREEK CANDLES`}</span></div>
+    <div className="greek-exposure-toolbar"><span>{complete < 10 ? `WARMING · ${complete}/10 CONFIRMED FOUR-GREEK CANDLES` : `${complete} CONFIRMED FOUR-GREEK CANDLES`}</span></div>
     <div className="greek-exposure-legend">{EXPOSURE_LINES.map(line => <span key={line.key}><i style={{ background: line.color }}/>{line.key.toUpperCase()}</span>)}</div>
     <div className="greek-exposure-top-scroll" ref={topRef} onScroll={event => sync(event.currentTarget)} aria-label="Exposure graph top scrollbar"><div style={{ width }}/></div>
     <div className="greek-exposure-viewport" ref={plotRef} onScroll={event => { const node = event.currentTarget; sync(node); if (primedRef.current) { followRef.current = node.scrollLeft >= node.scrollWidth - node.clientWidth - 20; if (node.scrollLeft < 60) loadEarlier(); } }} onPointerMove={event => {
@@ -120,5 +122,6 @@ export default function GreekExposureChart({ symbol = "QQQ", rows = [] }) {
     <div className="greek-exposure-bottom-scroll" ref={bottomRef} onScroll={event => sync(event.currentTarget)} aria-label="Exposure graph bottom scrollbar"><div style={{ width }}/></div>
     <div className="greek-exposure-readout"><strong>{selected ? `${axisTime(selected.timestamp)} ET · ${symbol} ${Number(selected.close).toFixed(2)}` : loadState === "loading" ? "LOADING EXPOSURES" : "WAITING FOR OPTIONS SNAPSHOTS"}</strong>{EXPOSURE_LINES.map(line => <span key={line.key} style={{ color: line.color }} title={line.unit}>{line.key.toUpperCase()} <b>{indexed[line.key][selectedIndex] == null ? "—" : `${indexed[line.key][selectedIndex] > 0 ? "+" : ""}${indexed[line.key][selectedIndex].toFixed(0)}`}</b><small>RAW {rawLabel(selected?.[line.field])}</small></span>)}</div>
     <footer>Each line is independently scaled to its prior 150 completed candles (90th-percentile absolute exposure; 10-candle minimum). Zero and sign are preserved. Older snapshots without Charm/Speed exposure cannot be reconstructed here. No price prediction or dealer-position claim.</footer>
+    </div>
   </section>;
 }
