@@ -78,21 +78,22 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   }, [calculated.timestamps]);
   const visibleStartAt = Date.parse(calculated.timestamps[visibleIndexes[0]] || ""), visibleEndAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)] || "");
   const candles = useMemo(() => analysisBars.filter(bar => bar.at >= visibleStartAt && bar.at <= visibleEndAt), [analysisBars, visibleEndAt, visibleStartAt]);
-  const firstDataAt=Date.parse(calculated.timestamps[0]||""),lastDataAt=Date.parse(calculated.timestamps.at(-1)||""),dataSpan=Math.max(1,lastDataAt-firstDataAt),plotPixelWidth=Math.max(1,size.width-88),visiblePixelStart=clamp(scrollOffset-68,0,plotPixelWidth),visiblePixelEnd=clamp(scrollOffset+Math.max(viewportWidth,1)-68,visiblePixelStart+1,plotPixelWidth),viewStartAt=firstDataAt+visiblePixelStart/plotPixelWidth*dataSpan,viewEndAt=firstDataAt+visiblePixelEnd/plotPixelWidth*dataSpan;
-  const scaleCandles=useMemo(()=>{const selected=candles.filter(bar=>bar.at>=viewStartAt&&bar.at<=viewEndAt);return selected.length?selected:candles},[candles,viewEndAt,viewStartAt]);
-  const scaleCharmIndexes=useMemo(()=>visibleIndexes.filter(index=>{const at=Date.parse(calculated.timestamps[index]);return at>=viewStartAt&&at<=viewEndAt}),[calculated.timestamps,viewEndAt,viewStartAt,visibleIndexes]);
+  const timestampIndexes=useMemo(()=>new Map(calculated.timestamps.map((timestamp,index)=>[Date.parse(timestamp),index])),[calculated.timestamps]);
+  const plotPixelWidth=Math.max(1,size.width-88),lastCandleIndex=Math.max(1,calculated.timestamps.length-1),visiblePixelStart=clamp(scrollOffset-68,0,plotPixelWidth),visiblePixelEnd=clamp(scrollOffset+Math.max(viewportWidth,1)-68,visiblePixelStart+1,plotPixelWidth),viewStartIndex=visiblePixelStart/plotPixelWidth*lastCandleIndex,viewEndIndex=visiblePixelEnd/plotPixelWidth*lastCandleIndex;
+  const scaleCandles=useMemo(()=>{const selected=candles.filter(bar=>{const index=timestampIndexes.get(bar.at);return index!=null&&index>=viewStartIndex&&index<=viewEndIndex});return selected.length?selected:candles},[candles,timestampIndexes,viewEndIndex,viewStartIndex]);
+  const scaleCharmIndexes=useMemo(()=>visibleIndexes.filter(index=>index>=viewStartIndex&&index<=viewEndIndex),[viewEndIndex,viewStartIndex,visibleIndexes]);
   const warmupBars = valueKind?calculated.valid.filter(Boolean).length:analysisBars.length;
   const warmupReady = warmupBars >= 90;
 
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return undefined;
-    const measure = () => {const viewport=Math.max(620,frame.clientWidth),expectedBars=Math.max(1,config.seconds/config.bucket),contentWidth=Math.min(30000,Math.max(viewport,analysisBars.length*(viewport/expectedBars)*xZoom));setViewportWidth(viewport);setSize({width:contentWidth,height:Math.max(460,frame.clientHeight||520)})};
+    const measure = () => {const viewport=Math.max(620,frame.clientWidth),contentWidth=Math.min(30000,Math.max(viewport,analysisBars.length*12*xZoom));setViewportWidth(viewport);setSize({width:contentWidth,height:Math.max(460,frame.clientHeight||520)})};
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(frame);
     return () => observer.disconnect();
-  }, [analysisBars.length,config.bucket,config.seconds,xZoom]);
+  }, [analysisBars.length,xZoom]);
   useEffect(() => {
     const frame=frameRef.current;
     if(!frame)return undefined;
@@ -106,7 +107,29 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     frame.addEventListener("wheel",zoom,{passive:false});
     return()=>frame.removeEventListener("wheel",zoom);
   },[]);
-  const loadEarlier=async()=>{if(loadingEarlierRef.current||!hasEarlier||!historyRows.length)return;const frame=frameRef.current;loadingEarlierRef.current=true;if(frame)backfillAnchorRef.current={width:frame.scrollWidth,left:frame.scrollLeft};try{const before=historyRows[0].timestamp,result=levelKind?await fetchWallExposureCandles(symbol,config.bucket,150,undefined,before):await fetchWallPriceSeries(symbol,config.seconds,config.bucket,undefined,before,Boolean(exposureKind)),incoming=levelKind?levelRows(result.rows||[]):result.rows||[];setHistoryRows(current=>[...new Map([...incoming,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));if(result.has_more===false||!incoming.length)setHasEarlier(false)}finally{loadingEarlierRef.current=false}};
+  const loadEarlier=async()=>{
+    if(loadingEarlierRef.current||!hasEarlier||!historyRows.length)return;
+    const frame=frameRef.current,before=historyRows[0].timestamp;
+    loadingEarlierRef.current=true;
+    if(frame)backfillAnchorRef.current={width:frame.scrollWidth,left:frame.scrollLeft};
+    try{
+      let result=levelKind?await fetchWallExposureCandles(symbol,config.bucket,150,undefined,before):await fetchWallPriceSeries(symbol,config.seconds,config.bucket,undefined,before,Boolean(exposureKind));
+      let incoming=levelKind?levelRows(result.rows||[]):result.rows||[];
+      let older=incoming.filter(row=>Date.parse(row.timestamp)<Date.parse(before));
+      // A calendar window can land entirely in a weekend or market closure.
+      // Search farther back before concluding there is no stored history.
+      if(!older.length&&!levelKind){
+        result=await fetchWallPriceSeries(symbol,Math.max(config.seconds,7*86400),config.bucket,undefined,before,Boolean(exposureKind));
+        incoming=result.rows||[];
+        older=incoming.filter(row=>Date.parse(row.timestamp)<Date.parse(before));
+      }
+      if(older.length)setHistoryRows(current=>[...new Map([...older,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));
+      else backfillAnchorRef.current=null;
+      if(result.has_more===false||!older.length)setHasEarlier(false);
+    }catch{backfillAnchorRef.current=null}
+    finally{loadingEarlierRef.current=false}
+  };
+  useEffect(()=>{if(historyState==="ready"&&hasEarlier&&analysisBars.length*12*xZoom<=viewportWidth+120)void loadEarlier()},[analysisBars.length,hasEarlier,historyState,viewportWidth,xZoom]);
   useEffect(()=>{const frame=frameRef.current,anchor=backfillAnchorRef.current;if(!frame||!anchor)return;requestAnimationFrame(()=>{const node=frameRef.current;if(!node)return;node.scrollLeft=anchor.left+Math.max(0,node.scrollWidth-anchor.width);backfillAnchorRef.current=null})},[size.width]);
   useEffect(()=>{const frame=frameRef.current;if(!frame||!followingLiveRef.current||backfillAnchorRef.current)return;requestAnimationFrame(()=>{if(frameRef.current)frameRef.current.scrollLeft=frameRef.current.scrollWidth-frameRef.current.clientWidth})},[analysisBars.length,range]);
 
@@ -129,8 +152,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     context.clearRect(0, 0, width, height);
     context.fillStyle="#000";context.fillRect(0,0,width,height);
     const left=68,right=20,top0=58,axisSpace=43,gap=0,panelHeight=Math.max(150,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
-    const firstAt = Date.parse(calculated.timestamps[visibleIndexes[0]]), lastAt = Date.parse(calculated.timestamps[visibleIndexes.at(-1)]), timeSpan = Math.max(1, lastAt - firstAt);
-    const xAt = at => left + (at - firstAt) / timeSpan * plotWidth;
+    const xAt = at => left + (timestampIndexes.get(at)??0) / lastCandleIndex * plotWidth;
     context.fillStyle = "#000"; context.fillRect(left, top0, plotWidth, bottom1 - top0);
     const watermarkX=clamp(scrollOffset+Math.max(viewportWidth,1)/2,left,width-right);
     context.fillStyle="rgba(168,176,184,.13)";context.font="300 72px sans-serif";context.textAlign="center";context.textBaseline="middle";context.fillText(watermarkLabel,watermarkX,(top0+bottom1)/2);context.textBaseline="alphabetic";
@@ -154,7 +176,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     const prices = scaleCandles.flatMap(candle => [candle.low, candle.high]);
     const low = Math.min(...prices), high = Math.max(...prices),rawSpan=Math.max(high-low,.08),center=(high+low)/2,span=rawSpan/priceYZoom,padding=Math.max(span*.12,.02),priceLow=center-span/2-padding,priceHigh=center+span/2+padding;
     const priceY = price => top1 - (price - priceLow) / Math.max(priceHigh - priceLow, .01) * (top1 - top0);
-    const candleWidth = Math.max(2, Math.min(9, plotWidth / Math.max(candles.length, 1) * .58));
+    const candleWidth = Math.max(2, Math.min(9, plotWidth / Math.max(lastCandleIndex, 1) * .58));
     candles.forEach(candle => {
       const x = xAt(candle.at), rising = candle.close >= candle.open;
       context.strokeStyle = rising ? "#00d084" : "#ff4f69"; context.fillStyle = context.strokeStyle;
@@ -184,7 +206,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, charmYZoom, displaySeries, hover, optionsOverlay, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, showingOptions, size, symbol, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
+  }, [calculated, candles, charmYZoom, displaySeries, hover, lastCandleIndex, optionsOverlay, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, showingOptions, size, symbol, timestampIndexes, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
