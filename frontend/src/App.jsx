@@ -2044,7 +2044,7 @@ function SymbolChartSection({symbol,rows,onNeedWindow,nas100Calibration,spxCashB
   return <details className={`symbol-chart-section ${symbol.toLowerCase()}`} onToggle={event=>setOpen(event.currentTarget.open)}><summary><span>{symbol}</span><strong>{symbol} chart collection</strong><small>6 PRICE + LEVEL GRAPHS · OPTIONS PRO GREEK INDEX AT END</small><b aria-hidden="true">{open?"−":"+"}</b></summary>{open&&<div className="symbol-chart-list">{entries.map(([code,title,chart],index)=><section className="symbol-chart-entry" key={code}><header><b>{String(index+1).padStart(2,"0")}</b><h3>{title}</h3></header>{chart}</section>)}<details className="symbol-chart-other" onToggle={event=>setShowExposureFans(event.currentTarget.open)}><summary>Existing GEX / DEX exposure Phoenix fans <b>{showExposureFans?"−":"+"}</b></summary>{showExposureFans&&<div><PricePhoenixChart rows={rows} symbol={symbol} variant="gex" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/><PricePhoenixChart rows={rows} symbol={symbol} variant="dex" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/></div>}</details><section className="symbol-chart-index"><GreekIndexBuilder symbol={symbol} rows={rows}/></section></div>}</details>;
 }
 
-function LiveSymbolExposurePanels({symbol="SPY",nas100Calibration=null,spxCashBasis=SPX500_SPY_CASH_BASIS}){
+function LiveSymbolExposurePanels({symbol="QQQ",nas100Calibration=null,spxCashBasis=SPX500_SPY_CASH_BASIS}){
   const [rows,setRows]=useState([]),[requestedLimit,setRequestedLimit]=useState(360);
   const requestWindow=useCallback(seconds=>setRequestedLimit(current=>Math.max(current,Math.min(5000,Math.ceil(seconds/5*1.5)))),[]);
   useEffect(()=>{setRows([]);setRequestedLimit(360)},[symbol]);
@@ -2692,7 +2692,6 @@ export default function Home() {
     <PhoenixLagTable/>
     <SystemScorecard attribution={attribution} state={state} symbol={symbol}/>
     <FocusView state={state} symbol={symbol} engine={engine} decision={focusDecision} lastQualifiedAlert={lastQualifiedAlert} clock={clock} attribution={attribution} history={visualHistory}/>
-    <LiveSymbolExposurePanels symbol="SPY" nas100Calibration={nas100Calibration} spxCashBasis={SPX500_SPY_CASH_BASIS}/>
     <LiveSymbolExposurePanels symbol="QQQ" nas100Calibration={nas100Calibration} spxCashBasis={SPX500_SPY_CASH_BASIS}/>
     <div className="reorderable-overview" aria-label="Draggable Overview modules">
     <DraggableOverviewModule id="wall-intelligence" index={moduleOrder.indexOf("wall-intelligence")} {...draggableProps}><OverviewDisclosure id="wall-intelligence" title="Wall Intelligence · Market Structure" description="Independent estimated OI × Greek wall spectrum and fixed DealerFlow observer"><ZoneIntelligenceFixed symbol={symbol} spectrum={sharedWallRows} requestWindow={requestSharedWallWindow}/></OverviewDisclosure></DraggableOverviewModule>
