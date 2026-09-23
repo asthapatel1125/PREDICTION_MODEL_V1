@@ -64,8 +64,8 @@ export const fetchDynamicsHistory = (symbol, signal) =>
 export const fetchWallSpectrum = (symbol, signal, limit = null, end = null) =>
   request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}${limit ? `&limit=${encodeURIComponent(limit)}` : ""}${end ? `&end=${encodeURIComponent(end)}` : ""}`, { signal });
 const wallPriceSeriesRequests = new Map();
-export const fetchWallPriceSeries = (symbol, windowSeconds, bucketSeconds, signal, before = null) => {
-  const path = `/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}&bucket_seconds=${encodeURIComponent(bucketSeconds)}${before ? `&before=${encodeURIComponent(before)}` : ""}`;
+export const fetchWallPriceSeries = (symbol, windowSeconds, bucketSeconds, signal, before = null, exposureAverages = false) => {
+  const path = `/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}&bucket_seconds=${encodeURIComponent(bucketSeconds)}${before ? `&before=${encodeURIComponent(before)}` : ""}${exposureAverages ? "&exposure_averages=true" : ""}`;
   if (!wallPriceSeriesRequests.has(path)) {
     wallPriceSeriesRequests.set(path, request(path).finally(() => wallPriceSeriesRequests.delete(path)));
   }

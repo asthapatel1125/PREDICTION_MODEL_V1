@@ -81,6 +81,23 @@ Render cannot reach a Terminal running on your laptop through localhost. For
 production, use an always-on private/restricted Terminal host and configure its
 HTTPS `/v3` URL on Render.
 
+## Four-Greek exposure history
+
+To populate the SPY and QQQ four-Greek exposure charts for today and the four
+preceding weekdays, run this on a host that can reach both Supabase and the
+licensed ThetaData historical API:
+
+```powershell
+$env:PYTHONPATH='backend/src'
+.\.venv\Scripts\python.exe -m axiom.jobs.backfill_greek_exposure --sessions 5
+```
+
+Use `--sessions 1` for today only, or `--day YYYY-MM-DD` to end on an older
+exchange-local date. The job joins archived 1-minute Greeks with that day's
+reported open interest and upserts separate Supabase history rows. It refuses
+to fill missing open interest with zero. The exposure charts page backward
+through the stored rows; no ClickHouse data is used.
+
 ## 4. Render backend
 
 Create a Blueprint using `render.yaml` and enter:

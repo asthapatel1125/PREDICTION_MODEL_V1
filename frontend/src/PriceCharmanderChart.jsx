@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchWallPriceSeries } from "./api";
-import { averagePriceBars, charmPhase, computePricePhoenix } from "./priceCharmander";
+import { fetchWallExposureCandles, fetchWallPriceSeries } from "./api";
+import { averageExposureBars, averagePriceBars, charmPhase, computePricePhoenix, levelPriceBars } from "./priceCharmander";
 import { computeOptionsPhoenix, nextCandleOutlook } from "./optionsPhoenix";
+import { computeExposurePhoenix, computeLevelPhoenix, EXPOSURE_PHOENIX_FIELDS, LEVEL_PHOENIX_FIELDS } from "./exposurePhoenix";
 
 const RANGE_CONFIG = {
   "1M": { seconds: 9000, bucket: 60 },
@@ -25,6 +26,7 @@ const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, v
 const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 const dateKey = timestamp => new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+const levelRows = rows => rows.map(row => ({...row,spot:row.close,zero_gamma_level:row.zero_gamma,zero_delta_level:row.zero_delta}));
 
 export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant = "price", nas100Calibration = null, spxCashBasis = 28.4 }) {
   const [range, setRange] = useState("5M");
@@ -41,27 +43,32 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   const [hover, setHover] = useState(null);
   const canvasRef = useRef(null), frameRef = useRef(null),topScrollRef=useRef(null),bottomScrollRef=useRef(null),scrollSyncRef=useRef(false),loadingEarlierRef=useRef(false),backfillAnchorRef=useRef(null),followingLiveRef=useRef(true);
   const config = RANGE_CONFIG[range];
+  const exposureKind=EXPOSURE_PHOENIX_FIELDS[variant]?variant:null;
+  const levelKind=LEVEL_PHOENIX_FIELDS[variant]?variant:null;
+  const valueKind=exposureKind||levelKind;
   useEffect(()=>{const timer=window.setInterval(()=>setForecastNow(Date.now()),15000);return()=>window.clearInterval(timer)},[]);
   useEffect(() => {
     const controller = new AbortController();
     setHistoryRows([]);setHasEarlier(true);
     setHistoryState("loading");
-    fetchWallPriceSeries(symbol, config.seconds, config.bucket, controller.signal)
-      .then(result => { setHistoryRows(result.rows || []);setHasEarlier(result.has_more!==false); setHistoryState("ready"); })
+    const request=levelKind?fetchWallExposureCandles(symbol,config.bucket,150,controller.signal):fetchWallPriceSeries(symbol, config.seconds, config.bucket, controller.signal,null,Boolean(exposureKind));
+    request.then(result => { setHistoryRows(levelKind?levelRows(result.rows||[]):result.rows||[]);setHasEarlier(result.has_more!==false); setHistoryState("ready"); })
       .catch(error => { if (error.name !== "AbortError") { setHistoryRows([]); setHistoryState("live-only"); } });
     return () => controller.abort();
-  }, [config.bucket, config.seconds, symbol]);
+  }, [config.bucket, config.seconds, exposureKind, levelKind, symbol]);
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
-    const merged = [...historyRows, ...rows.map(row=>({...row,options_at:row.options_at??row.timestamp}))].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
-    return averagePriceBars(merged, config.bucket,Number.MAX_SAFE_INTEGER);
-  }, [config.bucket, historyRows, rows, symbol]);
-  const calculated = useMemo(() => computePricePhoenix(analysisBars), [analysisBars]);
+    const liveRows=rows.map(row=>({...row,options_at:row.options_at??row.timestamp,
+      zero_gamma_level:row.walls?.ZERO_GAMMA?.strike,zero_delta_level:row.walls?.ZERO_DELTA?.strike}));
+    const merged = [...historyRows, ...liveRows].filter(row => !row?.symbol || String(row.symbol).toUpperCase() === normalized);
+    return levelKind?levelPriceBars(merged,config.bucket,Number.MAX_SAFE_INTEGER):exposureKind?averageExposureBars(merged,config.bucket,Number.MAX_SAFE_INTEGER):averagePriceBars(merged, config.bucket,Number.MAX_SAFE_INTEGER);
+  }, [config.bucket, exposureKind, historyRows, levelKind, rows, symbol]);
+  const calculated = useMemo(() => levelKind?computeLevelPhoenix(analysisBars,levelKind):exposureKind?computeExposurePhoenix(analysisBars,exposureKind):computePricePhoenix(analysisBars), [analysisBars,exposureKind,levelKind]);
   const optionsOverlay=useMemo(()=>variant==="options"&&["QQQ","SPY"].includes(symbol.toUpperCase())?computeOptionsPhoenix(calculated,analysisBars,config.bucket):null,[analysisBars,calculated,config.bucket,symbol,variant]);
   const showingOptions=Boolean(optionsOverlay);
   const displaySeries=showingOptions?optionsOverlay.series:calculated.series;
   const outlook=useMemo(()=>optionsOverlay?nextCandleOutlook(analysisBars,optionsOverlay,config.bucket,{now:forecastNow}):null,[analysisBars,optionsOverlay,config.bucket,forecastNow]);
-  const phoenixName="PHOENIX",sourceLabel=showingOptions?"PRICE + OPTIONS EXPOSURE":"TRIMMED BUCKET AVERAGE",watermarkLabel=showingOptions?`${symbol.toUpperCase()}, OP`:symbol.toUpperCase();
+  const phoenixName="PHOENIX",sourceLabel=levelKind?`ZERO ${levelKind==="zg"?"GAMMA":"DELTA"} LEVEL SLOPES`:exposureKind?`AVERAGED ${exposureKind.toUpperCase()} EXPOSURE SLOPES`:showingOptions?"PRICE + OPTIONS EXPOSURE":"TRIMMED BUCKET AVERAGE",watermarkLabel=valueKind?`${symbol.toUpperCase()}, ${valueKind.toUpperCase()}`:showingOptions?`${symbol.toUpperCase()}, OP`:symbol.toUpperCase();
   const visibleIndexes = useMemo(() => {
     const indexes = calculated.timestamps.map((_, index) => index);
     const windowed = indexes, stride = Math.max(1, Math.ceil(windowed.length / 900));
@@ -74,7 +81,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   const firstDataAt=Date.parse(calculated.timestamps[0]||""),lastDataAt=Date.parse(calculated.timestamps.at(-1)||""),dataSpan=Math.max(1,lastDataAt-firstDataAt),plotPixelWidth=Math.max(1,size.width-88),visiblePixelStart=clamp(scrollOffset-68,0,plotPixelWidth),visiblePixelEnd=clamp(scrollOffset+Math.max(viewportWidth,1)-68,visiblePixelStart+1,plotPixelWidth),viewStartAt=firstDataAt+visiblePixelStart/plotPixelWidth*dataSpan,viewEndAt=firstDataAt+visiblePixelEnd/plotPixelWidth*dataSpan;
   const scaleCandles=useMemo(()=>{const selected=candles.filter(bar=>bar.at>=viewStartAt&&bar.at<=viewEndAt);return selected.length?selected:candles},[candles,viewEndAt,viewStartAt]);
   const scaleCharmIndexes=useMemo(()=>visibleIndexes.filter(index=>{const at=Date.parse(calculated.timestamps[index]);return at>=viewStartAt&&at<=viewEndAt}),[calculated.timestamps,viewEndAt,viewStartAt,visibleIndexes]);
-  const warmupBars = analysisBars.length;
+  const warmupBars = valueKind?calculated.valid.filter(Boolean).length:analysisBars.length;
   const warmupReady = warmupBars >= 90;
 
   useEffect(() => {
@@ -99,7 +106,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     frame.addEventListener("wheel",zoom,{passive:false});
     return()=>frame.removeEventListener("wheel",zoom);
   },[]);
-  const loadEarlier=async()=>{if(loadingEarlierRef.current||!hasEarlier||!historyRows.length)return;const frame=frameRef.current;loadingEarlierRef.current=true;if(frame)backfillAnchorRef.current={width:frame.scrollWidth,left:frame.scrollLeft};try{const before=historyRows[0].timestamp,result=await fetchWallPriceSeries(symbol,config.seconds,config.bucket,undefined,before),incoming=result.rows||[];setHistoryRows(current=>[...new Map([...incoming,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));if(result.has_more===false||!incoming.length)setHasEarlier(false)}finally{loadingEarlierRef.current=false}};
+  const loadEarlier=async()=>{if(loadingEarlierRef.current||!hasEarlier||!historyRows.length)return;const frame=frameRef.current;loadingEarlierRef.current=true;if(frame)backfillAnchorRef.current={width:frame.scrollWidth,left:frame.scrollLeft};try{const before=historyRows[0].timestamp,result=levelKind?await fetchWallExposureCandles(symbol,config.bucket,150,undefined,before):await fetchWallPriceSeries(symbol,config.seconds,config.bucket,undefined,before,Boolean(exposureKind)),incoming=levelKind?levelRows(result.rows||[]):result.rows||[];setHistoryRows(current=>[...new Map([...incoming,...current].map(row=>[row.timestamp,row])).values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)));if(result.has_more===false||!incoming.length)setHasEarlier(false)}finally{loadingEarlierRef.current=false}};
   useEffect(()=>{const frame=frameRef.current,anchor=backfillAnchorRef.current;if(!frame||!anchor)return;requestAnimationFrame(()=>{const node=frameRef.current;if(!node)return;node.scrollLeft=anchor.left+Math.max(0,node.scrollWidth-anchor.width);backfillAnchorRef.current=null})},[size.width]);
   useEffect(()=>{const frame=frameRef.current;if(!frame||!followingLiveRef.current||backfillAnchorRef.current)return;requestAnimationFrame(()=>{if(frameRef.current)frameRef.current.scrollLeft=frameRef.current.scrollWidth-frameRef.current.clientWidth})},[analysisBars.length,range]);
 
@@ -108,7 +115,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   const previousIndex = visibleIndexes.at(-2) ?? latestIndex;
   const consensus = latestIndex == null ? 0 : displaySeries.reduce((sum, line) => sum + line[latestIndex], 0) / displaySeries.length;
   const previousConsensus = previousIndex == null ? consensus : displaySeries.reduce((sum, line) => sum + line[previousIndex], 0) / displaySeries.length;
-  const state = Math.abs(consensus) < .08 ? "NEUTRAL" : consensus > 0 ? "BULLISH" : "BEARISH";
+  const state = Math.abs(consensus) < .08 ? "NEUTRAL" : consensus > 0 ? valueKind?"RISING":"BULLISH" : valueKind?"FALLING":"BEARISH";
   const phase = charmPhase(consensus, previousConsensus);
 
   useEffect(() => {
@@ -165,7 +172,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     displaySeries.forEach((line, lineIndex) => {
       for (let point = 1; point < visibleIndexes.length; point += 1) {
         const prior = visibleIndexes[point - 1], current = visibleIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
-        if(currentValueIndex>=line.length)continue;
+        if(currentValueIndex>=line.length||(valueKind&&(!calculated.valid[priorValueIndex]||!calculated.valid[currentValueIndex])))continue;
         context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
         context.globalAlpha = showingOptions && !optionsOverlay?.valid[current] ? .35 : .75;
         context.lineWidth = 1.35;
@@ -186,7 +193,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   };
   const hoveredIndex = hover == null ? latestIndex : visibleIndexes[hover];
   const hoveredPrice = hoveredIndex == null ? null : calculated.prices[hoveredIndex];
-  const hoveredConsensus = hoveredIndex == null ? null : displaySeries.reduce((sum, line) => sum + line[hoveredIndex], 0) / displaySeries.length;
+  const hoveredConsensus = hoveredIndex == null || (valueKind&&!calculated.valid[hoveredIndex]) ? null : displaySeries.reduce((sum, line) => sum + line[hoveredIndex], 0) / displaySeries.length;
   const hoveredOptions=hoveredIndex==null||!optionsOverlay?.valid[hoveredIndex]?null:{gex:optionsOverlay.gexBalance[hoveredIndex],dex:optionsOverlay.dexImpulse[hoveredIndex],source:optionsOverlay.dexSource[hoveredIndex]};
   const normalizedSymbol=symbol.toUpperCase(),indexEstimate=Number.isFinite(hoveredPrice)
     ?normalizedSymbol==="SPY"
@@ -205,20 +212,20 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   const scrollFromFrame=event=>{const node=event.currentTarget;setScrollOffset(node.scrollLeft);setViewportWidth(node.clientWidth);followingLiveRef.current=node.scrollLeft>=node.scrollWidth-node.clientWidth-18;syncScroll(node,[topScrollRef.current,bottomScrollRef.current]);if(node.scrollLeft<80)loadEarlier()};
 
   return <section className="price-charmander">
-    <header><div><span>AXIOM PRICE {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% bullish · ${showingOptions?"OPTIONS FAN":"PRICE FAN"}` : `WARMING ${warmupBars}/90`}</small></div></header>
+    <header><div><span>AXIOM {valueKind?valueKind.toUpperCase():"PRICE"} {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{valueKind&&!calculated.valid[latestIndex]?"WAITING":state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% ${valueKind?"rising strands · LEVEL/EXPOSURE FAN":`bullish · ${showingOptions?"OPTIONS FAN":"PRICE FAN"}`}` : `WARMING ${warmupBars}/90`}</small></div></header>
     {optionsOverlay&&<div className="price-charmander-options-head"><span>OPTIONS-ADJUSTED FAN · GEX + DEX</span><div className="price-charmander-outlook" aria-live="polite">{outlook?.status==="READY"?<><b className={outlook.direction.toLowerCase().replace(" ","-")}>NEXT {range} {symbol.toUpperCase()} · {outlook.direction}</b><span>FROM <strong>{outlook.base.toFixed(2)}</strong></span><span>HIST MEDIAN <strong>{outlook.median.toFixed(2)}</strong></span><span>HIST 20–80% <strong>{outlook.low.toFixed(2)}–{outlook.high.toFixed(2)}</strong></span><span>HIST UP {outlook.upCount}/{outlook.samples}</span></>:<span>NEXT {range} {symbol.toUpperCase()} · {outlook?.reason??"Waiting for options"}</span>}</div></div>}
     <div className="price-charmander-body">
       <nav className="price-charmander-controls" aria-label={`${phoenixName} time window`}><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
-      <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>PHX<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
+      <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>{valueKind?valueKind.toUpperCase():"PHX"}<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
       <div className="price-charmander-plot">
         <div className="price-charmander-scrollbar top" ref={topScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart top scrollbar"><div style={{width:size.width}}/></div>
         <div className="price-charmander-frame" ref={frameRef} onScroll={scrollFromFrame} onPointerMove={pointerMove} onPointerLeave={() => setHover(null)} onDoubleClick={resetView}>
           <canvas ref={canvasRef}/>
-          {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>{showingOptions?"ADJ PHX":"PHX"} <strong>{hoveredConsensus >= 0 ? "+" : ""}{hoveredConsensus?.toFixed(3)}</strong></span>{showingOptions&&hoveredOptions&&<span>GEX BAL <strong>{(hoveredOptions.gex*100).toFixed(0)}%</strong></span>}{showingOptions&&hoveredOptions&&<span>DEX {hoveredOptions.source==="BALANCE"?"BAL Δ":"Δ"} <strong>{hoveredOptions.dex>=0?"+":""}{hoveredOptions.dex.toFixed(2)}</strong></span>}{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
+          {hoveredIndex != null && <aside style={{width:`${Math.max(320,viewportWidth-24)}px`}}><b>{hover===null?"LIVE · ":""}{timeLabel(calculated.timestamps[hoveredIndex])} ET</b><span>{symbol} <strong>{hoveredPrice?.toFixed(2)}</strong></span><span>{valueKind?`${valueKind.toUpperCase()} PHX`:showingOptions?"ADJ PHX":"PHX"} <strong>{hoveredConsensus==null?"—":`${hoveredConsensus>=0?"+":""}${hoveredConsensus.toFixed(3)}`}</strong></span>{valueKind&&<span>{levelKind?"LEVEL":"AVG"} {valueKind.toUpperCase()} <strong>{Number.isFinite(calculated.raw[hoveredIndex])?levelKind?calculated.raw[hoveredIndex].toFixed(2):calculated.raw[hoveredIndex].toExponential(2):"—"}</strong></span>}{showingOptions&&hoveredOptions&&<span>GEX BAL <strong>{(hoveredOptions.gex*100).toFixed(0)}%</strong></span>}{showingOptions&&hoveredOptions&&<span>DEX {hoveredOptions.source==="BALANCE"?"BAL Δ":"Δ"} <strong>{hoveredOptions.dex>=0?"+":""}{hoveredOptions.dex.toFixed(2)}</strong></span>}{indexEstimate!==null&&<span className="phoenix-nq-conversion" title={indexEstimate.title}>{indexEstimate.label} <strong>{indexEstimate.value.toFixed(2)}</strong></span>}</aside>}
         </div>
         <div className="price-charmander-scrollbar bottom" ref={bottomScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart bottom scrollbar"><div style={{width:size.width}}/></div>
       </div>
     </div>
-    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span>{showingOptions&&<span><i className="baseline"/>PRICE-ONLY BASELINE</span>}<small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>
+    <footer><span><i className="green"/>POSITIVE · RISING</span><span><i className="orange"/>POSITIVE · FALLING</span><span><i className="red"/>NEGATIVE · FALLING</span><span><i className="blue"/>NEGATIVE · RISING</span>{showingOptions&&<span><i className="baseline"/>PRICE-ONLY BASELINE</span>}{exposureKind&&<small>Exposure slope, not price direction · OI proxy, not observed dealer inventory</small>}{levelKind&&<small>Zero-level slope, not GEX/DEX exposure · no directional prediction</small>}<small>Wheel plot: horizontal zoom · wheel Y-axis: vertical zoom · scroll left: backfill</small></footer>
   </section>;
 }

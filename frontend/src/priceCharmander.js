@@ -8,6 +8,16 @@ export function averagePriceBars(rows = [], bucketSeconds = 300, numCandles = 15
   return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York",lastFields:["options_at","dex_signed_raw","gamma_exposure_raw","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct"]});
 }
 
+export function averageExposureBars(rows = [], bucketSeconds = 300, numCandles = 150) {
+  return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York",
+    lastFields:["options_at"],averageFields:["dex_signed_raw","gamma_exposure_raw"]});
+}
+
+export function levelPriceBars(rows = [], bucketSeconds = 300, numCandles = 150) {
+  return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York",
+    lastFields:["zero_gamma_level","zero_delta_level"]});
+}
+
 // Price-only Axiom Phoenix. A three-point median rejects isolated bad
 // ticks. Each of the 29 strands is its own volatility-normalized moving-
 // average slope. This lets the horizons expand, cross and knit naturally;

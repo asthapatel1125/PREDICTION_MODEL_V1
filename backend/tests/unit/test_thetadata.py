@@ -81,6 +81,48 @@ def test_snapshot_calculates_signed_call_put_and_top_gex_walls():
     assert metrics["gex_abs_dollar_density"]==pytest.approx(expected_near_gex)
 
 
+def test_historical_exposure_joins_same_day_open_interest_before_aggregation():
+    client=ThetaDataV3Client(api_key="test")
+    start=datetime(2026,9,22,13,30,tzinfo=timezone.utc)
+    end=datetime(2026,9,22,13,31,tzinfo=timezone.utc)
+    common={"timestamp":start,"expiration":"20260922","strike":500,"underlying_price":500,
+            "bid":1,"ask":1.1,"delta":.5,"theta":-.2,"vega":.4,"rho":.1,"gamma":.2,
+            "vanna":.1,"charm":.1,"vomma":.3,"veta":.1,"speed":.1,"zomma":.1,"color":.1,"ultima":.1}
+    greeks=[{**common,"right":"call"},{**common,"right":"put","delta":-.4}]
+    interest=[{"expiration":"20260922","strike":500,"right":"call","open_interest":100},
+              {"expiration":"20260922","strike":500,"right":"put","open_interest":50}]
+
+    async def fake_rows(method,**_params):
+        return greeks if method=="option_history_greeks_all" else interest
+
+    client._python_rows=fake_rows
+
+    async def collect():
+        return [bar async for bar in client.historical_exposure_bars("SPY",start,end)]
+
+    [bar]=asyncio.run(collect())
+    assert bar.open_interest==150
+    assert bar.gamma_metrics["dex_signed_raw"]==pytest.approx((100*.5-50*.4)*100*500)
+    assert bar.gamma_metrics["charm_exposure_raw"]==pytest.approx((100-50)*.1*100*500)
+
+
+def test_historical_exposure_rejects_missing_open_interest():
+    client=ThetaDataV3Client(api_key="test")
+    start=datetime(2026,9,22,13,30,tzinfo=timezone.utc)
+    row={"timestamp":start,"expiration":"20260922","strike":500,"right":"call","underlying_price":500}
+
+    async def fake_rows(method,**_params):
+        return [row] if method=="option_history_greeks_all" else []
+
+    client._python_rows=fake_rows
+
+    async def collect():
+        return [bar async for bar in client.historical_exposure_bars("SPY",start,start)]
+
+    with pytest.raises(ThetaDataProtocolError,match="No archived open interest"):
+        asyncio.run(collect())
+
+
 def test_weighted_wall_rejects_invalid_quote_and_uses_liquid_cluster():
     client=ThetaDataV3Client(api_key="test")
     common={"right":"call","open_interest":700,"underlying_price":500,"delta":.5,"gamma":.2,

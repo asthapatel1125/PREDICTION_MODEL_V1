@@ -82,6 +82,7 @@ def get_candles(
     input_tz: str = "UTC",
     now: datetime | pd.Timestamp | None = None,
     last_fields: tuple[str, ...] = (),
+    average_fields: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     """Aggregate trade/minute rows into exchange-calendar OHLCV candles.
 
@@ -128,6 +129,7 @@ def get_candles(
             "volume": ("volume", "sum"), "spot": ("spot", _trimmed_mean),
         }
         aggregations.update({field: (field, "last") for field in last_fields if field in indexed.columns})
+        aggregations.update({field: (field, _trimmed_mean) for field in average_fields if field in indexed.columns})
         candles = indexed.resample(rule, origin="start_day", label="left", closed="left").agg(
             **aggregations
         ).dropna(subset=["open", "high", "low", "close"])
@@ -167,5 +169,8 @@ def get_candles(
             if field in row and pd.notna(row[field]):
                 value = row[field]
                 candle[field] = pd.Timestamp(value).isoformat() if field == "options_at" else float(value)
+        for field in average_fields:
+            if field in row and pd.notna(row[field]):
+                candle[field] = float(row[field])
         output.append(candle)
     return output

@@ -27,7 +27,7 @@ const secondsFor=timeframe=>{
 };
 const trimmedAverage=values=>{const ordered=values.filter(Number.isFinite).sort((a,b)=>a-b);if(!ordered.length)return NaN;const trim=ordered.length>=10?Math.floor(ordered.length*.1):0,kept=trim?ordered.slice(trim,-trim):ordered;return kept.reduce((sum,value)=>sum+value,0)/kept.length};
 
-export function getCandles(rows=[],timeframe,numCandles=150,{exchangeTimeZone="America/New_York",now=Date.now(),lastFields=[]}={}){
+export function getCandles(rows=[],timeframe,numCandles=150,{exchangeTimeZone="America/New_York",now=Date.now(),lastFields=[],averageFields=[]}={}){
   const interval=secondsFor(timeframe),minutes=interval/60,seen=new Map();
   rows.forEach(row=>{const at=Date.parse(row?.timestamp||"");if(!Number.isFinite(at))return;const tradeId=row?.trade_id??row?.tradeId??"",key=`${at}:${tradeId}`;seen.set(key,{...row,__at:at})});
   const buckets=new Map();
@@ -37,12 +37,13 @@ export function getCandles(rows=[],timeframe,numCandles=150,{exchangeTimeZone="A
     if(![open,high,low,close].every(Number.isFinite))return;
     const existing=buckets.get(key),timestamp=localToUtc({year:local.year,month:local.month,day:local.day,hour:bucketHour,minute,second:0},exchangeTimeZone);
     const extras=Object.fromEntries(lastFields.filter(field=>row[field]!=null&&row[field]!==""&&Number.isFinite(field==="options_at"?Date.parse(row[field]):Number(row[field]))).map(field=>[field,row[field]]));
-    if(!existing)buckets.set(key,{timestamp,open,high,low,close,volume,session,spots:[spot],samples:Number(row.samples)||1,lastAt:row.__at,...extras});
-    else{existing.high=Math.max(existing.high,high);existing.low=Math.min(existing.low,low);existing.close=close;existing.volume+=volume;existing.spots.push(spot);existing.samples+=Number(row.samples)||1;existing.lastAt=row.__at;Object.assign(existing,extras)}
+    const averages=Object.fromEntries(averageFields.map(field=>[field,row[field]==null||row[field]===""?[]:[Number(row[field])].filter(Number.isFinite)]));
+    if(!existing)buckets.set(key,{timestamp,open,high,low,close,volume,session,spots:[spot],averageValues:averages,samples:Number(row.samples)||1,lastAt:row.__at,...extras});
+    else{existing.high=Math.max(existing.high,high);existing.low=Math.min(existing.low,low);existing.close=close;existing.volume+=volume;existing.spots.push(spot);existing.samples+=Number(row.samples)||1;existing.lastAt=row.__at;for(const field of averageFields)existing.averageValues[field].push(...averages[field]);Object.assign(existing,extras)}
   });
   const result=[...buckets.values()].sort((a,b)=>a.timestamp-b.timestamp).map(bucket=>{
     const local=parts(bucket.timestamp,exchangeTimeZone),endMinute=Math.min(1440,local.hour*60+local.minute+minutes),sessionEnd=bucket.session==="PRE"?570:bucket.session==="RTH"?960:1440,cappedEnd=Math.min(endMinute,sessionEnd),nextDay=cappedEnd>=1440,endTimestamp=localToUtc({year:local.year,month:local.month,day:local.day+(nextDay?1:0),hour:nextDay?0:Math.floor(cappedEnd/60),minute:nextDay?0:cappedEnd%60,second:0},exchangeTimeZone);
-    return {timestamp:new Date(bucket.timestamp).toISOString(),at:bucket.timestamp,open:bucket.open,high:bucket.high,low:bucket.low,close:bucket.close,spot:trimmedAverage(bucket.spots),volume:bucket.volume,session:bucket.session,samples:bucket.samples,is_confirmed:Number(now)>=endTimestamp,...Object.fromEntries(lastFields.filter(field=>bucket[field]!=null).map(field=>[field,bucket[field]]))};
+    return {timestamp:new Date(bucket.timestamp).toISOString(),at:bucket.timestamp,open:bucket.open,high:bucket.high,low:bucket.low,close:bucket.close,spot:trimmedAverage(bucket.spots),volume:bucket.volume,session:bucket.session,samples:bucket.samples,is_confirmed:Number(now)>=endTimestamp,...Object.fromEntries(lastFields.filter(field=>bucket[field]!=null).map(field=>[field,bucket[field]])),...Object.fromEntries(averageFields.map(field=>[field,bucket.averageValues[field].length?trimmedAverage(bucket.averageValues[field]):null]))};
   });
   return result.slice(-Math.max(1,Number(numCandles)||150));
 }

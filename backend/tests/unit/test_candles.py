@@ -62,3 +62,16 @@ def test_options_fields_keep_last_snapshot_in_calendar_candle():
     assert candle["speed_exposure_raw"] == 5
     assert candle["gex_imbalance_pct"] == 20
     assert candle["options_at"].startswith("2026-09-17T14:03:20")
+
+
+def test_exposure_averages_are_separate_from_last_snapshot_fields():
+    rows = [
+        {"timestamp": "2026-09-17T14:01:00Z", "spot": 700, "dex_signed_raw": -30, "gamma_exposure_raw": 100},
+        {"timestamp": "2026-09-17T14:03:00Z", "spot": 701, "dex_signed_raw": 10, "gamma_exposure_raw": 300},
+    ]
+    [averaged] = get_candles(rows, "5M", now=datetime(2026, 9, 18, tzinfo=timezone.utc),
+        average_fields=("dex_signed_raw", "gamma_exposure_raw"))
+    [latest] = get_candles(rows, "5M", now=datetime(2026, 9, 18, tzinfo=timezone.utc),
+        last_fields=("dex_signed_raw", "gamma_exposure_raw"))
+    assert (averaged["dex_signed_raw"], averaged["gamma_exposure_raw"]) == (-10, 200)
+    assert (latest["dex_signed_raw"], latest["gamma_exposure_raw"]) == (10, 300)

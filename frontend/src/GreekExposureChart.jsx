@@ -121,7 +121,7 @@ export default function GreekExposureChart({ symbol = "QQQ", rows = [] }) {
     </div>
     <div className="greek-exposure-bottom-scroll" ref={bottomRef} onScroll={event => sync(event.currentTarget)} aria-label="Exposure graph bottom scrollbar"><div style={{ width }}/></div>
     <div className="greek-exposure-readout"><strong>{selected ? `${axisTime(selected.timestamp)} ET · ${symbol} ${Number(selected.close).toFixed(2)}` : loadState === "loading" ? "LOADING EXPOSURES" : "WAITING FOR OPTIONS SNAPSHOTS"}</strong>{EXPOSURE_LINES.map(line => <span key={line.key} style={{ color: line.color }} title={line.unit}>{line.key.toUpperCase()} <b>{indexed[line.key][selectedIndex] == null ? "—" : `${indexed[line.key][selectedIndex] > 0 ? "+" : ""}${indexed[line.key][selectedIndex].toFixed(0)}`}</b><small>RAW {rawLabel(selected?.[line.field])}</small></span>)}</div>
-    <footer>Each line is independently scaled to its prior 150 completed candles (90th-percentile absolute exposure; 10-candle minimum). Zero and sign are preserved. Older snapshots without Charm/Speed exposure cannot be reconstructed here. No price prediction or dealer-position claim.</footer>
+    <footer>Each line is independently scaled to its prior 150 completed candles (90th-percentile absolute exposure; 10-candle minimum). Zero and sign are preserved. Historical gaps remain blank until archived ThetaData Greeks and daily open interest are backfilled. No price prediction or dealer-position claim.</footer>
     </div>
   </section>;
 }

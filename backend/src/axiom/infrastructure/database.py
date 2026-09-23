@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy import JSON,DateTime,Float,ForeignKey,Integer,String,Text,UniqueConstraint,func,select,text
 from sqlalchemy.ext.asyncio import AsyncSession,async_sessionmaker,create_async_engine
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import DeclarativeBase,Mapped,mapped_column,relationship
 from sqlalchemy.pool import NullPool
 
@@ -133,6 +134,39 @@ class WallIntelligenceRow(Base):
     regime:Mapped[str]=mapped_column(String(40),index=True)
     payload:Mapped[dict[str,Any]]=mapped_column(JSON)
     __table_args__=(UniqueConstraint("timestamp","symbol",name="uq_wall_intelligence_time_symbol"),)
+
+
+class GreekExposureHistoryRow(Base):
+    """One archived ThetaData chain exposure per exchange-minute."""
+    __tablename__="greek_exposure_history"
+    id:Mapped[int]=mapped_column(primary_key=True)
+    timestamp:Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    symbol:Mapped[str]=mapped_column(String(16),index=True)
+    spot:Mapped[float]=mapped_column(Float)
+    dex_signed_raw:Mapped[float]=mapped_column(Float)
+    gamma_exposure_raw:Mapped[float]=mapped_column(Float)
+    charm_exposure_raw:Mapped[float]=mapped_column(Float)
+    speed_exposure_raw:Mapped[float]=mapped_column(Float)
+    contracts_used:Mapped[int]=mapped_column(Integer)
+    source:Mapped[str]=mapped_column(String(48))
+    __table_args__=(UniqueConstraint("timestamp","symbol",name="uq_greek_exposure_history_time_symbol"),)
+
+
+def merge_greek_exposure_minutes(output:list[dict[str,Any]],archived:list[GreekExposureHistoryRow])->list[dict[str,Any]]:
+    """Fill missing compact Greek fields while retaining live prices and exposures."""
+    keyed={item["timestamp"].astimezone(timezone.utc):item for item in output}
+    fields=("dex_signed_raw","gamma_exposure_raw","charm_exposure_raw","speed_exposure_raw")
+    for row in archived:
+        at=row.timestamp.astimezone(timezone.utc)
+        point=keyed.get(at)
+        if point is None:
+            point={"timestamp":at,"open":row.spot,"high":row.spot,"low":row.spot,
+                "close":row.spot,"spot":row.spot,"volume":0.0,"options_at":at,
+                "dex_imbalance_pct":None,"gex_imbalance_pct":None}
+            keyed[at]=point
+        for field in fields:
+            if point.get(field) is None:point[field]=float(getattr(row,field))
+    return [keyed[at] for at in sorted(keyed)]
 
 
 class WallBreakRow(Base):
@@ -295,6 +329,22 @@ class SqlAlchemyRepository:
             for event in breaks:s.add(WallBreakRow(timestamp=event["timestamp"],symbol=event["symbol"],wall_type=event["wall_type"],tier=event["tier"],regime=event["regime"],payload=self._json_ready(event)))
             await s.commit()
 
+    async def save_greek_exposure_history(self,points:list[dict[str,Any]])->None:
+        """Idempotently retain historical chain summaries without altering live wall rows."""
+        if not points:return
+        async with self.sessions() as s:
+            for offset in range(0,len(points),500):
+                chunk=points[offset:offset+500]
+                statement=pg_insert(GreekExposureHistoryRow).values(chunk)
+                statement=statement.on_conflict_do_update(
+                    constraint="uq_greek_exposure_history_time_symbol",
+                    set_={name:getattr(statement.excluded,name) for name in (
+                        "spot","dex_signed_raw","gamma_exposure_raw","charm_exposure_raw",
+                        "speed_exposure_raw","contracts_used","source")},
+                )
+                await s.execute(statement)
+            await s.commit()
+
     async def wall_intelligence_points(self,symbol:str,start:datetime|None=None,end:datetime|None=None,limit:int=5_000)->list[dict[str,Any]]:
         async with self.sessions() as s:
             statement=select(WallIntelligenceRow).where(WallIntelligenceRow.symbol==symbol.upper())
@@ -313,15 +363,17 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement)).all()
             return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
 
-    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime,include_options:bool=False)->list[dict[str,Any]]:
+    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime,include_options:bool=False,average_options:bool=False)->list[dict[str,Any]]:
         """Return compact one-minute OHLC inputs for calendar candle aggregation."""
+        dex_aggregate="avg(NULLIF(payload ->> 'dex_signed_raw','')::double precision)" if average_options else "(array_agg(NULLIF(payload ->> 'dex_signed_raw','')::double precision ORDER BY timestamp DESC))[1]"
+        gex_aggregate="avg(NULLIF(payload ->> 'gamma_exposure_raw','')::double precision)" if average_options else "(array_agg(NULLIF(payload ->> 'gamma_exposure_raw','')::double precision ORDER BY timestamp DESC))[1]"
         option_select="""\n                   max(timestamp) AS options_at,
-                   (array_agg(NULLIF(payload ->> 'dex_signed_raw','')::double precision ORDER BY timestamp DESC))[1] AS dex_signed_raw,
-                   (array_agg(NULLIF(payload ->> 'gamma_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS gamma_exposure_raw,
+                   {dex_aggregate} AS dex_signed_raw,
+                   {gex_aggregate} AS gamma_exposure_raw,
                    (array_agg(NULLIF(payload ->> 'charm_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS charm_exposure_raw,
                    (array_agg(NULLIF(payload ->> 'speed_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS speed_exposure_raw,
                    (array_agg(NULLIF(payload ->> 'dex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS dex_imbalance_pct,
-                   (array_agg(NULLIF(payload ->> 'gex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS gex_imbalance_pct""" if include_options else ""
+                   (array_agg(NULLIF(payload ->> 'gex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS gex_imbalance_pct""".format(dex_aggregate=dex_aggregate,gex_aggregate=gex_aggregate) if include_options else ""
         query=text(f"""
             SELECT date_trunc('minute', timestamp) AS timestamp,
                    (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
@@ -336,7 +388,7 @@ class SqlAlchemyRepository:
         """)
         async with self.sessions() as s:
             rows=(await s.execute(query,{"symbol":symbol.upper(),"start":start,"end":end})).mappings().all()
-        return [{"timestamp":row["timestamp"],"open":float(row["open"]),"high":float(row["high"]),
+        output=[{"timestamp":row["timestamp"],"open":float(row["open"]),"high":float(row["high"]),
             "low":float(row["low"]),"close":float(row["close"]),"spot":float(row["spot"]),"volume":0.0,
             **({"options_at":row["options_at"],
                 "dex_signed_raw":float(row["dex_signed_raw"]) if row["dex_signed_raw"] is not None else None,
@@ -346,6 +398,17 @@ class SqlAlchemyRepository:
                 "dex_imbalance_pct":float(row["dex_imbalance_pct"]) if row["dex_imbalance_pct"] is not None else None,
                 "gex_imbalance_pct":float(row["gex_imbalance_pct"]) if row["gex_imbalance_pct"] is not None else None} if include_options else {})}
             for row in rows]
+        if not include_options:return output
+        # Historical Greek exposure is stored separately from the original
+        # live wall point. Merge only missing values; never overwrite a live
+        # snapshot or fabricate historical call/put imbalance fields.
+        async with self.sessions() as s:
+            archived=(await s.execute(select(GreekExposureHistoryRow).where(
+                GreekExposureHistoryRow.symbol==symbol.upper(),
+                GreekExposureHistoryRow.timestamp>=start,
+                GreekExposureHistoryRow.timestamp<end,
+            ).order_by(GreekExposureHistoryRow.timestamp))).scalars().all()
+        return merge_greek_exposure_minutes(output,archived)
 
     async def wall_exposure_points(self,symbol:str,limit:int=5_000,before:datetime|None=None)->list[dict[str,Any]]:
         """Return compact price/ZG/ZD pages without materializing full wall payloads."""

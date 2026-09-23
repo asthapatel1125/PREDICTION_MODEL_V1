@@ -150,6 +150,40 @@ class ThetaDataV3Client(MarketDataPort):
             if start <= bar.timestamp <= end:
                 yield bar
 
+    async def historical_exposure_bars(self,symbol:str,start:datetime,end:datetime)->AsyncIterator[MarketBar]:
+        """Rebuild same-day 1m OI exposures from archived Greeks and archived OI.
+
+        Unlike historical_bars, this refuses to calculate OI-based exposures
+        from Greeks without their same-day open-interest chain.
+        """
+        market_day=start.astimezone(self.market_tz).date()
+        if market_day!=end.astimezone(self.market_tz).date():
+            raise ValueError("historical_exposure_bars accepts one exchange day at a time")
+        expiration=market_day.strftime("%Y%m%d")
+        params={"symbol":symbol.upper(),"expiration":expiration,"strike":"*","right":"both",
+            "date":market_day,"interval":"1m","start_time":start.astimezone(self.market_tz).strftime("%H:%M:%S"),
+            "end_time":end.astimezone(self.market_tz).strftime("%H:%M:%S"),"strike_range":self.strike_range}
+        oi_params={"symbol":symbol.upper(),"expiration":expiration,"strike":"*","right":"both",
+            "date":market_day,"strike_range":self.strike_range}
+        if self.transport=="terminal":
+            encode=lambda values:{key:value.strftime("%Y%m%d") if isinstance(value,date) else value for key,value in values.items()}
+            greek_rows=await self._terminal_rows("/option/history/greeks/all",encode(params))
+            oi_rows=await self._terminal_rows("/option/history/open_interest",encode(oi_params))
+        else:
+            greek_rows=await self._python_rows("option_history_greeks_all",**params)
+            oi_rows=await self._python_rows("option_history_open_interest",**oi_params)
+        if not greek_rows:return
+        lookup=self._open_interest_lookup(oi_rows)
+        for row in greek_rows:
+            row["open_interest"]=lookup.get(self._contract_key(row),row.get("open_interest",0))
+        funded=[row for row in greek_rows if self._number(row.get("open_interest"))>0]
+        if not funded:
+            raise ThetaDataProtocolError(f"No archived open interest matched {symbol.upper()} {market_day}; refusing zero exposure backfill")
+        self._require_all_greek_orders(funded)
+        for bar in self._aggregate(funded,symbol,60):
+            if start<=bar.timestamp<=end and bar.gamma_metrics.get("chain_available"):
+                yield bar
+
     async def live_bars(self, symbol: str, resolution_seconds: int) -> AsyncIterator[MarketBar]:
         loop = asyncio.get_running_loop()
         last_timestamp: datetime | None = None

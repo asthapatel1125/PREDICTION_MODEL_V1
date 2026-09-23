@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PHOENIX_PERIODS, averagePriceBars, charmPhase, computePricePhoenix } from "./priceCharmander.js";
+import { PHOENIX_PERIODS, averageExposureBars, averagePriceBars, charmPhase, computePricePhoenix, levelPriceBars } from "./priceCharmander.js";
 
 const rows = prices => prices.map((spot, index) => ({
   timestamp: new Date(Date.UTC(2026, 8, 16, 14, 30, index * 5)).toISOString(),
@@ -22,6 +22,27 @@ test("uses a trimmed bucket average so isolated bad ticks do not drive the signa
   const [bar]=averagePriceBars(points,30);
   assert.equal(bar.spot,100);
   assert.equal(bar.high,900);
+});
+
+test("DEX and GEX Phoenix inputs average independently while price remains OHLC", () => {
+  const points = [
+    {timestamp:"2026-09-16T14:00:00Z",spot:700,dex_signed_raw:-30,gamma_exposure_raw:100},
+    {timestamp:"2026-09-16T14:01:00Z",spot:702,dex_signed_raw:10,gamma_exposure_raw:300},
+    {timestamp:"2026-09-16T14:02:00Z",spot:701,dex_signed_raw:20,gamma_exposure_raw:null},
+  ];
+  const [bar]=averageExposureBars(points,300);
+  assert.equal(bar.dex_signed_raw,0);
+  assert.equal(bar.gamma_exposure_raw,200);
+  assert.deepEqual([bar.open,bar.high,bar.low,bar.close],[700,702,700,701]);
+  assert.equal(averagePriceBars(points,300)[0].dex_signed_raw,20);
+});
+
+test("zero levels retain their own candle values alongside actual price", () => {
+  const [bar] = levelPriceBars([
+    {timestamp:"2026-09-16T14:00:00Z",spot:700,zero_gamma_level:695,zero_delta_level:705},
+    {timestamp:"2026-09-16T14:01:00Z",spot:701,zero_gamma_level:696,zero_delta_level:704},
+  ],300);
+  assert.deepEqual([bar.close,bar.zero_gamma_level,bar.zero_delta_level],[701,696,704]);
 });
 
 test("builds 29 bounded price-only horizons", () => {
