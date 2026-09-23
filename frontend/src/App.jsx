@@ -2030,6 +2030,11 @@ function ModernExposureLevelChart({rows=[],symbol="QQQ",wallKey="ZERO_GAMMA",tit
   return expanded?createPortal(content,document.body):<>{historyArchive}{content}{!embedded&&<GexWallNominationLog rows={rows}/>} {!embedded&&<DeltaExposureChart rows={rows} onNeedWindow={onNeedWindow}/>}</>;
 }
 
+function LazySymbolChartEntry({index,title,children}){
+  const [open,setOpen]=useState(index===0);
+  return <details className="symbol-chart-entry" open={open} onToggle={event=>setOpen(event.currentTarget.open)}><summary><b>{String(index+1).padStart(2,"0")}</b><strong>{title}</strong><span aria-hidden="true">{open?"−":"+"}</span></summary>{open&&children}</details>;
+}
+
 function SymbolChartSection({symbol,rows,onNeedWindow,nas100Calibration,spxCashBasis}){
   const [open,setOpen]=useState(false);
   const [showExposureFans,setShowExposureFans]=useState(false);
@@ -2041,7 +2046,7 @@ function SymbolChartSection({symbol,rows,onNeedWindow,nas100Calibration,spxCashB
     ["ZG-PHX",`Phoenix ZG vs ${symbol}`,<PricePhoenixChart rows={rows} symbol={symbol} variant="zg" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/>],
     ["ZD-PHX",`Phoenix ZD vs ${symbol}`,<PricePhoenixChart rows={rows} symbol={symbol} variant="zd" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/>],
   ];
-  return <details className={`symbol-chart-section ${symbol.toLowerCase()}`} onToggle={event=>setOpen(event.currentTarget.open)}><summary><span>{symbol}</span><strong>{symbol} chart collection</strong><small>6 PRICE + LEVEL GRAPHS · OPTIONS PRO GREEK INDEX AT END</small><b aria-hidden="true">{open?"−":"+"}</b></summary>{open&&<div className="symbol-chart-list">{entries.map(([code,title,chart],index)=><section className="symbol-chart-entry" key={code}><header><b>{String(index+1).padStart(2,"0")}</b><h3>{title}</h3></header>{chart}</section>)}<details className="symbol-chart-other" onToggle={event=>setShowExposureFans(event.currentTarget.open)}><summary>Existing GEX / DEX exposure Phoenix fans <b>{showExposureFans?"−":"+"}</b></summary>{showExposureFans&&<div><PricePhoenixChart rows={rows} symbol={symbol} variant="gex" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/><PricePhoenixChart rows={rows} symbol={symbol} variant="dex" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/></div>}</details><section className="symbol-chart-index"><GreekIndexBuilder symbol={symbol} rows={rows}/></section></div>}</details>;
+  return <details className={`symbol-chart-section ${symbol.toLowerCase()}`} onToggle={event=>setOpen(event.currentTarget.open)}><summary><span>{symbol}</span><strong>{symbol} chart collection</strong><small>6 PRICE + LEVEL GRAPHS · OPTIONS PRO GREEK INDEX AT END</small><b aria-hidden="true">{open?"−":"+"}</b></summary>{open&&<div className="symbol-chart-list">{entries.map(([code,title,chart],index)=><LazySymbolChartEntry index={index} title={title} key={code}>{chart}</LazySymbolChartEntry>)}<details className="symbol-chart-other" onToggle={event=>setShowExposureFans(event.currentTarget.open)}><summary>Existing GEX / DEX exposure Phoenix fans <b>{showExposureFans?"−":"+"}</b></summary>{showExposureFans&&<div><PricePhoenixChart rows={rows} symbol={symbol} variant="gex" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/><PricePhoenixChart rows={rows} symbol={symbol} variant="dex" nas100Calibration={nas100Calibration} spxCashBasis={spxCashBasis}/></div>}</details><LazySymbolChartEntry index={entries.length} title={`${symbol} Options Pro Greek index`}><GreekIndexBuilder symbol={symbol} rows={rows}/></LazySymbolChartEntry></div>}</details>;
 }
 
 function LiveSymbolExposurePanels({symbol="QQQ",nas100Calibration=null,spxCashBasis=SPX500_SPY_CASH_BASIS}){

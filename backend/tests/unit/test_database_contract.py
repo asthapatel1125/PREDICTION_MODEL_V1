@@ -23,3 +23,9 @@ def test_non_supabase_database_is_rejected(monkeypatch):
 def test_normalized_schema_contains_persistence_tables():
     expected={"alerts","historical_alerts","live_alerts","market_states","metrics","performance","regimes","trades","configurations","model_versions","system_events"}
     assert expected.issubset(Base.metadata.tables)
+
+
+def test_wall_candle_reads_have_symbol_time_index():
+    indexes={index.name:tuple(column.name for column in index.columns)
+             for index in Base.metadata.tables["wall_intelligence"].indexes}
+    assert indexes["ix_wall_intelligence_symbol_timestamp"]==("symbol","timestamp")

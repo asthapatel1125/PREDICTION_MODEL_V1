@@ -35,10 +35,10 @@ export function getCandles(rows=[],timeframe,numCandles=150,{exchangeTimeZone="A
     const local=parts(row.__at,exchangeTimeZone),minuteOfDay=local.hour*60+local.minute,session=minuteOfDay<570?"PRE":minuteOfDay<960?"RTH":"POST",bucketMinute=Math.floor(minuteOfDay/minutes)*minutes,bucketHour=Math.floor(bucketMinute/60),minute=bucketMinute%60,dateKey=`${local.year}-${String(local.month).padStart(2,"0")}-${String(local.day).padStart(2,"0")}`,key=`${dateKey}:${session}:${bucketHour}:${minute}`;
     const fallback=Number(row.spot??row.price??row.close),open=Number.isFinite(Number(row.open))?Number(row.open):fallback,high=Number.isFinite(Number(row.high))?Number(row.high):fallback,low=Number.isFinite(Number(row.low))?Number(row.low):fallback,close=Number.isFinite(Number(row.close))?Number(row.close):fallback,spot=Number.isFinite(Number(row.spot))?Number(row.spot):close,volume=Number(row.volume)||0;
     if(![open,high,low,close].every(Number.isFinite))return;
-    const existing=buckets.get(key),timestamp=localToUtc({year:local.year,month:local.month,day:local.day,hour:bucketHour,minute,second:0},exchangeTimeZone);
+    const existing=buckets.get(key);
     const extras=Object.fromEntries(lastFields.filter(field=>row[field]!=null&&row[field]!==""&&Number.isFinite(field==="options_at"?Date.parse(row[field]):Number(row[field]))).map(field=>[field,row[field]]));
     const averages=Object.fromEntries(averageFields.map(field=>[field,row[field]==null||row[field]===""?[]:[Number(row[field])].filter(Number.isFinite)]));
-    if(!existing)buckets.set(key,{timestamp,open,high,low,close,volume,session,spots:[spot],averageValues:averages,samples:Number(row.samples)||1,lastAt:row.__at,...extras});
+    if(!existing){const timestamp=localToUtc({year:local.year,month:local.month,day:local.day,hour:bucketHour,minute,second:0},exchangeTimeZone);buckets.set(key,{timestamp,open,high,low,close,volume,session,spots:[spot],averageValues:averages,samples:Number(row.samples)||1,lastAt:row.__at,...extras})}
     else{existing.high=Math.max(existing.high,high);existing.low=Math.min(existing.low,low);existing.close=close;existing.volume+=volume;existing.spots.push(spot);existing.samples+=Number(row.samples)||1;existing.lastAt=row.__at;for(const field of averageFields)existing.averageValues[field].push(...averages[field]);Object.assign(existing,extras)}
   });
   const result=[...buckets.values()].sort((a,b)=>a.timestamp-b.timestamp).map(bucket=>{

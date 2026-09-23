@@ -27,9 +27,17 @@ const timeLabel = timestamp => new Date(timestamp).toLocaleTimeString("en-US", {
 const dateLabel = timestamp => new Date(timestamp).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 const dateKey = timestamp => new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 const levelRows = rows => rows.map(row => ({...row,spot:row.close,zero_gamma_level:row.zero_gamma,zero_delta_level:row.zero_delta}));
+const candleHistoryCache = new Map();
+const CACHE_TTL_MS = 30_000;
+const rememberCandles = (key, value) => {
+  candleHistoryCache.delete(key);
+  candleHistoryCache.set(key, { ...value, cachedAt: Date.now() });
+  if (candleHistoryCache.size > 32) candleHistoryCache.delete(candleHistoryCache.keys().next().value);
+};
 
 export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant = "price", nas100Calibration = null, spxCashBasis = 28.4 }) {
   const [range, setRange] = useState("5M");
+  const [displayRange, setDisplayRange] = useState("5M");
   const [visualShift, setVisualShift] = useState(false);
   const [xZoom, setXZoom] = useState(1);
   const [priceYZoom, setPriceYZoom] = useState(1);
@@ -42,20 +50,30 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   const [scrollOffset,setScrollOffset]=useState(0),[viewportWidth,setViewportWidth]=useState(1200);
   const [hover, setHover] = useState(null);
   const canvasRef = useRef(null), frameRef = useRef(null),topScrollRef=useRef(null),bottomScrollRef=useRef(null),scrollSyncRef=useRef(false),loadingEarlierRef=useRef(false),backfillAnchorRef=useRef(null),followingLiveRef=useRef(true);
-  const config = RANGE_CONFIG[range];
+  const config = RANGE_CONFIG[displayRange];
   const exposureKind=EXPOSURE_PHOENIX_FIELDS[variant]?variant:null;
   const levelKind=LEVEL_PHOENIX_FIELDS[variant]?variant:null;
   const valueKind=exposureKind||levelKind;
   useEffect(()=>{const timer=window.setInterval(()=>setForecastNow(Date.now()),15000);return()=>window.clearInterval(timer)},[]);
   useEffect(() => {
     const controller = new AbortController();
-    setHistoryRows([]);setHasEarlier(true);
+    const requested=RANGE_CONFIG[range],cacheKey=`${symbol.toUpperCase()}:${requested.bucket}:${levelKind||exposureKind||"price"}`,cached=candleHistoryCache.get(cacheKey);
+    if(cached){setHistoryRows(cached.rows);setHasEarlier(cached.hasEarlier);setDisplayRange(range)}
     setHistoryState("loading");
-    const request=levelKind?fetchWallExposureCandles(symbol,config.bucket,150,controller.signal):fetchWallPriceSeries(symbol, config.seconds, config.bucket, controller.signal,null,Boolean(exposureKind));
-    request.then(result => { setHistoryRows(levelKind?levelRows(result.rows||[]):result.rows||[]);setHasEarlier(result.has_more!==false); setHistoryState("ready"); })
-      .catch(error => { if (error.name !== "AbortError") { setHistoryRows([]); setHistoryState("live-only"); } });
+    if(cached&&Date.now()-cached.cachedAt<CACHE_TTL_MS){setHistoryState("ready");return()=>controller.abort()}
+    const request=levelKind?fetchWallExposureCandles(symbol,requested.bucket,150,controller.signal):fetchWallPriceSeries(symbol,requested.seconds,requested.bucket,controller.signal,null,Boolean(exposureKind));
+    request.then(result => {
+      if(controller.signal.aborted)return;
+      const nextRows=levelKind?levelRows(result.rows||[]):result.rows||[],hasMore=result.has_more!==false;
+      rememberCandles(cacheKey,{rows:nextRows,hasEarlier:hasMore});
+      setHistoryRows(nextRows);setHasEarlier(hasMore);setDisplayRange(range);setHistoryState("ready");
+    }).catch(error => {
+      if (error.name === "AbortError"||controller.signal.aborted) return;
+      setHistoryState(cached||historyRows.length?"ready":"live-only");
+      if(range!==displayRange&&historyRows.length)setRange(displayRange);
+    });
     return () => controller.abort();
-  }, [config.bucket, config.seconds, exposureKind, levelKind, symbol]);
+  }, [range, exposureKind, levelKind, symbol]);
   const analysisBars = useMemo(() => {
     const normalized = symbol.toUpperCase();
     const liveRows=rows.map(row=>({...row,options_at:row.options_at??row.timestamp,
@@ -131,7 +149,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
   };
   useEffect(()=>{if(historyState==="ready"&&hasEarlier&&analysisBars.length*12*xZoom<=viewportWidth+120)void loadEarlier()},[analysisBars.length,hasEarlier,historyState,viewportWidth,xZoom]);
   useEffect(()=>{const frame=frameRef.current,anchor=backfillAnchorRef.current;if(!frame||!anchor)return;requestAnimationFrame(()=>{const node=frameRef.current;if(!node)return;node.scrollLeft=anchor.left+Math.max(0,node.scrollWidth-anchor.width);backfillAnchorRef.current=null})},[size.width]);
-  useEffect(()=>{const frame=frameRef.current;if(!frame||!followingLiveRef.current||backfillAnchorRef.current)return;requestAnimationFrame(()=>{if(frameRef.current)frameRef.current.scrollLeft=frameRef.current.scrollWidth-frameRef.current.clientWidth})},[analysisBars.length,range]);
+  useEffect(()=>{const frame=frameRef.current;if(!frame||!followingLiveRef.current||backfillAnchorRef.current)return;requestAnimationFrame(()=>{if(frameRef.current)frameRef.current.scrollLeft=frameRef.current.scrollWidth-frameRef.current.clientWidth})},[analysisBars.length,displayRange]);
 
   const latestIndex = visibleIndexes.at(-1);
   const breadth = latestIndex == null ? 0 : displaySeries.reduce((sum, line) => sum + (line[latestIndex] > 0 ? 1 : 0), 0) / displaySeries.length;
@@ -145,12 +163,16 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     const canvas = canvasRef.current;
     if (!canvas || !visibleIndexes.length) return;
     const ratio = size.width>15000?1:Math.min(window.devicePixelRatio || 1, 2), width = size.width, height = size.height;
-    canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+    if(canvas.width!==Math.round(width*ratio))canvas.width=Math.round(width*ratio);
+    if(canvas.height!==Math.round(height*ratio))canvas.height=Math.round(height*ratio);
     canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
     const context = canvas.getContext("2d");
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
-    context.fillStyle="#000";context.fillRect(0,0,width,height);
+    const renderLeft=Math.max(0,scrollOffset-40),renderRight=Math.min(width,scrollOffset+viewportWidth+40),indexPadding=Math.max(2,Math.ceil(calculated.timestamps.length/900)*2);
+    const renderIndexes=visibleIndexes.filter(index=>index>=viewStartIndex-indexPadding&&index<=viewEndIndex+indexPadding);
+    context.save();context.beginPath();context.rect(renderLeft,0,renderRight-renderLeft,height);context.clip();
+    context.clearRect(renderLeft,0,renderRight-renderLeft,height);
+    context.fillStyle="#000";context.fillRect(renderLeft,0,renderRight-renderLeft,height);
     const left=68,right=20,top0=58,axisSpace=43,gap=0,panelHeight=Math.max(150,(height-top0-axisSpace-gap)/2),top1=top0+panelHeight,bottom0=top1+gap,bottom1=Math.min(height-axisSpace,bottom0+panelHeight),plotWidth=width-left-right;
     const xAt = at => left + (timestampIndexes.get(at)??0) / lastCandleIndex * plotWidth;
     context.fillStyle = "#000"; context.fillRect(left, top0, plotWidth, bottom1 - top0);
@@ -177,7 +199,7 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     const low = Math.min(...prices), high = Math.max(...prices),rawSpan=Math.max(high-low,.08),center=(high+low)/2,span=rawSpan/priceYZoom,padding=Math.max(span*.12,.02),priceLow=center-span/2-padding,priceHigh=center+span/2+padding;
     const priceY = price => top1 - (price - priceLow) / Math.max(priceHigh - priceLow, .01) * (top1 - top0);
     const candleWidth = Math.max(2, Math.min(9, plotWidth / Math.max(lastCandleIndex, 1) * .58));
-    candles.forEach(candle => {
+    scaleCandles.forEach(candle => {
       const x = xAt(candle.at), rising = candle.close >= candle.open;
       context.strokeStyle = rising ? "#00d084" : "#ff4f69"; context.fillStyle = context.strokeStyle;
       context.beginPath(); context.moveTo(x, priceY(candle.high)); context.lineTo(x, priceY(candle.low)); context.stroke();
@@ -188,12 +210,12 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
     const charmY = value => bottom1 - (clamp(value,-charmLimit,charmLimit) + charmLimit) / (charmLimit*2) * (bottom1 - bottom0);
     if(showingOptions){
       context.strokeStyle="#aeb9c2";context.lineWidth=2.25;context.globalAlpha=.8;context.beginPath();
-      visibleIndexes.forEach((index,point)=>{const raw=calculated.series.reduce((sum,line)=>sum+line[index],0)/calculated.series.length,xx=xAt(Date.parse(calculated.timestamps[index])),yy=charmY(raw);if(point)context.lineTo(xx,yy);else context.moveTo(xx,yy)});
+      renderIndexes.forEach((index,point)=>{const raw=calculated.series.reduce((sum,line)=>sum+line[index],0)/calculated.series.length,xx=xAt(Date.parse(calculated.timestamps[index])),yy=charmY(raw);if(point)context.lineTo(xx,yy);else context.moveTo(xx,yy)});
       context.stroke();context.globalAlpha=1;
     }
     displaySeries.forEach((line, lineIndex) => {
-      for (let point = 1; point < visibleIndexes.length; point += 1) {
-        const prior = visibleIndexes[point - 1], current = visibleIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
+      for (let point = 1; point < renderIndexes.length; point += 1) {
+        const prior = renderIndexes[point - 1], current = renderIndexes[point],offset=visualShift?Math.round((lineIndex+1)/2):0,priorValueIndex=prior+offset,currentValueIndex=current+offset;
         if(currentValueIndex>=line.length||(valueKind&&(!calculated.valid[priorValueIndex]||!calculated.valid[currentValueIndex])))continue;
         context.strokeStyle = COLORS[charmPhase(line[currentValueIndex], line[priorValueIndex])];
         context.globalAlpha = showingOptions && !optionsOverlay?.valid[current] ? .35 : .75;
@@ -206,7 +228,8 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
       const index = visibleIndexes[hover], x = xAt(Date.parse(calculated.timestamps[index]));
       context.strokeStyle = "#d9f5ff"; context.lineWidth = 1; context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, top0); context.lineTo(x, bottom1); context.stroke(); context.setLineDash([]);
     }
-  }, [calculated, candles, charmYZoom, displaySeries, hover, lastCandleIndex, optionsOverlay, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, showingOptions, size, symbol, timestampIndexes, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
+    context.restore();
+  }, [calculated, charmYZoom, displaySeries, hover, lastCandleIndex, optionsOverlay, priceYZoom, scaleCandles, scaleCharmIndexes, scrollOffset, showingOptions, size, symbol, timestampIndexes, viewEndIndex, viewStartIndex, viewportWidth, visibleIndexes,visualShift,watermarkLabel]);
 
   const pointerMove = event => {
     if (!visibleIndexes.length) return;
@@ -235,9 +258,9 @@ export default function PricePhoenixChart({ rows = [], symbol = "QQQ", variant =
 
   return <section className="price-charmander">
     <header><div><span>AXIOM {valueKind?valueKind.toUpperCase():"PRICE"} {phoenixName} · OBSERVATIONAL</span><h3>{symbol} price above · {sourceLabel} · {config.bucket}s buckets · 29 independent MA slopes</h3></div><div className="price-charmander-state"><b className={phase}>{valueKind&&!calculated.valid[latestIndex]?"WAITING":state}</b><small>{historyState === "loading" ? "LOADING WARM-UP" : warmupReady ? `${Math.round(breadth * 100)}% ${valueKind?"rising strands · LEVEL/EXPOSURE FAN":`bullish · ${showingOptions?"OPTIONS FAN":"PRICE FAN"}`}` : `WARMING ${warmupBars}/90`}</small></div></header>
-    {optionsOverlay&&<div className="price-charmander-options-head"><span>OPTIONS-ADJUSTED FAN · GEX + DEX</span><div className="price-charmander-outlook" aria-live="polite">{outlook?.status==="READY"?<><b className={outlook.direction.toLowerCase().replace(" ","-")}>NEXT {range} {symbol.toUpperCase()} · {outlook.direction}</b><span>FROM <strong>{outlook.base.toFixed(2)}</strong></span><span>HIST MEDIAN <strong>{outlook.median.toFixed(2)}</strong></span><span>HIST 20–80% <strong>{outlook.low.toFixed(2)}–{outlook.high.toFixed(2)}</strong></span><span>HIST UP {outlook.upCount}/{outlook.samples}</span></>:<span>NEXT {range} {symbol.toUpperCase()} · {outlook?.reason??"Waiting for options"}</span>}</div></div>}
+    {optionsOverlay&&<div className="price-charmander-options-head"><span>OPTIONS-ADJUSTED FAN · GEX + DEX</span><div className="price-charmander-outlook" aria-live="polite">{outlook?.status==="READY"?<><b className={outlook.direction.toLowerCase().replace(" ","-")}>NEXT {displayRange} {symbol.toUpperCase()} · {outlook.direction}</b><span>FROM <strong>{outlook.base.toFixed(2)}</strong></span><span>HIST MEDIAN <strong>{outlook.median.toFixed(2)}</strong></span><span>HIST 20–80% <strong>{outlook.low.toFixed(2)}–{outlook.high.toFixed(2)}</strong></span><span>HIST UP {outlook.upCount}/{outlook.samples}</span></>:<span>NEXT {displayRange} {symbol.toUpperCase()} · {outlook?.reason??"Waiting for options"}</span>}</div></div>}
     <div className="price-charmander-body">
-      <nav className="price-charmander-controls" aria-label={`${phoenixName} time window`}><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
+      <nav className="price-charmander-controls" aria-label={`${phoenixName} time window`}><b>TIME</b>{Object.keys(RANGE_CONFIG).map(item => <button type="button" className={range === item ? "active" : ""} aria-busy={range===item&&displayRange!==range} onClick={() => { setRange(item);resetView() }} key={item}>{item}</button>)}<button type="button" onClick={resetView}>FIT</button><button type="button" title="Toggle historical replica shift" className={visualShift?"replica active":"replica"} onClick={()=>setVisualShift(value=>!value)}>{visualShift?"SHIFT":"LIVE"}</button></nav>
       <aside className="price-charmander-axis" onWheel={zoomY} title="Hover and use the mouse wheel for vertical zoom"><section><b>{symbol}<br/>USD</b><span>{priceScaleHigh.toFixed(2)}</span><span>{((priceScaleHigh+priceScaleLow)/2).toFixed(2)}</span><span>{priceScaleLow.toFixed(2)}</span></section><section><b>{valueKind?valueKind.toUpperCase():"PHX"}<br/>ANGLE</b><span>+{charmLimit.toFixed(2)}</span><span>0</span><span>−{charmLimit.toFixed(2)}</span></section></aside>
       <div className="price-charmander-plot">
         <div className="price-charmander-scrollbar top" ref={topScrollRef} onScroll={scrollFromRail} aria-label="Phoenix chart top scrollbar"><div style={{width:size.width}}/></div>

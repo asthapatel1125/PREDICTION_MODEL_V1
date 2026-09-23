@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date,datetime,timezone
 from typing import Any
 
-from sqlalchemy import JSON,DateTime,Float,ForeignKey,Integer,String,Text,UniqueConstraint,func,select,text
+from sqlalchemy import JSON,DateTime,Float,ForeignKey,Index,Integer,String,Text,UniqueConstraint,func,select,text
 from sqlalchemy.ext.asyncio import AsyncSession,async_sessionmaker,create_async_engine
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import DeclarativeBase,Mapped,mapped_column,relationship
@@ -135,7 +135,8 @@ class WallIntelligenceRow(Base):
     spot:Mapped[float]=mapped_column(Float)
     regime:Mapped[str]=mapped_column(String(40),index=True)
     payload:Mapped[dict[str,Any]]=mapped_column(JSON)
-    __table_args__=(UniqueConstraint("timestamp","symbol",name="uq_wall_intelligence_time_symbol"),)
+    __table_args__=(UniqueConstraint("timestamp","symbol",name="uq_wall_intelligence_time_symbol"),
+        Index("ix_wall_intelligence_symbol_timestamp","symbol","timestamp"))
 
 
 class GreekExposureHistoryRow(Base):
@@ -848,4 +849,20 @@ async def create_database(url:str)->tuple[async_sessionmaker[AsyncSession],SqlAl
             for name,ddl in confluence_ddls.items():
                 if name not in confluence_columns:
                     await connection.execute(text(ddl))
+    if engine.dialect.name=="postgresql":
+        # The existing unique key starts with timestamp, whereas candle and
+        # backfill reads filter by symbol first. Build the matching index
+        # without blocking Supabase writes on an existing populated table.
+        async with engine.connect() as index_connection:
+            await index_connection.execution_options(isolation_level="AUTOCOMMIT")
+            existing=(await index_connection.execute(text("""
+                select 1 from pg_indexes where schemaname=current_schema()
+                and tablename='wall_intelligence'
+                and indexname='ix_wall_intelligence_symbol_timestamp'
+            """))).scalar_one_or_none()
+            if not existing:
+                await index_connection.execute(text(
+                    "create index concurrently if not exists ix_wall_intelligence_symbol_timestamp "
+                    "on wall_intelligence (symbol,timestamp)"
+                ))
     factory=async_sessionmaker(engine,expire_on_commit=False);return factory,SqlAlchemyRepository(factory)

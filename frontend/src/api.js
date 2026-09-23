@@ -64,10 +64,21 @@ export const fetchDynamicsHistory = (symbol, signal) =>
 export const fetchWallSpectrum = (symbol, signal, limit = null, end = null) =>
   request(`/api/v1/walls/spectrum?symbol=${encodeURIComponent(symbol)}${limit ? `&limit=${encodeURIComponent(limit)}` : ""}${end ? `&end=${encodeURIComponent(end)}` : ""}`, { signal });
 const wallPriceSeriesRequests = new Map();
+const wallPriceSeriesCache = new Map();
+const rememberWallSeries = (path, result, historical) => {
+  wallPriceSeriesCache.delete(path);
+  wallPriceSeriesCache.set(path, { result, expiresAt: Date.now() + (historical ? 300_000 : 15_000) });
+  if (wallPriceSeriesCache.size > 64) wallPriceSeriesCache.delete(wallPriceSeriesCache.keys().next().value);
+};
 export const fetchWallPriceSeries = (symbol, windowSeconds, bucketSeconds, signal, before = null, exposureAverages = false, allGreeks = false) => {
   const path = `/api/v1/walls/price-series?symbol=${encodeURIComponent(symbol)}&window_seconds=${encodeURIComponent(windowSeconds)}&bucket_seconds=${encodeURIComponent(bucketSeconds)}${before ? `&before=${encodeURIComponent(before)}` : ""}${exposureAverages ? "&exposure_averages=true" : ""}${allGreeks ? "&all_greeks=true" : ""}`;
+  const cached = wallPriceSeriesCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+    return Promise.resolve(cached.result);
+  }
   if (!wallPriceSeriesRequests.has(path)) {
-    wallPriceSeriesRequests.set(path, request(path).finally(() => wallPriceSeriesRequests.delete(path)));
+    wallPriceSeriesRequests.set(path, request(path).then(result => { rememberWallSeries(path, result, Boolean(before)); return result; }).finally(() => wallPriceSeriesRequests.delete(path)));
   }
   return wallPriceSeriesRequests.get(path).then(result => {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
