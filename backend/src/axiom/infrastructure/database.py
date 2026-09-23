@@ -11,6 +11,8 @@ from sqlalchemy.pool import NullPool
 
 from axiom.domain.models import Alert,MarketState,Outcome
 
+EXTRA_OPTION_GREEKS=("theta","vega","rho","epsilon","lambda","vanna","vomma","veta","vera","zomma","color","ultima","dual_delta","dual_gamma")
+
 
 class Base(DeclarativeBase):pass
 
@@ -363,7 +365,7 @@ class SqlAlchemyRepository:
             rows=(await s.execute(statement)).all()
             return list(reversed([{"timestamp":timestamp,"spot":float(spot)} for timestamp,spot in rows]))
 
-    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime,include_options:bool=False,average_options:bool=False)->list[dict[str,Any]]:
+    async def wall_price_minute_points(self,symbol:str,start:datetime,end:datetime,include_options:bool=False,average_options:bool=False,all_greeks:bool=False)->list[dict[str,Any]]:
         """Return compact one-minute OHLC inputs for calendar candle aggregation."""
         dex_aggregate="avg(NULLIF(payload ->> 'dex_signed_raw','')::double precision)" if average_options else "(array_agg(NULLIF(payload ->> 'dex_signed_raw','')::double precision ORDER BY timestamp DESC))[1]"
         gex_aggregate="avg(NULLIF(payload ->> 'gamma_exposure_raw','')::double precision)" if average_options else "(array_agg(NULLIF(payload ->> 'gamma_exposure_raw','')::double precision ORDER BY timestamp DESC))[1]"
@@ -374,6 +376,10 @@ class SqlAlchemyRepository:
                    (array_agg(NULLIF(payload ->> 'speed_exposure_raw','')::double precision ORDER BY timestamp DESC))[1] AS speed_exposure_raw,
                    (array_agg(NULLIF(payload ->> 'dex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS dex_imbalance_pct,
                    (array_agg(NULLIF(payload ->> 'gex_imbalance_pct','')::double precision ORDER BY timestamp DESC))[1] AS gex_imbalance_pct""".format(dex_aggregate=dex_aggregate,gex_aggregate=gex_aggregate) if include_options else ""
+        if include_options and all_greeks:
+            option_select+=","+",".join(
+                f"(array_agg(NULLIF(payload #>> '{{greek_exposures,{greek}}}','')::double precision ORDER BY timestamp DESC))[1] AS greek_{greek}_raw"
+                for greek in EXTRA_OPTION_GREEKS)
         query=text(f"""
             SELECT date_trunc('minute', timestamp) AS timestamp,
                    (array_agg(spot ORDER BY timestamp ASC))[1] AS open,
@@ -396,7 +402,8 @@ class SqlAlchemyRepository:
                 "charm_exposure_raw":float(row["charm_exposure_raw"]) if row["charm_exposure_raw"] is not None else None,
                 "speed_exposure_raw":float(row["speed_exposure_raw"]) if row["speed_exposure_raw"] is not None else None,
                 "dex_imbalance_pct":float(row["dex_imbalance_pct"]) if row["dex_imbalance_pct"] is not None else None,
-                "gex_imbalance_pct":float(row["gex_imbalance_pct"]) if row["gex_imbalance_pct"] is not None else None} if include_options else {})}
+                "gex_imbalance_pct":float(row["gex_imbalance_pct"]) if row["gex_imbalance_pct"] is not None else None} if include_options else {}),
+            **({f"greek_{greek}_raw":float(row[f"greek_{greek}_raw"]) if row[f"greek_{greek}_raw"] is not None else None for greek in EXTRA_OPTION_GREEKS} if include_options and all_greeks else {})}
             for row in rows]
         if not include_options:return output
         # Historical Greek exposure is stored separately from the original

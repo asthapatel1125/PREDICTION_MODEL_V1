@@ -44,6 +44,8 @@ def test_snapshot_calculates_zero_dte_gamma_dynamics_chain_metrics():
     assert metrics["key_liquidity"]==pytest.approx(2800)
     assert metrics["bad_liquidity"]==0
     assert metrics["weighted_charm"]==pytest.approx(2000)
+    assert metrics["greek_exposures"]["theta"]==pytest.approx(0)
+    assert "epsilon" not in metrics["greek_exposures"]
 
 
 def test_snapshot_calculates_signed_call_put_and_top_gex_walls():

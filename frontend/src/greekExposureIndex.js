@@ -15,9 +15,9 @@ const percentile = (values, fraction) => {
 };
 
 /** Point-in-time, per-Greek scaling. Zero and sign retain their raw meaning. */
-export function indexGreekExposures(bars, { lookback = 150, minimumHistory = 10 } = {}) {
-  const indexed = Object.fromEntries(EXPOSURE_LINES.map(line => [line.key, []]));
-  for (const line of EXPOSURE_LINES) {
+export function indexGreekExposures(bars, { lookback = 150, minimumHistory = 10, lines = EXPOSURE_LINES } = {}) {
+  const indexed = Object.fromEntries(lines.map(line => [line.key, []]));
+  for (const line of lines) {
     const history = [];
     for (let index = 0; index < bars.length; index += 1) {
       const raw = finite(bars[index]?.[line.field]);

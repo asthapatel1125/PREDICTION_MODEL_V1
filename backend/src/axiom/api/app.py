@@ -25,7 +25,7 @@ from axiom.application.engines import LiveWallExposureEngine,ReplayRequest,Train
 from axiom.application.pipeline import DecisionPipeline
 from axiom.application.direction_gate import DailyDirectionGate,DirectionGateLockedError
 from axiom.config.schema import PlatformSettings,StrategyConfig
-from axiom.infrastructure.database import SqlAlchemyRepository,create_database
+from axiom.infrastructure.database import EXTRA_OPTION_GREEKS,SqlAlchemyRepository,create_database
 
 
 INSTRUMENTS={
@@ -275,7 +275,7 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
             "disclaimer":"Estimated wall: delayed OI x Greek. DealerFlow is a proxy, not tape."}
 
     @api.get("/walls/price-series")
-    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=300,before:datetime|None=None,num_candles:int=Query(150,ge=30,le=500),exposure_averages:bool=False):
+    async def wall_price_series(symbol:str="QQQ",window_seconds:int=1_800,bucket_seconds:int=300,before:datetime|None=None,num_candles:int=Query(150,ge=30,le=500),exposure_averages:bool=False,all_greeks:bool=False):
         """Calendar-bucketed price warm-up; deliberately skips wall payloads."""
         try:safe_bucket=timeframe_seconds(int(bucket_seconds))
         except ValueError as exc:raise HTTPException(422,str(exc)) from exc
@@ -283,9 +283,9 @@ def create_app(settings:PlatformSettings|None=None)->FastAPI:
         end=_wall_time(before) or datetime.now(timezone.utc)
         start=end-timedelta(seconds=safe_window+safe_bucket)
         include_options=symbol.upper() in {"QQQ","SPY"}
-        minute_rows=await container.repository.wall_price_minute_points(symbol,start,end,include_options=include_options,average_options=exposure_averages)
+        minute_rows=await container.repository.wall_price_minute_points(symbol,start,end,include_options=include_options,average_options=exposure_averages,all_greeks=all_greeks)
         rows=get_candles(minute_rows,safe_bucket,num_candles,exchange_tz=cfg.market_timezone,now=datetime.now(timezone.utc),
-            last_fields=(("options_at","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct") if exposure_averages else ("options_at","dex_signed_raw","gamma_exposure_raw","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct")) if include_options else (),
+            last_fields=(("options_at","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct") if exposure_averages else ("options_at","dex_signed_raw","gamma_exposure_raw","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct"))+(tuple(f"greek_{greek}_raw" for greek in EXTRA_OPTION_GREEKS) if all_greeks else ()) if include_options else (),
             average_fields=("dex_signed_raw","gamma_exposure_raw") if include_options and exposure_averages else ())
         has_more=bool(minute_rows)
         cadence=60

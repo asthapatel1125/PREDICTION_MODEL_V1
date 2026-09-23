@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchWallPriceSeries } from "./api";
-import { averagePriceBars } from "./priceCharmander";
-import { EXPOSURE_LINES } from "./greekExposureIndex";
+import { greekIndexBars } from "./priceCharmander";
+import { OPTION_PRO_GREEKS } from "./optionProGreeks";
 import { buildSelectedGreekIndex } from "./selectedGreekIndex";
 
 const TIMEFRAMES = { "1M": 60, "5M": 300, "15M": 900, "30M": 1800, "1H": 3600, "4H": 14400, "6H": 21600 };
@@ -16,8 +16,10 @@ export default function GreekIndexBuilder({ symbol = "SPY", rows = [] }) {
   const [loading, setLoading] = useState(true);
   const [hasEarlier, setHasEarlier] = useState(true);
   const [hover, setHover] = useState(null);
+  const [greekMenuOpen, setGreekMenuOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1000);
   const plotRef = useRef(null), topRef = useRef(null), bottomRef = useRef(null);
+  const greekMenuRef = useRef(null);
   const loadingRef = useRef(false), anchorRef = useRef(null), followRef = useRef(true), primedRef = useRef(false);
   const seconds = TIMEFRAMES[timeframe];
 
@@ -25,13 +27,13 @@ export default function GreekIndexBuilder({ symbol = "SPY", rows = [] }) {
     const controller = new AbortController();
     setHistory([]); setLoading(true); setHasEarlier(true); setHover(null);
     followRef.current = true; primedRef.current = false;
-    fetchWallPriceSeries(symbol, seconds * 150, seconds, controller.signal)
+    fetchWallPriceSeries(symbol, seconds * 150, seconds, controller.signal, null, false, true)
       .then(result => { if (!controller.signal.aborted) { setHistory(result.rows || []); setHasEarlier(result.has_more !== false); setLoading(false); } })
       .catch(error => { if (error.name !== "AbortError") setLoading(false); });
     return () => controller.abort();
   }, [symbol, seconds]);
 
-  const bars = useMemo(() => averagePriceBars([...history, ...rows], seconds, Number.MAX_SAFE_INTEGER), [history, rows, seconds]);
+  const bars = useMemo(() => greekIndexBars([...history, ...rows], seconds, Number.MAX_SAFE_INTEGER), [history, rows, seconds]);
   const { selected, version, composite } = useMemo(() => buildSelectedGreekIndex(bars, selectedKeys), [bars, selectedKeys]);
   const width = Math.max(viewportWidth, bars.length * 13 + 100), height = 580, left = 62, right = 22;
   const priceTop = 45, priceBottom = 275, indexTop = 315, indexBottom = 520, plotWidth = width - left - right;
@@ -61,7 +63,7 @@ export default function GreekIndexBuilder({ symbol = "SPY", rows = [] }) {
     const plot = plotRef.current;
     anchorRef.current = plot ? { width: plot.scrollWidth, left: plot.scrollLeft } : null;
     try {
-      const result = await fetchWallPriceSeries(symbol, seconds * 150, seconds, undefined, history[0].timestamp);
+      const result = await fetchWallPriceSeries(symbol, seconds * 150, seconds, undefined, history[0].timestamp, false, true);
       const incoming = result.rows || [];
       setHistory(current => [...new Map([...incoming, ...current].map(row => [row.timestamp, row])).values()]
         .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)));
@@ -92,12 +94,33 @@ export default function GreekIndexBuilder({ symbol = "SPY", rows = [] }) {
       if (next && followRef.current) { next.scrollLeft = next.scrollWidth - next.clientWidth; sync(next); primedRef.current = true; }
     });
   }, [bars.length, width]);
+  useEffect(() => {
+    if (!greekMenuOpen) return;
+    const closeOnOutsidePointer = event => {
+      if (!greekMenuRef.current?.contains(event.target)) setGreekMenuOpen(false);
+    };
+    const closeOnEscape = event => {
+      if (event.key === "Escape") setGreekMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [greekMenuOpen]);
   const toggle = key => setSelectedKeys(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key]);
 
   return <section className="greek-index-builder" aria-label="Selectable Greek exposure index with price">
-    <header><div><span>SELECTABLE GREEK EXPOSURE INDEX</span><h3>{symbol} price + selected options exposures</h3></div><small>OI-BASED PROXY · NOT A PRICE FORECAST</small></header>
+    <header><div><span>OPTIONS PRO GREEK INDEX</span><h3>{symbol} price + selected options exposures</h3></div><small>OI-BASED PROXY · NOT A PRICE FORECAST</small></header>
     <div className="greek-index-controls"><strong>{symbol} ONLY · {version || "NO GREEKS SELECTED"}</strong><div role="group" aria-label="Candle size">{Object.keys(TIMEFRAMES).map(item => <button key={item} type="button" aria-pressed={timeframe === item} className={timeframe === item ? "active" : ""} onClick={() => setTimeframe(item)}>{item}</button>)}</div></div>
-    <div className="greek-index-choices" role="group" aria-label="Greeks included in the index">{EXPOSURE_LINES.map(line => { const included = selected.some(item => item.key === line.key); return <button key={line.key} type="button" aria-pressed={included} className={included ? "active" : ""} style={{ "--greek-color": line.color }} onClick={() => toggle(line.key)}><i/>{line.key.toUpperCase()} <small>{included ? "INCLUDED" : "+ ADD"}</small></button>; })}<span className="greek-index-formula">{version ? `${version} = (${selected.map(item => item.key.toUpperCase()).join(" + ")}) ÷ ${selected.length}` : "SELECT ONE OR MORE GREEKS"}</span></div>
+    <div className="greek-index-choices" role="group" aria-label="Greeks included in the index">
+      <div className="greek-index-dropdown" ref={greekMenuRef}>
+        <button className="greek-index-dropdown-trigger" type="button" aria-expanded={greekMenuOpen} aria-controls={`${symbol.toLowerCase()}-greek-options`} onClick={() => setGreekMenuOpen(open => !open)}>ADD GREEKS <span>{selected.length} SELECTED</span><b aria-hidden="true">{greekMenuOpen ? "▴" : "▾"}</b></button>
+        {greekMenuOpen && <div className="greek-index-dropdown-menu" id={`${symbol.toLowerCase()}-greek-options`} role="group" aria-label="Options Pro Greeks">{OPTION_PRO_GREEKS.map(line => { const included = selected.some(item => item.key === line.key); return <button key={line.key} type="button" aria-pressed={included} className={included ? "active" : ""} style={{ "--greek-color": line.color }} onClick={() => toggle(line.key)}><i/>{line.label} <small>{included ? "INCLUDED" : "+ ADD"}</small></button>; })}</div>}
+      </div>
+      <span className="greek-index-formula">{version ? `${version} = (${selected.map(item => item.line.label).join(" + ")}) ÷ ${selected.length}` : "SELECT ONE OR MORE GREEKS"}</span>
+    </div>
     <div className="greek-index-scroll top" ref={topRef} onScroll={event => sync(event.currentTarget)} aria-label="Greek index top scrollbar"><div style={{ width }}/></div>
     <div className="greek-index-viewport" ref={plotRef} onScroll={event => { const node = event.currentTarget; sync(node); if (primedRef.current) { followRef.current = node.scrollLeft >= node.scrollWidth - node.clientWidth - 20; if (node.scrollLeft < 60) loadEarlier(); } }} onPointerMove={event => { if (!bars.length) return; const bounds = event.currentTarget.getBoundingClientRect(), position = event.clientX - bounds.left + event.currentTarget.scrollLeft; setHover(Math.max(0, Math.min(bars.length - 1, Math.round((position - left) / plotWidth * Math.max(1, bars.length - 1))))); }} onPointerLeave={() => setHover(null)}>
       <svg width={width} height={height} role="img" aria-label={`${symbol} price candles above one composite index of selected Greek exposures`}>
@@ -115,6 +138,6 @@ export default function GreekIndexBuilder({ symbol = "SPY", rows = [] }) {
     </div>
     <div className="greek-index-scroll bottom" ref={bottomRef} onScroll={event => sync(event.currentTarget)} aria-label="Greek index bottom scrollbar"><div style={{ width }}/></div>
     <div className="greek-index-readout"><strong>{selectedBar ? `${axisTime(selectedBar.timestamp)} ET · ${symbol} ${Number(selectedBar.close).toFixed(2)}` : loading ? "LOADING PRICE AND EXPOSURES" : "WAITING FOR PRICE AND EXPOSURES"}</strong><span className="composite">{version || "INDEX"} {selected.map(item => item.key.toUpperCase()).join(" + ")} <b>{signed(composite[selectedIndex])}</b></span></div>
-    <footer>V1 means one selected Greek, V2 two, and so on. The single white index is the equal-weight mean of selected Greeks after each is independently indexed to its prior 150 confirmed candles. Deselecting a Greek removes it immediately. Missing inputs leave a gap; this is not a predicted price.</footer>
+    <footer>V1 means one selected Greek, V2 two, and so on. The single white index is the equal-weight mean of selected Greeks after each is independently indexed to its prior 150 confirmed candles (at least 10 required). Deselecting a Greek removes it immediately. Missing or not-yet-stored inputs leave a gap; this is not a predicted price.</footer>
   </section>;
 }

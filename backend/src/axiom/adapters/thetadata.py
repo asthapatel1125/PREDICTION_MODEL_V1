@@ -741,6 +741,19 @@ class ThetaDataV3Client(MarketDataPort):
         # call-minus-put convention as the existing GEX calculation.
         charm_exposure = exposure("charm", 1)
         speed_exposure = exposure("speed", 1)
+        # The selectable composite uses the remaining Options Pro snapshot
+        # Greeks as signed, OI-weighted spot-dollar proxies. Missing provider
+        # fields stay absent; they must never be interpreted as zero exposure.
+        extra_greeks = ("theta", "vega", "rho", "epsilon", "lambda", "vanna",
+                        "vomma", "veta", "vera", "zomma", "color", "ultima",
+                        "dual_delta", "dual_gamma")
+        greek_exposures = {}
+        for greek in extra_greeks:
+            available = [(cls._optional_number(row.get(greek)), cls._optional_number(row.get("open_interest")),
+                          cls._right_sign(row.get("right"))) for row in contracts]
+            valid = [(value, oi, side) for value, oi, side in available if value is not None and oi is not None and oi > 0]
+            if valid:
+                greek_exposures[greek] = sum(side * value * oi * 100.0 * spot for value, oi, side in valid)
         return {
             "observed_epoch": observed_at.timestamp(),
             "spot": spot,
@@ -771,6 +784,7 @@ class ThetaDataV3Client(MarketDataPort):
             "dex_signed_raw": positive_dex + negative_dex,
             "charm_exposure_raw": charm_exposure,
             "speed_exposure_raw": speed_exposure,
+            "greek_exposures": greek_exposures,
             "call_volume": call_volume,
             "put_volume": put_volume,
             "is_estimated_oi_delayed": 1.0,

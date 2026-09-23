@@ -1,4 +1,5 @@
 import { getCandles } from "./calendarCandles.js";
+import { EXTRA_GREEK_FIELDS } from "./optionProGreeks.js";
 
 export const PHOENIX_PERIODS = Array.from({ length: 29 }, (_, index) => index + 2);
 
@@ -6,6 +7,14 @@ const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, v
 
 export function averagePriceBars(rows = [], bucketSeconds = 300, numCandles = 150) {
   return getCandles(rows,bucketSeconds,numCandles,{exchangeTimeZone:"America/New_York",lastFields:["options_at","dex_signed_raw","gamma_exposure_raw","charm_exposure_raw","speed_exposure_raw","dex_imbalance_pct","gex_imbalance_pct"]});
+}
+
+export function greekIndexBars(rows = [], bucketSeconds = 300, numCandles = 150) {
+  const expanded = rows.map(row => ({ ...row, ...Object.fromEntries(
+    EXTRA_GREEK_FIELDS.map(field => [field, row[field] ?? row.greek_exposures?.[field.slice(6, -4)]])
+  ) }));
+  return getCandles(expanded, bucketSeconds, numCandles, { exchangeTimeZone: "America/New_York",
+    lastFields: ["options_at", "dex_signed_raw", "gamma_exposure_raw", "charm_exposure_raw", "speed_exposure_raw", ...EXTRA_GREEK_FIELDS] });
 }
 
 export function averageExposureBars(rows = [], bucketSeconds = 300, numCandles = 150) {
